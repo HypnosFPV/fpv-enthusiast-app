@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth }          from '../../src/context/AuthContext';
 import { useProfile }       from '../../src/hooks/useProfile';
 import { useYouTubeAuth }   from '../../src/hooks/useYouTubeAuth';
+import { useMultiGP }       from '../../src/hooks/useMultiGP';
 import { supabase }         from '../../src/services/supabase';
 import PostCard             from '../../src/components/PostCard';
 import type { FeedPost }    from '../../src/hooks/useFeed';
@@ -26,34 +27,20 @@ const CELL = (W - 4) / 3;
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface Post {
-  id: string;
-  user_id: string;
-  content?: string;
-  caption?: string;
-  media_url?: string | null;
-  social_url?: string | null;
-  embed_url?: string | null;
-  thumbnail_url?: string | null;
-  platform?: string | null;
+  id: string; user_id: string; content?: string; caption?: string;
+  media_url?: string | null; social_url?: string | null; embed_url?: string | null;
+  thumbnail_url?: string | null; platform?: string | null;
   media_type?: 'image' | 'video' | null;
-  like_count?: number;
-  likes_count?: number;
-  comment_count?: number;
-  comments_count?: number;
+  like_count?: number; likes_count?: number;
+  comment_count?: number; comments_count?: number;
   created_at?: string;
   users?: { id?: string; username: string; avatar_url?: string | null } | null;
 }
 
 interface Build {
-  id: string;
-  user_id: string;
-  name: string;
-  frame?: string | null;
-  motors?: string | null;
-  fc?: string | null;
-  vtx?: string | null;
-  camera?: string | null;
-  notes?: string | null;
+  id: string; user_id: string; name: string;
+  frame?: string | null; motors?: string | null; fc?: string | null;
+  vtx?: string | null; camera?: string | null; notes?: string | null;
   created_at?: string;
 }
 
@@ -76,26 +63,17 @@ function thumbnailUri(post: Post): string | null {
   const candidates = [post.media_url, post.social_url, post.embed_url];
   for (const url of candidates) {
     if (!url) continue;
-    const m = url.match(
-      /(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/,
-    );
+    const m = url.match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
     if (m?.[1]) return `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg`;
   }
-  if (
-    post.media_url &&
-    !post.media_url.match(/\.(mp4|mov|webm)(\?|$)/i) &&
-    !post.media_url.match(/youtu/i)
-  ) {
+  if (post.media_url && !post.media_url.match(/\.(mp4|mov|webm)(\?|$)/i) && !post.media_url.match(/youtu/i))
     return post.media_url;
-  }
   return null;
 }
 
 // ─── Small components ─────────────────────────────────────────────────────────
 
-const StatBox = ({
-  value, label, icon,
-}: { value: number | string; label: string; icon?: string }) => (
+const StatBox = ({ value, label, icon }: { value: number | string; label: string; icon?: string }) => (
   <View style={styles.statBox}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
       {icon && <Ionicons name={icon as any} size={16} color="#ff4500" />}
@@ -133,19 +111,18 @@ export default function ProfileScreen() {
     promptAsync: promptYouTubeAuth, unlinkYouTube,
   } = useYouTubeAuth(user?.id);
 
-  // ── Follow system ─────────────────────────────────────────────────────────
   const {
-    followersCount,
-    followingCount,
-  } = useFollow(user?.id ?? '', user?.id);
+    connection: mgpConnection, loading: mgpLoading, saving: mgpSaving,
+    validating: mgpValidating, syncing: mgpSyncing,
+    validateKey: mgpValidateKey, saveConnection: mgpSaveConnection,
+    toggleActive: mgpToggleActive, disconnect: mgpDisconnect, triggerSync: mgpTriggerSync,
+  } = useMultiGP(user?.id);
 
-  // ── Mute system ───────────────────────────────────────────────────────────
+  const { followersCount, followingCount } = useFollow(user?.id ?? '', user?.id);
+
   const {
-    mutedIds,
-    mutedUsers,
-    loading: muteLoading,
-    unmuteUser,
-    fetchMutedUsers,
+    mutedIds, mutedUsers, loading: muteLoading,
+    unmuteUser, fetchMutedUsers,
   } = useMute(user?.id);
 
   // ── Tab / data state ──────────────────────────────────────────────────────
@@ -156,7 +133,7 @@ export default function ProfileScreen() {
   const [dataLoading, setDataLoading] = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
 
-  // ── Modal visibility ─────────────────────────────────────────────────────
+  // ── Modal visibility ──────────────────────────────────────────────────────
   const [showSettings,    setShowSettings]    = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSocialLinks, setShowSocialLinks] = useState(false);
@@ -164,9 +141,8 @@ export default function ProfileScreen() {
   const [showPostDetail,  setShowPostDetail]  = useState(false);
   const [selectedPost,    setSelectedPost]    = useState<Post | null>(null);
   const [showMuteList,    setShowMuteList]    = useState(false);
-
-  // Follow list modal
-  const [followModal, setFollowModal] = useState<'followers' | 'following' | null>(null);
+  const [showMultiGP,     setShowMultiGP]     = useState(false);
+  const [followModal,     setFollowModal]     = useState<'followers' | 'following' | null>(null);
 
   // ── Edit profile fields ───────────────────────────────────────────────────
   const [editUsername,  setEditUsername]  = useState('');
@@ -180,6 +156,11 @@ export default function ProfileScreen() {
   const [editTwitter,   setEditTwitter]   = useState('');
   const [editTiktok,    setEditTiktok]    = useState('');
 
+  // ── MultiGP fields ────────────────────────────────────────────────────────
+  const [mgpKeyInput,      setMgpKeyInput]      = useState('');
+  const [mgpValidResult,   setMgpValidResult]   = useState<{ valid: boolean; chapterName: string | null; chapterId: string | null; error?: string } | null>(null);
+  const [mgpSyncMsg,       setMgpSyncMsg]       = useState('');
+
   // ── Build fields ──────────────────────────────────────────────────────────
   const [buildName,   setBuildName]   = useState('');
   const [buildFrame,  setBuildFrame]  = useState('');
@@ -189,7 +170,6 @@ export default function ProfileScreen() {
   const [buildCamera, setBuildCamera] = useState('');
   const [buildNotes,  setBuildNotes]  = useState('');
 
-  // ── Seed edit fields from profile ─────────────────────────────────────────
   useEffect(() => {
     if (!profile) return;
     setEditUsername(profile.username       ?? '');
@@ -204,33 +184,19 @@ export default function ProfileScreen() {
   // ── Data loaders ──────────────────────────────────────────────────────────
   const loadMyPosts = useCallback(async () => {
     if (!user?.id) return;
-    const { data } = await supabase
-      .from('posts')
-      .select('*, users(id, username, avatar_url)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+    const { data } = await supabase.from('posts').select('*, users(id, username, avatar_url)').eq('user_id', user.id).order('created_at', { ascending: false });
     setMyPosts((data as Post[]) ?? []);
   }, [user?.id]);
 
-  // Feed excludes posts from muted users
   const loadFeed = useCallback(async () => {
-    const { data } = await supabase
-      .from('posts')
-      .select('*, users(id, username, avatar_url)')
-      .order('created_at', { ascending: false })
-      .limit(50);
+    const { data } = await supabase.from('posts').select('*, users(id, username, avatar_url)').order('created_at', { ascending: false }).limit(50);
     const all = (data as Post[]) ?? [];
-    // Filter out muted users' posts (mutedIds is a stable ref from useMute)
     setFeedPosts(mutedIds.length > 0 ? all.filter(p => !mutedIds.includes(p.user_id)) : all);
   }, [mutedIds]);
 
   const loadBuilds = useCallback(async () => {
     if (!user?.id) return;
-    const { data } = await supabase
-      .from('fpv_builds')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+    const { data } = await supabase.from('fpv_builds').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
     setBuilds((data as Build[]) ?? []);
   }, [user?.id]);
 
@@ -240,17 +206,11 @@ export default function ProfileScreen() {
       if (tab === 'posts' || tab === 'media') await loadMyPosts();
       else if (tab === 'feed')   await loadFeed();
       else if (tab === 'builds') await loadBuilds();
-    } finally {
-      setDataLoading(false);
-    }
+    } finally { setDataLoading(false); }
   }, [loadMyPosts, loadFeed, loadBuilds]);
 
   useEffect(() => { loadTabData(activeTab); }, [activeTab]);
-
-  // Re-filter feed whenever mutedIds changes (user mutes/unmutes someone)
-  useEffect(() => {
-    if (activeTab === 'feed') loadFeed();
-  }, [mutedIds]);
+  useEffect(() => { if (activeTab === 'feed') loadFeed(); }, [mutedIds]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -258,11 +218,8 @@ export default function ProfileScreen() {
     setRefreshing(false);
   }, [fetchProfile, loadTabData, activeTab, fetchMutedUsers]);
 
-  // ── Derived ───────────────────────────────────────────────────────────────
   const mediaPosts = useMemo(
-    () => myPosts.filter(p =>
-      p.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(p.media_url ?? ''),
-    ),
+    () => myPosts.filter(p => p.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(p.media_url ?? '')),
     [myPosts],
   );
 
@@ -291,14 +248,9 @@ export default function ProfileScreen() {
   const createBuild = useCallback(async () => {
     if (!buildName.trim()) { Alert.alert('Name required'); return; }
     const { error } = await supabase.from('fpv_builds').insert({
-      user_id: user?.id,
-      name:    buildName.trim(),
-      frame:   buildFrame.trim()  || null,
-      motors:  buildMotors.trim() || null,
-      fc:      buildFC.trim()     || null,
-      vtx:     buildVTX.trim()    || null,
-      camera:  buildCamera.trim() || null,
-      notes:   buildNotes.trim()  || null,
+      user_id: user?.id, name: buildName.trim(), frame: buildFrame.trim() || null,
+      motors: buildMotors.trim() || null, fc: buildFC.trim() || null,
+      vtx: buildVTX.trim() || null, camera: buildCamera.trim() || null, notes: buildNotes.trim() || null,
     });
     if (error) { Alert.alert('Error', error.message); return; }
     setBuildName(''); setBuildFrame(''); setBuildMotors('');
@@ -310,13 +262,10 @@ export default function ProfileScreen() {
   const deleteBuild = useCallback((id: string) => {
     Alert.alert('Delete Build', 'Remove this build?', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          await supabase.from('fpv_builds').delete().eq('id', id);
-          setBuilds(prev => prev.filter(b => b.id !== id));
-        },
-      },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await supabase.from('fpv_builds').delete().eq('id', id);
+        setBuilds(prev => prev.filter(b => b.id !== id));
+      }},
     ]);
   }, []);
 
@@ -326,6 +275,38 @@ export default function ProfileScreen() {
     if (!result?.canceled) await fetchProfile();
   }, [uploadHeaderImage, fetchProfile]);
 
+  // ── MultiGP handlers ──────────────────────────────────────────────────────
+  const handleMgpValidate = useCallback(async () => {
+    if (!mgpKeyInput.trim()) { Alert.alert('Enter your API key first'); return; }
+    const result = await mgpValidateKey(mgpKeyInput.trim());
+    setMgpValidResult(result);
+  }, [mgpKeyInput, mgpValidateKey]);
+
+  const handleMgpConnect = useCallback(async () => {
+    if (!mgpValidResult?.valid) return;
+    const result = await mgpSaveConnection(mgpKeyInput.trim(), mgpValidResult.chapterName, mgpValidResult.chapterId);
+    if (result?.error) { Alert.alert('Error', result.error); return; }
+    setMgpKeyInput(''); setMgpValidResult(null);
+    Alert.alert('✅ Connected!', `${mgpValidResult.chapterName ?? 'Chapter'} linked successfully.`);
+  }, [mgpValidResult, mgpKeyInput, mgpSaveConnection]);
+
+  const handleMgpSync = useCallback(async () => {
+    setMgpSyncMsg('Syncing…');
+    const result = await mgpTriggerSync();
+    setMgpSyncMsg(result.error ? `Error: ${result.error}` : `✅ ${result.synced} races synced`);
+    setTimeout(() => setMgpSyncMsg(''), 3000);
+  }, [mgpTriggerSync]);
+
+  const handleMgpDisconnect = useCallback(() => {
+    Alert.alert('Disconnect MultiGP', 'Remove this chapter connection?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Disconnect', style: 'destructive', onPress: async () => {
+        await mgpDisconnect();
+        setShowMultiGP(false);
+      }},
+    ]);
+  }, [mgpDisconnect]);
+
   // ── Render helpers ────────────────────────────────────────────────────────
   const renderGridCell = useCallback(({ item }: { item: Post }) => {
     const thumb   = thumbnailUri(item);
@@ -333,13 +314,8 @@ export default function ProfileScreen() {
     const isVid   = item.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(item.media_url ?? '');
     const isYT    = allUrls.some(u => /youtu/i.test(u));
     const isIG    = item.platform === 'instagram' || (item.social_url ?? '').includes('instagram.com');
-
     return (
-      <TouchableOpacity
-        style={styles.gridCell}
-        onPress={() => { setSelectedPost(item); setShowPostDetail(true); }}
-        activeOpacity={0.8}
-      >
+      <TouchableOpacity style={styles.gridCell} onPress={() => { setSelectedPost(item); setShowPostDetail(true); }} activeOpacity={0.8}>
         {thumb ? (
           <Image source={{ uri: thumb }} style={styles.gridThumb} resizeMode="cover" />
         ) : isIG ? (
@@ -352,21 +328,9 @@ export default function ProfileScreen() {
             <Ionicons name={isVid ? 'videocam' : 'image-outline'} size={28} color="#444" />
           </View>
         )}
-        {isVid && !isYT && (
-          <View style={styles.gridPlayBadge}>
-            <Ionicons name="play-circle" size={22} color="rgba(255,255,255,0.85)" />
-          </View>
-        )}
-        {isYT && (
-          <View style={styles.gridYtBadge}>
-            <Ionicons name="logo-youtube" size={14} color="#fff" />
-          </View>
-        )}
-        {isIG && !thumb && (
-          <View style={styles.gridIgBadge}>
-            <Ionicons name="logo-instagram" size={14} color="#fff" />
-          </View>
-        )}
+        {isVid && !isYT && <View style={styles.gridPlayBadge}><Ionicons name="play-circle" size={22} color="rgba(255,255,255,0.85)" /></View>}
+        {isYT && <View style={styles.gridYtBadge}><Ionicons name="logo-youtube" size={14} color="#fff" /></View>}
+        {isIG && !thumb && <View style={styles.gridIgBadge}><Ionicons name="logo-instagram" size={14} color="#fff" /></View>}
       </TouchableOpacity>
     );
   }, []);
@@ -379,49 +343,35 @@ export default function ProfileScreen() {
           <Ionicons name="trash-outline" size={18} color="#e74c3c" />
         </TouchableOpacity>
       </View>
-      {([
-        ['Frame', item.frame], ['Motors', item.motors], ['FC', item.fc],
-        ['VTX', item.vtx],     ['Camera', item.camera],
-      ] as [string, string | null | undefined][])
-        .filter(([, v]) => !!v)
-        .map(([label, val]) => (
-          <Text key={label} style={styles.buildSpec}>
-            <Text style={styles.buildSpecLabel}>{label}: </Text>{val}
-          </Text>
-        ))}
+      {(['Frame', item.frame], ['Motors', item.motors], ['FC', item.fc], ['VTX', item.vtx], ['Camera', item.camera] as any)
+        && ([['Frame', item.frame], ['Motors', item.motors], ['FC', item.fc], ['VTX', item.vtx], ['Camera', item.camera]] as [string, string | null | undefined][])
+          .filter(([, v]) => !!v)
+          .map(([label, val]) => (
+            <Text key={label} style={styles.buildSpec}>
+              <Text style={styles.buildSpecLabel}>{label}: </Text>{val}
+            </Text>
+          ))}
       {item.notes ? <Text style={styles.buildNotes}>{item.notes}</Text> : null}
     </View>
   ), [deleteBuild]);
 
-  // ── Loading guard ─────────────────────────────────────────────────────────
   if (profileLoading && !profile) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color="#00d4ff" />
-      </View>
-    );
+    return <View style={styles.loadingScreen}><ActivityIndicator size="large" color="#00d4ff" /></View>;
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
-
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00d4ff" />}
         stickyHeaderIndices={[3]}
       >
-        {/* ── 0: BANNER ─────────────────────────────────────────────────── */}
+        {/* BANNER */}
         <TouchableOpacity onPress={handleBannerPress} activeOpacity={0.85}>
           <View style={styles.bannerWrap}>
             {profile?.header_image_url ? (
-              <Image
-                key={profile.header_image_url}
-                source={{ uri: profile.header_image_url }}
-                style={styles.banner}
-                resizeMode="cover"
-              />
+              <Image key={profile.header_image_url} source={{ uri: profile.header_image_url }} style={styles.banner} resizeMode="cover" />
             ) : (
               <View style={[styles.banner, styles.bannerPlaceholder]}>
                 <Ionicons name="camera" size={28} color="#555" />
@@ -431,19 +381,15 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* ── 1: HEADER ROW ─────────────────────────────────────────────── */}
+        {/* HEADER ROW */}
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.avatarWrap} onPress={uploadAvatar}>
             {profile?.avatar_url ? (
               <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
             ) : (
-              <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                <Ionicons name="person" size={34} color="#555" />
-              </View>
+              <View style={[styles.avatar, styles.avatarPlaceholder]}><Ionicons name="person" size={34} color="#555" /></View>
             )}
-            <View style={styles.cameraBadge}>
-              <Ionicons name="camera" size={13} color="#fff" />
-            </View>
+            <View style={styles.cameraBadge}><Ionicons name="camera" size={13} color="#fff" /></View>
           </TouchableOpacity>
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.editBtn} onPress={() => setShowEditProfile(true)}>
@@ -455,121 +401,58 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── 2: BIO SECTION ────────────────────────────────────────────── */}
+        {/* BIO */}
         <View style={styles.bioSection}>
           <Text style={styles.displayName}>{profile?.username ?? 'FPV Pilot'}</Text>
           {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
-
           <View style={styles.statsRow}>
             <StatBox value={myPosts.length} label="Posts" />
-
             <TouchableOpacity onPress={() => setFollowModal('followers')} activeOpacity={0.7}>
               <StatBox value={followersCount} label="Followers" />
             </TouchableOpacity>
-
             <TouchableOpacity onPress={() => setFollowModal('following')} activeOpacity={0.7}>
               <StatBox value={followingCount} label="Following" />
             </TouchableOpacity>
-
             <StatBox value={profile?.total_props ?? 0} label="Props" icon="trophy" />
           </View>
-
-          {/* Social chips */}
           <View style={styles.socialRow}>
             {([
-              { icon: 'logo-youtube',   url: profile?.youtube_url   },
+              { icon: 'logo-youtube', url: profile?.youtube_url },
               { icon: 'logo-instagram', url: profile?.instagram_url },
-              { icon: 'logo-twitter',   url: profile?.twitter_url   },
-              { icon: 'logo-tiktok',    url: profile?.tiktok_url    },
-              { icon: 'globe-outline',  url: profile?.website_url   },
-            ] as { icon: string; url?: string | null }[])
-              .filter(s => !!s.url)
-              .map(s => (
-                <TouchableOpacity key={s.icon} style={styles.socialChip}>
-                  <Ionicons name={s.icon as any} size={18} color="#00d4ff" />
-                </TouchableOpacity>
-              ))}
+              { icon: 'logo-twitter', url: profile?.twitter_url },
+              { icon: 'logo-tiktok', url: profile?.tiktok_url },
+              { icon: 'globe-outline', url: profile?.website_url },
+            ] as { icon: string; url?: string | null }[]).filter(s => !!s.url).map(s => (
+              <TouchableOpacity key={s.icon} style={styles.socialChip}>
+                <Ionicons name={s.icon as any} size={18} color="#00d4ff" />
+              </TouchableOpacity>
+            ))}
             <TouchableOpacity style={styles.socialChip} onPress={() => setShowSocialLinks(true)}>
               <Ionicons name="add-circle-outline" size={18} color="#555" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── 3: TAB BAR (sticky) ───────────────────────────────────────── */}
+        {/* TAB BAR */}
         <View style={styles.tabBar}>
           {(['posts', 'media', 'feed', 'builds'] as const).map(tab => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Ionicons
-                name={
-                  tab === 'posts'  ? 'grid-outline'      :
-                  tab === 'media'  ? 'film-outline'       :
-                  tab === 'feed'   ? 'newspaper-outline'  : 'construct-outline'
-                }
-                size={18}
-                color={activeTab === tab ? '#00d4ff' : '#666'}
-              />
-              <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </Text>
+            <TouchableOpacity key={tab} style={[styles.tabItem, activeTab === tab && styles.tabItemActive]} onPress={() => setActiveTab(tab)}>
+              <Ionicons name={tab === 'posts' ? 'grid-outline' : tab === 'media' ? 'film-outline' : tab === 'feed' ? 'newspaper-outline' : 'construct-outline'} size={18} color={activeTab === tab ? '#00d4ff' : '#666'} />
+              <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>{tab.charAt(0).toUpperCase() + tab.slice(1)}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        {/* ── 4: TAB CONTENT ────────────────────────────────────────────── */}
-        {dataLoading ? (
-          <ActivityIndicator style={{ marginTop: 40 }} color="#00d4ff" />
-        ) : (
+        {/* TAB CONTENT */}
+        {dataLoading ? <ActivityIndicator style={{ marginTop: 40 }} color="#00d4ff" /> : (
           <>
-            {activeTab === 'posts' && (
-              myPosts.length === 0
-                ? <EmptyState icon="camera-outline" text="No posts yet" />
-                : <FlatList
-                    data={myPosts} keyExtractor={i => i.id} renderItem={renderGridCell}
-                    numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow}
-                  />
-            )}
-            {activeTab === 'media' && (
-              mediaPosts.length === 0
-                ? <EmptyState icon="videocam-outline" text="No videos yet" />
-                : <FlatList
-                    data={mediaPosts} keyExtractor={i => i.id} renderItem={renderGridCell}
-                    numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow}
-                  />
-            )}
-            {activeTab === 'feed' && (
-              feedPosts.length === 0
-                ? <EmptyState icon="newspaper-outline" text="Nothing in the feed yet" />
-                : <View style={styles.feedList}>
-                    {feedPosts.map(p => (
-                      <PostCard
-                        key={p.id}
-                        post={toFeedPost(p)}
-                        isVisible={false}
-                        shouldAutoplay={false}
-                        currentUserId={user?.id ?? undefined}
-                        onLike={() => {}}
-                        onDelete={(id: string) =>
-                          setFeedPosts(prev => prev.filter(fp => fp.id !== id))
-                        }
-                      />
-                    ))}
-                  </View>
-            )}
+            {activeTab === 'posts' && (myPosts.length === 0 ? <EmptyState icon="camera-outline" text="No posts yet" /> : <FlatList data={myPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />)}
+            {activeTab === 'media' && (mediaPosts.length === 0 ? <EmptyState icon="videocam-outline" text="No videos yet" /> : <FlatList data={mediaPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />)}
+            {activeTab === 'feed' && (feedPosts.length === 0 ? <EmptyState icon="newspaper-outline" text="Nothing in the feed yet" /> : <View style={styles.feedList}>{feedPosts.map(p => <PostCard key={p.id} post={toFeedPost(p)} isVisible={false} shouldAutoplay={false} currentUserId={user?.id ?? undefined} onLike={() => {}} onDelete={(id: string) => setFeedPosts(prev => prev.filter(fp => fp.id !== id))} />)}</View>)}
             {activeTab === 'builds' && (
               <View>
-                {builds.length === 0
-                  ? <EmptyState icon="construct-outline" text="No builds logged yet" />
-                  : <FlatList
-                      data={builds} keyExtractor={i => i.id} renderItem={renderBuild}
-                      scrollEnabled={false} contentContainerStyle={{ padding: 12 }}
-                    />}
-                <TouchableOpacity style={styles.fab} onPress={() => setShowCreateBuild(true)}>
-                  <Ionicons name="add" size={28} color="#fff" />
-                </TouchableOpacity>
+                {builds.length === 0 ? <EmptyState icon="construct-outline" text="No builds logged yet" /> : <FlatList data={builds} keyExtractor={i => i.id} renderItem={renderBuild} scrollEnabled={false} contentContainerStyle={{ padding: 12 }} />}
+                <TouchableOpacity style={styles.fab} onPress={() => setShowCreateBuild(true)}><Ionicons name="add" size={28} color="#fff" /></TouchableOpacity>
               </View>
             )}
           </>
@@ -577,48 +460,26 @@ export default function ProfileScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* ── POST DETAIL MODAL ─────────────────────────────────────────────── */}
-      <Modal
-        visible={showPostDetail} animationType="slide"
-        presentationStyle="overFullScreen" onRequestClose={() => setShowPostDetail(false)}
-      >
+      {/* POST DETAIL MODAL */}
+      <Modal visible={showPostDetail} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowPostDetail(false)}>
         <View style={styles.detailRoot}>
           <View style={styles.detailHeader}>
-            <TouchableOpacity onPress={() => setShowPostDetail(false)}>
-              <Ionicons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowPostDetail(false)}><Ionicons name="arrow-back" size={24} color="#fff" /></TouchableOpacity>
             <Text style={styles.detailTitle}>Post</Text>
             <View style={{ width: 24 }} />
           </View>
           <ScrollView>
-            {selectedPost && (
-              <PostCard
-                post={toFeedPost(selectedPost)}
-                isVisible={true}
-                shouldAutoplay={false}
-                currentUserId={user?.id ?? undefined}
-                onLike={() => {}}
-                onDelete={(id: string) => {
-                  setMyPosts(prev => prev.filter(p => p.id !== id));
-                  setShowPostDetail(false);
-                }}
-              />
-            )}
+            {selectedPost && <PostCard post={toFeedPost(selectedPost)} isVisible={true} shouldAutoplay={false} currentUserId={user?.id ?? undefined} onLike={() => {}} onDelete={(id: string) => { setMyPosts(prev => prev.filter(p => p.id !== id)); setShowPostDetail(false); }} />}
           </ScrollView>
         </View>
       </Modal>
 
-      {/* ── SETTINGS MODAL ────────────────────────────────────────────────── */}
-      <Modal
-        visible={showSettings} animationType="slide"
-        presentationStyle="overFullScreen" onRequestClose={() => setShowSettings(false)}
-      >
+      {/* SETTINGS MODAL */}
+      <Modal visible={showSettings} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowSettings(false)}>
         <View style={styles.modalRoot}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Settings</Text>
-            <TouchableOpacity onPress={() => setShowSettings(false)}>
-              <Ionicons name="close" size={26} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowSettings(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
 
@@ -640,36 +501,19 @@ export default function ProfileScreen() {
               <Text style={styles.settingsSectionTitle}>Preferences</Text>
               <View style={styles.settingsRow}>
                 <Text style={styles.settingsLabel}>Autoplay Videos</Text>
-                <Switch
-                  value={profile?.autoplay_videos ?? true}
-                  onValueChange={(val: boolean) => { void updateProfile({ autoplay_videos: val }); }}
-                  trackColor={{ true: '#00d4ff', false: '#333' }}
-                  thumbColor="#fff"
-                />
+                <Switch value={profile?.autoplay_videos ?? true} onValueChange={(val: boolean) => { void updateProfile({ autoplay_videos: val }); }} trackColor={{ true: '#00d4ff', false: '#333' }} thumbColor="#fff" />
               </View>
             </View>
 
             {/* Privacy */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Privacy</Text>
-
-              {/* Muted Users row */}
-              <TouchableOpacity
-                style={styles.settingsRow}
-                onPress={() => {
-                  setShowSettings(false);
-                  setTimeout(() => setShowMuteList(true), 350);
-                }}
-              >
+              <TouchableOpacity style={styles.settingsRow} onPress={() => { setShowSettings(false); setTimeout(() => setShowMuteList(true), 350); }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <Ionicons name="volume-mute-outline" size={20} color="#aaa" />
                   <View>
                     <Text style={styles.settingsLabel}>Muted Users</Text>
-                    {mutedUsers.length > 0 && (
-                      <Text style={[styles.settingsValue, { fontSize: 11 }]}>
-                        {mutedUsers.length} muted
-                      </Text>
-                    )}
+                    {mutedUsers.length > 0 && <Text style={[styles.settingsValue, { fontSize: 11 }]}>{mutedUsers.length} muted</Text>}
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color="#555" />
@@ -679,35 +523,46 @@ export default function ProfileScreen() {
             {/* Connected Accounts */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Connected Accounts</Text>
-              <TouchableOpacity
-                style={styles.settingsRow}
-                onPress={() => { setShowSettings(false); setTimeout(() => setShowSocialLinks(true), 350); }}
-              >
+
+              {/* Social Links */}
+              <TouchableOpacity style={styles.settingsRow} onPress={() => { setShowSettings(false); setTimeout(() => setShowSocialLinks(true), 350); }}>
                 <Text style={styles.settingsLabel}>Social Links</Text>
                 <Ionicons name="chevron-forward" size={18} color="#555" />
               </TouchableOpacity>
-              <View style={[styles.settingsRow, {
-                borderTopWidth: 1, borderTopColor: '#2a2a4a', marginTop: 4, paddingTop: 10,
-              }]}>
+
+              {/* YouTube */}
+              <View style={[styles.settingsRow, { borderTopWidth: 1, borderTopColor: '#2a2a4a', marginTop: 4, paddingTop: 10 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Ionicons name="logo-youtube" size={20} color="#FF0000" />
                   <View>
                     <Text style={styles.settingsLabel}>YouTube Account</Text>
-                    <Text style={[styles.settingsValue, {
-                      fontSize: 11, color: ytLinked ? '#4caf50' : '#888',
-                    }]}>
+                    <Text style={[styles.settingsValue, { fontSize: 11, color: ytLinked ? '#4caf50' : '#888' }]}>
                       {ytLinked ? '● Connected — Like & Subscribe enabled' : '○ Not connected'}
                     </Text>
                   </View>
                 </View>
+                <TouchableOpacity style={[styles.ytAuthBtn, ytLinked ? styles.ytAuthBtnUnlink : styles.ytAuthBtnLink]} onPress={ytLinked ? unlinkYouTube : () => promptYouTubeAuth()} disabled={ytAuthLoading}>
+                  {ytAuthLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.ytAuthBtnText}>{ytLinked ? 'Unlink' : 'Connect'}</Text>}
+                </TouchableOpacity>
+              </View>
+
+              {/* ── MultiGP Chapter ── */}
+              <View style={[styles.settingsRow, { borderTopWidth: 1, borderTopColor: '#2a2a4a', marginTop: 4, paddingTop: 10 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="radio-outline" size={20} color="#ff4500" />
+                  <View>
+                    <Text style={styles.settingsLabel}>MultiGP Chapter</Text>
+                    <Text style={[styles.settingsValue, { fontSize: 11, color: mgpConnection?.is_active ? '#4caf50' : '#888' }]}>
+                      {mgpConnection ? (mgpConnection.is_active ? `● ${mgpConnection.chapter_name ?? 'Connected'}` : `○ ${mgpConnection.chapter_name ?? 'Paused'}`) : '○ Not connected'}
+                    </Text>
+                  </View>
+                </View>
                 <TouchableOpacity
-                  style={[styles.ytAuthBtn, ytLinked ? styles.ytAuthBtnUnlink : styles.ytAuthBtnLink]}
-                  onPress={ytLinked ? unlinkYouTube : () => promptYouTubeAuth()}
-                  disabled={ytAuthLoading}
+                  style={[styles.ytAuthBtn, mgpConnection ? styles.ytAuthBtnUnlink : styles.ytAuthBtnLink]}
+                  onPress={() => { setShowSettings(false); setTimeout(() => setShowMultiGP(true), 350); }}
+                  disabled={mgpLoading}
                 >
-                  {ytAuthLoading
-                    ? <ActivityIndicator size="small" color="#fff" />
-                    : <Text style={styles.ytAuthBtnText}>{ytLinked ? 'Unlink' : 'Connect'}</Text>}
+                  {mgpLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.ytAuthBtnText}>{mgpConnection ? 'Manage' : 'Connect'}</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -720,196 +575,194 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* ── EDIT PROFILE MODAL ────────────────────────────────────────────── */}
-      <Modal
-        visible={showEditProfile} animationType="slide"
-        presentationStyle="overFullScreen" onRequestClose={() => setShowEditProfile(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      {/* MULTIGP MODAL */}
+      <Modal visible={showMultiGP} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowMultiGP(false)}>
+        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>MultiGP Chapter</Text>
+            <TouchableOpacity onPress={() => setShowMultiGP(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalBody}>
+            {mgpConnection ? (
+              // ── Connected state ──
+              <View>
+                <View style={styles.mgpConnectedCard}>
+                  <Ionicons name="radio" size={32} color="#ff4500" />
+                  <View style={{ marginLeft: 12, flex: 1 }}>
+                    <Text style={styles.mgpChapterName}>{mgpConnection.chapter_name ?? 'Chapter Connected'}</Text>
+                    <Text style={styles.mgpChapterId}>{mgpConnection.chapter_id ? `ID: ${mgpConnection.chapter_id}` : ''}</Text>
+                    {mgpConnection.last_synced_at && (
+                      <Text style={styles.mgpLastSync}>Last sync: {new Date(mgpConnection.last_synced_at).toLocaleString()}</Text>
+                    )}
+                  </View>
+                </View>
+
+                {mgpSyncMsg ? <Text style={styles.mgpSyncMsg}>{mgpSyncMsg}</Text> : null}
+
+                <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: '#ff4500', marginTop: 16 }]} onPress={handleMgpSync} disabled={mgpSyncing}>
+                  {mgpSyncing ? <ActivityIndicator size="small" color="#fff" /> : <><Ionicons name="sync-outline" size={16} color="#fff" style={{ marginRight: 6 }} /><Text style={[styles.primaryBtnText, { color: '#fff' }]}>Sync Now</Text></>}
+                </TouchableOpacity>
+
+                <View style={[styles.settingsRow, { marginTop: 16 }]}>
+                  <Text style={styles.settingsLabel}>Auto-sync enabled</Text>
+                  <Switch value={mgpConnection.is_active} onValueChange={mgpToggleActive} trackColor={{ true: '#ff4500', false: '#333' }} thumbColor="#fff" />
+                </View>
+
+                <TouchableOpacity style={[styles.signOutBtn, { marginTop: 24 }]} onPress={handleMgpDisconnect}>
+                  <Ionicons name="unlink-outline" size={18} color="#e74c3c" />
+                  <Text style={styles.signOutText}>Disconnect Chapter</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              // ── Connect state ──
+              <View>
+                <Text style={styles.mgpInstructions}>
+                  Enter your MultiGP Timing System API key to link your chapter. Upcoming races will auto-sync to the map.
+                </Text>
+                <Text style={styles.mgpHint}>
+                  Find your key at multigp.com → Chapter Dashboard → Settings → Timing System Key
+                </Text>
+
+                <Text style={styles.inputLabel}>Timing System API Key</Text>
+                <TextInput
+                  style={styles.input} value={mgpKeyInput} onChangeText={t => { setMgpKeyInput(t); setMgpValidResult(null); }}
+                  placeholder="Paste your API key here" placeholderTextColor="#555"
+                  autoCapitalize="none" autoCorrect={false}
+                />
+
+                {mgpValidResult && (
+                  <View style={[styles.mgpValidResult, { borderColor: mgpValidResult.valid ? '#4caf50' : '#e74c3c' }]}>
+                    <Ionicons name={mgpValidResult.valid ? 'checkmark-circle' : 'close-circle'} size={18} color={mgpValidResult.valid ? '#4caf50' : '#e74c3c'} />
+                    <Text style={[styles.mgpValidText, { color: mgpValidResult.valid ? '#4caf50' : '#e74c3c' }]}>
+                      {mgpValidResult.valid ? `✅ ${mgpValidResult.chapterName ?? 'Valid key'}` : mgpValidResult.error ?? 'Invalid key'}
+                    </Text>
+                  </View>
+                )}
+
+                <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: '#1e1e3a', marginTop: 12 }]} onPress={handleMgpValidate} disabled={mgpValidating}>
+                  {mgpValidating ? <ActivityIndicator size="small" color="#00d4ff" /> : <Text style={[styles.primaryBtnText, { color: '#00d4ff' }]}>Validate Key</Text>}
+                </TouchableOpacity>
+
+                {mgpValidResult?.valid && (
+                  <TouchableOpacity style={[styles.primaryBtn, { marginTop: 10 }]} onPress={handleMgpConnect} disabled={mgpSaving}>
+                    {mgpSaving ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.primaryBtnText}>Connect Chapter</Text>}
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* EDIT PROFILE MODAL */}
+      <Modal visible={showEditProfile} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowEditProfile(false)}>
+        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Edit Profile</Text>
-            <TouchableOpacity onPress={() => setShowEditProfile(false)}>
-              <Ionicons name="close" size={26} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowEditProfile(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             <Text style={styles.inputLabel}>Username</Text>
-            <TextInput
-              style={[styles.input, usernameError ? styles.inputError : undefined]}
-              value={editUsername}
-              onChangeText={t => { setEditUsername(t); setUsernameError(''); }}
-              placeholder="username" placeholderTextColor="#555" autoCapitalize="none"
-            />
+            <TextInput style={[styles.input, usernameError ? styles.inputError : undefined]} value={editUsername} onChangeText={t => { setEditUsername(t); setUsernameError(''); }} placeholder="username" placeholderTextColor="#555" autoCapitalize="none" />
             {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : null}
             <Text style={styles.inputLabel}>Bio</Text>
-            <TextInput
-              style={[styles.input, { height: 90 }]} value={editBio} onChangeText={setEditBio}
-              placeholder="Tell the community about yourself…" placeholderTextColor="#555"
-              multiline maxLength={200}
-            />
+            <TextInput style={[styles.input, { height: 90 }]} value={editBio} onChangeText={setEditBio} placeholder="Tell the community about yourself…" placeholderTextColor="#555" multiline maxLength={200} />
             <Text style={styles.charCount}>{editBio.length}/200</Text>
-            <TouchableOpacity
-              style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]}
-              onPress={saveProfile} disabled={updating}
-            >
-              {updating
-                ? <ActivityIndicator size="small" color="#000" />
-                : <Text style={styles.primaryBtnText}>Save Changes</Text>}
+            <TouchableOpacity style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]} onPress={saveProfile} disabled={updating}>
+              {updating ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.primaryBtnText}>Save Changes</Text>}
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── SOCIAL LINKS MODAL ────────────────────────────────────────────── */}
-      <Modal
-        visible={showSocialLinks} animationType="slide"
-        presentationStyle="overFullScreen" onRequestClose={() => setShowSocialLinks(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      {/* SOCIAL LINKS MODAL */}
+      <Modal visible={showSocialLinks} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowSocialLinks(false)}>
+        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Social Links</Text>
-            <TouchableOpacity onPress={() => setShowSocialLinks(false)}>
-              <Ionicons name="close" size={26} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowSocialLinks(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {([
-              { label: 'YouTube',   icon: 'logo-youtube',   val: editYoutube,   set: setEditYoutube   },
+              { label: 'YouTube', icon: 'logo-youtube', val: editYoutube, set: setEditYoutube },
               { label: 'Instagram', icon: 'logo-instagram', val: editInstagram, set: setEditInstagram },
-              { label: 'Twitter/X', icon: 'logo-twitter',   val: editTwitter,   set: setEditTwitter   },
-              { label: 'TikTok',    icon: 'logo-tiktok',    val: editTiktok,    set: setEditTiktok    },
-              { label: 'Website',   icon: 'globe-outline',  val: editWebsite,   set: setEditWebsite   },
-            ] as { label: string; icon: string; val: string; set: (v: string) => void }[]).map(
-              ({ label, icon, val, set }) => (
-                <View key={label}>
-                  <Text style={styles.inputLabel}>{label}</Text>
-                  <View style={styles.socialInputRow}>
-                    <Ionicons name={icon as any} size={20} color="#00d4ff" style={{ marginRight: 8 }} />
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]} value={val} onChangeText={set}
-                      placeholder="https://…" placeholderTextColor="#555"
-                      autoCapitalize="none" keyboardType="url"
-                    />
-                  </View>
+              { label: 'Twitter/X', icon: 'logo-twitter', val: editTwitter, set: setEditTwitter },
+              { label: 'TikTok', icon: 'logo-tiktok', val: editTiktok, set: setEditTiktok },
+              { label: 'Website', icon: 'globe-outline', val: editWebsite, set: setEditWebsite },
+            ] as { label: string; icon: string; val: string; set: (v: string) => void }[]).map(({ label, icon, val, set }) => (
+              <View key={label}>
+                <Text style={styles.inputLabel}>{label}</Text>
+                <View style={styles.socialInputRow}>
+                  <Ionicons name={icon as any} size={20} color="#00d4ff" style={{ marginRight: 8 }} />
+                  <TextInput style={[styles.input, { flex: 1 }]} value={val} onChangeText={set} placeholder="https://…" placeholderTextColor="#555" autoCapitalize="none" keyboardType="url" />
                 </View>
-              ),
-            )}
-            <TouchableOpacity
-              style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]}
-              onPress={saveSocials} disabled={updating}
-            >
-              {updating
-                ? <ActivityIndicator size="small" color="#000" />
-                : <Text style={styles.primaryBtnText}>Save Links</Text>}
+              </View>
+            ))}
+            <TouchableOpacity style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]} onPress={saveSocials} disabled={updating}>
+              {updating ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.primaryBtnText}>Save Links</Text>}
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── CREATE BUILD MODAL ────────────────────────────────────────────── */}
-      <Modal
-        visible={showCreateBuild} animationType="slide"
-        presentationStyle="overFullScreen" onRequestClose={() => setShowCreateBuild(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+      {/* CREATE BUILD MODAL */}
+      <Modal visible={showCreateBuild} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowCreateBuild(false)}>
+        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>New Build</Text>
-            <TouchableOpacity onPress={() => setShowCreateBuild(false)}>
-              <Ionicons name="close" size={26} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowCreateBuild(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {([
-              { label: 'Build Name *', val: buildName,   set: setBuildName,   ph: 'e.g. Race Day 5"'         },
-              { label: 'Frame',        val: buildFrame,  set: setBuildFrame,  ph: 'e.g. ImpulseRC Apex'      },
-              { label: 'Motors',       val: buildMotors, set: setBuildMotors, ph: 'e.g. iFlight 2306 2450kv' },
-              { label: 'FC',           val: buildFC,     set: setBuildFC,     ph: 'e.g. Betaflight F7'       },
-              { label: 'VTX',          val: buildVTX,    set: setBuildVTX,    ph: 'e.g. Rush Tank Ultimate'  },
-              { label: 'Camera',       val: buildCamera, set: setBuildCamera, ph: 'e.g. Caddx Ratel 2'       },
-            ] as { label: string; val: string; set: (v: string) => void; ph: string }[]).map(
-              ({ label, val, set, ph }) => (
-                <View key={label}>
-                  <Text style={styles.inputLabel}>{label}</Text>
-                  <TextInput
-                    style={styles.input} value={val} onChangeText={set}
-                    placeholder={ph} placeholderTextColor="#555"
-                  />
-                </View>
-              ),
-            )}
+              { label: 'Build Name *', val: buildName, set: setBuildName, ph: 'e.g. Race Day 5"' },
+              { label: 'Frame', val: buildFrame, set: setBuildFrame, ph: 'e.g. ImpulseRC Apex' },
+              { label: 'Motors', val: buildMotors, set: setBuildMotors, ph: 'e.g. iFlight 2306 2450kv' },
+              { label: 'FC', val: buildFC, set: setBuildFC, ph: 'e.g. Betaflight F7' },
+              { label: 'VTX', val: buildVTX, set: setBuildVTX, ph: 'e.g. Rush Tank Ultimate' },
+              { label: 'Camera', val: buildCamera, set: setBuildCamera, ph: 'e.g. Caddx Ratel 2' },
+            ] as { label: string; val: string; set: (v: string) => void; ph: string }[]).map(({ label, val, set, ph }) => (
+              <View key={label}>
+                <Text style={styles.inputLabel}>{label}</Text>
+                <TextInput style={styles.input} value={val} onChangeText={set} placeholder={ph} placeholderTextColor="#555" />
+              </View>
+            ))}
             <Text style={styles.inputLabel}>Notes</Text>
-            <TextInput
-              style={[styles.input, { height: 80 }]} value={buildNotes} onChangeText={setBuildNotes}
-              placeholder="Tune notes, issues, mods…" placeholderTextColor="#555" multiline
-            />
-            <TouchableOpacity style={styles.primaryBtn} onPress={createBuild}>
-              <Text style={styles.primaryBtnText}>Add Build</Text>
-            </TouchableOpacity>
+            <TextInput style={[styles.input, { height: 80 }]} value={buildNotes} onChangeText={setBuildNotes} placeholder="Tune notes, issues, mods…" placeholderTextColor="#555" multiline />
+            <TouchableOpacity style={styles.primaryBtn} onPress={createBuild}><Text style={styles.primaryBtnText}>Add Build</Text></TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── FOLLOW LIST MODAL ─────────────────────────────────────────────── */}
-      {user && (
-        <FollowListModal
-          visible={followModal !== null}
-          type={followModal ?? 'followers'}
-          profileUserId={user.id}
-          currentUserId={user.id}
-          onClose={() => setFollowModal(null)}
-        />
-      )}
+      {/* FOLLOW LIST MODAL */}
+      {user && <FollowListModal visible={followModal !== null} type={followModal ?? 'followers'} profileUserId={user.id} currentUserId={user.id} onClose={() => setFollowModal(null)} />}
 
-      {/* ── MUTE LIST MODAL ───────────────────────────────────────────────── */}
-      <MuteListModal
-        visible={showMuteList}
-        onClose={() => setShowMuteList(false)}
-        mutedUsers={mutedUsers}
-        loading={muteLoading}
-        onUnmute={async (userId) => {
-          await unmuteUser(userId);
-        }}
-      />
+      {/* MUTE LIST MODAL */}
+      <MuteListModal visible={showMuteList} onClose={() => setShowMuteList(false)} mutedUsers={mutedUsers} loading={muteLoading} onUnmute={async (userId) => { await unmuteUser(userId); }} />
     </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root:          { flex: 1, backgroundColor: '#0a0a1a' },
   loadingScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a1a' },
+  emptyState:    { alignItems: 'center', paddingTop: 60, paddingBottom: 40 },
+  emptyText:     { color: '#444', fontSize: 14, marginTop: 12 },
 
   bannerWrap:        { width: '100%', height: 160, overflow: 'hidden', backgroundColor: '#111' },
   banner:            { width: '100%', height: 160 },
   bannerPlaceholder: { justifyContent: 'center', alignItems: 'center' },
   bannerHint:        { color: '#444', fontSize: 12, marginTop: 6 },
 
-  headerRow: {
-    flexDirection: 'row', alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginTop: -36,
-    marginBottom: 10,
-  },
+  headerRow:         { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: -36, marginBottom: 10 },
   avatarWrap:        { position: 'relative' },
   avatar:            { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#0a0a1a' },
   avatarPlaceholder: { backgroundColor: '#1e1e3a', justifyContent: 'center', alignItems: 'center' },
-  cameraBadge: {
-    position: 'absolute', bottom: 2, right: 2,
-    backgroundColor: '#00d4ff', borderRadius: 10,
-    width: 20, height: 20, justifyContent: 'center', alignItems: 'center',
-  },
-  headerActions: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 10 },
-  editBtn:       { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: '#00d4ff' },
-  editBtnText:   { color: '#00d4ff', fontWeight: '600', fontSize: 13 },
-  gearBtn:       { padding: 4 },
+  cameraBadge:       { position: 'absolute', bottom: 2, right: 2, backgroundColor: '#00d4ff', borderRadius: 10, width: 20, height: 20, justifyContent: 'center', alignItems: 'center' },
+  headerActions:     { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 10 },
+  editBtn:           { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: '#00d4ff' },
+  editBtnText:       { color: '#00d4ff', fontWeight: '600', fontSize: 13 },
+  gearBtn:           { padding: 4 },
 
   bioSection:  { paddingHorizontal: 16, paddingBottom: 8 },
   displayName: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 4 },
@@ -921,15 +774,9 @@ const styles = StyleSheet.create({
   statLabel: { color: '#888', fontSize: 11, marginTop: 2 },
 
   socialRow:  { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 8 },
-  socialChip: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#1e1e3a', justifyContent: 'center', alignItems: 'center',
-  },
+  socialChip: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1e1e3a', justifyContent: 'center', alignItems: 'center' },
 
-  tabBar:         {
-    flexDirection: 'row', backgroundColor: '#0a0a1a',
-    borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#1e1e3a',
-  },
+  tabBar:         { flexDirection: 'row', backgroundColor: '#0a0a1a', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#1e1e3a' },
   tabItem:        { flex: 1, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   tabItemActive:  { borderBottomWidth: 2, borderBottomColor: '#00d4ff' },
   tabLabel:       { color: '#666', fontSize: 10, fontWeight: '600', marginTop: 3 },
@@ -938,104 +785,67 @@ const styles = StyleSheet.create({
   feedList: { paddingHorizontal: 12 },
 
   gridRow:              { gap: 2 },
-  gridCell:             {
-    width: CELL, height: CELL, backgroundColor: '#1a1a2e',
-    overflow: 'hidden', position: 'relative', margin: 1,
-  },
+  gridCell:             { width: CELL, height: CELL, backgroundColor: '#1a1a2e', overflow: 'hidden', position: 'relative', margin: 1 },
   gridThumb:            { width: '100%', height: '100%' },
   gridThumbPlaceholder: { justifyContent: 'center', alignItems: 'center', backgroundColor: '#111' },
   gridIgPlaceholder:    { justifyContent: 'center', alignItems: 'center', backgroundColor: '#C13584', gap: 4 },
   gridIgText:           { color: '#fff', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
-  gridPlayBadge:        {
-    position: 'absolute', top: '50%', left: '50%',
-    transform: [{ translateX: -11 }, { translateY: -11 }],
-  },
-  gridYtBadge: {
-    position: 'absolute', bottom: 4, right: 4,
-    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 4, padding: 3,
-  },
-  gridIgBadge: {
-    position: 'absolute', bottom: 4, right: 4,
-    backgroundColor: 'rgba(193,53,132,0.85)', borderRadius: 4, padding: 3,
-  },
+  gridPlayBadge:        { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -11 }, { translateY: -11 }] },
+  gridYtBadge:          { position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 4, padding: 3 },
+  gridIgBadge:          { position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(193,53,132,0.85)', borderRadius: 4, padding: 3 },
 
-  buildCard:      {
-    backgroundColor: '#1a1a2e', borderRadius: 12, padding: 14,
-    marginBottom: 12, borderWidth: 1, borderColor: '#2a2a4a',
-  },
+  buildCard:      { backgroundColor: '#1a1a2e', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#2a2a4a' },
   buildHeader:    { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   buildName:      { color: '#fff', fontWeight: '700', fontSize: 15 },
   buildSpec:      { color: '#ccc', fontSize: 13, lineHeight: 20 },
   buildSpecLabel: { color: '#00d4ff', fontWeight: '600' },
   buildNotes:     { color: '#888', fontSize: 12, marginTop: 6, fontStyle: 'italic' },
 
-  fab: {
-    alignSelf: 'flex-end', margin: 20,
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: '#00d4ff', justifyContent: 'center', alignItems: 'center',
-    shadowColor: '#00d4ff', shadowOpacity: 0.5, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 }, elevation: 8,
-  },
+  fab: { alignSelf: 'flex-end', margin: 20, width: 56, height: 56, borderRadius: 28, backgroundColor: '#00d4ff', justifyContent: 'center', alignItems: 'center', shadowColor: '#00d4ff', shadowOpacity: 0.5, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
 
   detailRoot:   { flex: 1, backgroundColor: '#0a0a1a' },
-  detailHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 54 : 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: '#1e1e3a',
-  },
-  detailTitle: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  detailHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 54 : 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#1e1e3a' },
+  detailTitle:  { color: '#fff', fontWeight: '700', fontSize: 16 },
 
   modalRoot:   { flex: 1, backgroundColor: '#0a0a1a' },
-  modalHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 54 : 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: '#1e1e3a',
-  },
-  modalTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  modalBody:  { padding: 20, gap: 12 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 54 : 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#1e1e3a' },
+  modalTitle:  { color: '#fff', fontWeight: '700', fontSize: 18 },
+  modalBody:   { padding: 16, paddingBottom: 40 },
 
-  settingsSection:      {
-    backgroundColor: '#1a1a2e', borderRadius: 12, padding: 14,
-    borderWidth: 1, borderColor: '#2a2a4a',
-  },
-  settingsSectionTitle: { color: '#888', fontSize: 11, fontWeight: '700', marginBottom: 10, textTransform: 'uppercase' },
-  settingsRow:          {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', paddingVertical: 6,
-  },
-  settingsLabel: { color: '#ccc', fontSize: 14 },
-  settingsValue: { color: '#888', fontSize: 14 },
+  settingsSection:      { marginBottom: 24 },
+  settingsSectionTitle: { color: '#00d4ff', fontSize: 11, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8 },
+  settingsRow:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10 },
+  settingsLabel:        { color: '#ccc', fontSize: 14 },
+  settingsValue:        { color: '#888', fontSize: 13 },
 
-  ytAuthBtn:       { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, minWidth: 80, alignItems: 'center' },
-  ytAuthBtnLink:   { backgroundColor: '#FF0000' },
-  ytAuthBtnUnlink: { backgroundColor: '#333', borderWidth: 1, borderColor: '#555' },
-  ytAuthBtnText:   { color: '#fff', fontWeight: '700', fontSize: 13 },
+  inputLabel: { color: '#aaa', fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 14 },
+  input:      { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#2a2a4a', borderRadius: 10, color: '#fff', paddingHorizontal: 14, paddingVertical: 10, fontSize: 14 },
+  inputError: { borderColor: '#e74c3c' },
+  errorText:  { color: '#e74c3c', fontSize: 12, marginTop: 4 },
+  charCount:  { color: '#555', fontSize: 11, textAlign: 'right', marginTop: 4 },
 
-  signOutBtn:  {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#1a1a2e', borderRadius: 12, padding: 14,
-    borderWidth: 1, borderColor: '#e74c3c33', gap: 8,
-  },
-  signOutText: { color: '#e74c3c', fontWeight: '700', fontSize: 15 },
-
-  inputLabel:     { color: '#aaa', fontSize: 12, fontWeight: '600', marginBottom: 4 },
-  input:          {
-    backgroundColor: '#1e1e3a', borderRadius: 10, padding: 12,
-    color: '#fff', fontSize: 14, borderWidth: 1, borderColor: '#2a2a4a',
-  },
-  inputError:     { borderColor: '#e74c3c' },
-  errorText:      { color: '#e74c3c', fontSize: 12, marginTop: 2 },
-  charCount:      { color: '#555', fontSize: 11, textAlign: 'right' },
   socialInputRow: { flexDirection: 'row', alignItems: 'center' },
 
-  primaryBtn:         { backgroundColor: '#00d4ff', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  primaryBtn:         { backgroundColor: '#00d4ff', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 20, flexDirection: 'row', justifyContent: 'center' },
   primaryBtnDisabled: { opacity: 0.5 },
-  primaryBtnText:     { color: '#000', fontWeight: '800', fontSize: 15 },
+  primaryBtnText:     { color: '#000', fontWeight: '700', fontSize: 15 },
 
-  emptyState: { alignItems: 'center', paddingVertical: 60 },
-  emptyText:  { color: '#555', fontSize: 14, marginTop: 12 },
+  ytAuthBtn:       { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
+  ytAuthBtnLink:   { backgroundColor: '#1e3a1e', borderWidth: 1, borderColor: '#4caf50' },
+  ytAuthBtnUnlink: { backgroundColor: '#3a1e1e', borderWidth: 1, borderColor: '#e74c3c' },
+  ytAuthBtnText:   { color: '#fff', fontSize: 12, fontWeight: '600' },
+
+  signOutBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: '#3a1e1e', backgroundColor: '#1a0a0a' },
+  signOutText: { color: '#e74c3c', fontWeight: '600', fontSize: 14 },
+
+  // MultiGP styles
+  mgpConnectedCard:  { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a2e', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#ff4500' },
+  mgpChapterName:    { color: '#fff', fontWeight: '700', fontSize: 16 },
+  mgpChapterId:      { color: '#888', fontSize: 12, marginTop: 2 },
+  mgpLastSync:       { color: '#666', fontSize: 11, marginTop: 4 },
+  mgpSyncMsg:        { textAlign: 'center', color: '#00d4ff', fontSize: 13, marginTop: 12, fontWeight: '600' },
+  mgpInstructions:   { color: '#ccc', fontSize: 14, lineHeight: 20, marginBottom: 8 },
+  mgpHint:           { color: '#666', fontSize: 12, lineHeight: 18, marginBottom: 16, fontStyle: 'italic' },
+  mgpValidResult:    { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 8, borderWidth: 1, marginTop: 8, backgroundColor: '#0f0f1a' },
+  mgpValidText:      { fontSize: 13, fontWeight: '600', flex: 1 },
 });
