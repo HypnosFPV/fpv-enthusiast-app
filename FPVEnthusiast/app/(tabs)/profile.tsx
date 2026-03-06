@@ -343,14 +343,16 @@ export default function ProfileScreen() {
           <Ionicons name="trash-outline" size={18} color="#e74c3c" />
         </TouchableOpacity>
       </View>
-      {(['Frame', item.frame], ['Motors', item.motors], ['FC', item.fc], ['VTX', item.vtx], ['Camera', item.camera] as any)
-        && ([['Frame', item.frame], ['Motors', item.motors], ['FC', item.fc], ['VTX', item.vtx], ['Camera', item.camera]] as [string, string | null | undefined][])
-          .filter(([, v]) => !!v)
-          .map(([label, val]) => (
-            <Text key={label} style={styles.buildSpec}>
-              <Text style={styles.buildSpecLabel}>{label}: </Text>{val}
-            </Text>
-          ))}
+      {([
+        ['Frame', item.frame], ['Motors', item.motors], ['FC', item.fc],
+        ['VTX', item.vtx],     ['Camera', item.camera],
+      ] as [string, string | null | undefined][])
+        .filter(([, v]) => !!v)
+        .map(([label, val]) => (
+          <Text key={label} style={styles.buildSpec}>
+            <Text style={styles.buildSpecLabel}>{label}: </Text>{val}
+          </Text>
+        ))}
       {item.notes ? <Text style={styles.buildNotes}>{item.notes}</Text> : null}
     </View>
   ), [deleteBuild]);
