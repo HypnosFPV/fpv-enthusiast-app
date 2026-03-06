@@ -879,4 +879,15 @@ const styles = StyleSheet.create({
   mgpHint:           { color: '#666', fontSize: 12, lineHeight: 18, marginBottom: 16, fontStyle: 'italic' },
   mgpValidResult:    { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 8, borderWidth: 1, marginTop: 8, backgroundColor: '#0f0f1a' },
   mgpValidText:      { fontSize: 13, fontWeight: '600', flex: 1 },
+    mgpHelpLink:      { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 16, marginTop: 4 },
+  mgpHelpLinkText:  { color: '#00d4ff', fontSize: 13, textDecorationLine: 'underline' },
+  mgpHelpBox:       { backgroundColor: '#0f1a2e', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#1e3a5a' },
+  mgpHelpTitle:     { color: '#fff', fontWeight: '700', fontSize: 14, marginBottom: 12 },
+  mgpHelpStep:      { color: '#ccc', fontSize: 13, lineHeight: 22, marginBottom: 4 },
+  mgpHelpNum:       { color: '#00d4ff', fontWeight: '700' },
+  mgpHelpBold:      { color: '#fff', fontWeight: '600' },
+  mgpHelpNote:      { color: '#888', fontSize: 12, lineHeight: 18, marginTop: 10, fontStyle: 'italic' },
+  mgpHelpClose:     { backgroundColor: '#1e3a5a', borderRadius: 8, paddingVertical: 8, alignItems: 'center', marginTop: 12 },
+  mgpHelpCloseText: { color: '#00d4ff', fontWeight: '600', fontSize: 13 },
+
 });
