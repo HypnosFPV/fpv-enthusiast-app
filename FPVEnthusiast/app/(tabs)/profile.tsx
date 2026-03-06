@@ -622,8 +622,37 @@ export default function ProfileScreen() {
                   Enter your MultiGP Timing System API key to link your chapter. Upcoming races will auto-sync to the map.
                 </Text>
                 <Text style={styles.mgpHint}>
-                  Find your key at multigp.com → Chapter Dashboard → Settings → Timing System Key
-                </Text>
+  Find your key at multigp.com → Chapter Dashboard → Settings → Timing System Key
+</Text>
+
+<TouchableOpacity
+  style={styles.mgpHelpLink}
+  onPress={() => setShowMgpHelp(true)}
+>
+  <Ionicons name="help-circle-outline" size={15} color="#00d4ff" />
+  <Text style={styles.mgpHelpLinkText}>How do I find my API key?</Text>
+</TouchableOpacity>
+
+{showMgpHelp && (
+  <View style={styles.mgpHelpBox}>
+    <Text style={styles.mgpHelpTitle}>📡 How to Get Your MultiGP API Key</Text>
+
+    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>1. </Text>Go to <Text style={styles.mgpHelpBold}>multigp.com</Text> and sign in as a Chapter Organizer</Text>
+    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>2. </Text>Click your chapter name in the top navigation bar</Text>
+    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>3. </Text>Select <Text style={styles.mgpHelpBold}>Chapter Dashboard</Text> from the dropdown</Text>
+    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>4. </Text>Click <Text style={styles.mgpHelpBold}>Chapter Configuration</Text> or <Text style={styles.mgpHelpBold}>Settings</Text> in the left menu</Text>
+    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>5. </Text>Look for <Text style={styles.mgpHelpBold}>Timing System Key</Text> — copy and paste it above</Text>
+
+    <Text style={styles.mgpHelpNote}>⚠️ Only Chapter Organizers can access this key. If you are a member but not an organizer, ask your chapter admin to link the chapter instead.</Text>
+
+    <TouchableOpacity
+      style={styles.mgpHelpClose}
+      onPress={() => setShowMgpHelp(false)}
+    >
+      <Text style={styles.mgpHelpCloseText}>Got it ✓</Text>
+    </TouchableOpacity>
+  </View>
+)}
 
                 <Text style={styles.inputLabel}>Timing System API Key</Text>
                 <TextInput
