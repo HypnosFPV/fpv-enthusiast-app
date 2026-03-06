@@ -124,7 +124,7 @@ export function useMap(userId?: string) {
       const { minLat, maxLat, minLng, maxLng } = boundingBox(lat, lng, radiusMiles);
       const { data, error } = await supabase
         .from('fly_spots')
-        .select('*, users:created_by(username)')
+        .select('*, creator:created_by(username)')
         .gte('latitude',  minLat).lte('latitude',  maxLat)
         .gte('longitude', minLng).lte('longitude', maxLng)
         .in('spot_type', typeFilters.length
@@ -132,7 +132,7 @@ export function useMap(userId?: string) {
           : ['freestyle','bando','race_track','open_field','indoor']);
       if (error) throw error;
       const filtered = (data ?? [])
-        .map((s: any) => ({ ...s, creator_username: s.users?.username ?? null }))
+        .map((s: any) => ({ ...s, creator_username: s.creator?.username ?? null }))
         .filter((s: FlySpot) =>
           haversineDistance(lat, lng, s.latitude, s.longitude) <= radiusMiles
         );
@@ -154,7 +154,7 @@ export function useMap(userId?: string) {
       const { minLat, maxLat, minLng, maxLng } = boundingBox(lat, lng, radiusMiles);
       const { data, error } = await supabase
         .from('race_events')
-        .select('*, users:organizer_id(username)')
+        .select('*, organizer:organizer_id(username)')
         .gte('latitude',  minLat).lte('latitude',  maxLat)
         .gte('longitude', minLng).lte('longitude', maxLng)
         .in('event_type', typeFilters.length
@@ -177,7 +177,7 @@ export function useMap(userId?: string) {
       const filtered = (data ?? [])
         .map((e: any) => ({
           ...e,
-          organizer_username: e.users?.username ?? null,
+          organizer_username: e.organizer?.username ?? null,
           user_rsvpd: rsvpdIds.includes(e.id),
         }))
         .filter((e: RaceEvent) =>

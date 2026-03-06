@@ -17,7 +17,12 @@
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#0a0a0a"
       },
-      "package": "com.fpventhusiast.app"
+      "package": "com.fpventhusiast.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY_HERE"
+        }
+      }
     },
     "web": {
       "bundler": "metro",

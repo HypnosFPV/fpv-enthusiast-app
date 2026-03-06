@@ -4,6 +4,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
   FlatList, ActivityIndicator, Platform, Alert, ScrollView,
   KeyboardAvoidingView, Dimensions, SafeAreaView, Switch,
+  Animated, Easing,
 } from 'react-native';
 import MapView, { Marker, Circle, PROVIDER_GOOGLE, MapPressEvent } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -32,11 +33,11 @@ const DARK_MAP_STYLE = [
 
 // ─── Config ────────────────────────────────────────────────────────────────────
 const SPOT_CONFIG: Record<string, { color: string; label: string; icon: string }> = {
-  freestyle:  { color: '#00C853', label: 'Freestyle',  icon: 'bicycle'   },
-  bando:      { color: '#FF6D00', label: 'Bando',      icon: 'business'  },
-  race_track: { color: '#2979FF', label: 'Race Track', icon: 'flag'      },
-  open_field: { color: '#FFD600', label: 'Open Field', icon: 'leaf'      },
-  indoor:     { color: '#E040FB', label: 'Indoor',     icon: 'home'      },
+  freestyle:  { color: '#00C853', label: 'Freestyle',  icon: 'bicycle'  },
+  bando:      { color: '#FF6D00', label: 'Bando',      icon: 'business' },
+  race_track: { color: '#2979FF', label: 'Race Track', icon: 'flag'     },
+  open_field: { color: '#FFD600', label: 'Open Field', icon: 'leaf'     },
+  indoor:     { color: '#E040FB', label: 'Indoor',     icon: 'home'     },
 };
 
 const EVENT_CONFIG: Record<string, { color: string; label: string; icon: string }> = {
@@ -76,9 +77,9 @@ function PinMarker({ color, icon, isMultiGP }: { color: string; icon: string; is
   );
 }
 const pStyles = StyleSheet.create({
-  circle: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: '#fff', justifyContent: 'center', alignItems: 'center' },
-  tail:   { width: 0, height: 0, borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 7, borderLeftColor: 'transparent', borderRightColor: 'transparent' },
-  badge:  { position: 'absolute', top: -5, right: -8, backgroundColor: '#FF6D00', borderRadius: 7, width: 14, height: 14, justifyContent: 'center', alignItems: 'center' },
+  circle:    { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: '#fff', justifyContent: 'center', alignItems: 'center' },
+  tail:      { width: 0, height: 0, borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 7, borderLeftColor: 'transparent', borderRightColor: 'transparent' },
+  badge:     { position: 'absolute', top: -5, right: -8, backgroundColor: '#FF6D00', borderRadius: 7, width: 14, height: 14, justifyContent: 'center', alignItems: 'center' },
   badgeText: { color: '#fff', fontSize: 7, fontWeight: '900' },
 });
 
@@ -93,6 +94,21 @@ export default function MapScreen() {
   } = useMap(user?.id);
 
   const mapRef = useRef<MapView>(null);
+
+  // ── Animated title (matches Feed tab) ──────────────────────────────────────
+  const animValue = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(animValue, {
+        toValue: 1, duration: 3000,
+        easing: Easing.linear, useNativeDriver: false,
+      })
+    ).start();
+  }, [animValue]);
+  const animatedColor = animValue.interpolate({
+    inputRange:  [0,         0.25,      0.5,       0.75,      1        ],
+    outputRange: ['#ff4500','#ff8c00','#ffcc00','#ff6600','#ff4500'],
+  });
 
   // location
   const [userLocation,    setUserLocation]    = useState<{ latitude: number; longitude: number } | null>(null);
@@ -122,10 +138,10 @@ export default function MapScreen() {
   const [showAddEvent,  setShowAddEvent]  = useState(false);
 
   // add-spot form
-  const [spotName,    setSpotName]   = useState('');
-  const [spotDesc,    setSpotDesc]   = useState('');
-  const [spotType,    setSpotType]   = useState<FlySpot['spot_type']>('freestyle');
-  const [spotHazard,  setSpotHazard] = useState<FlySpot['hazard_level']>('low');
+  const [spotName,   setSpotName]   = useState('');
+  const [spotDesc,   setSpotDesc]   = useState('');
+  const [spotType,   setSpotType]   = useState<FlySpot['spot_type']>('freestyle');
+  const [spotHazard, setSpotHazard] = useState<FlySpot['hazard_level']>('low');
 
   // add-event form
   const [evtName,  setEvtName]  = useState('');
@@ -140,10 +156,10 @@ export default function MapScreen() {
   const [evtUrl,   setEvtUrl]   = useState('');
 
   // comment form
-  const [commentText,     setCommentText]     = useState('');
-  const [isAnonymous,     setIsAnonymous]     = useState(false);
-  const [submitting,      setSubmitting]      = useState(false);
-  const [postingComment,  setPostingComment]  = useState(false);
+  const [commentText,    setCommentText]    = useState('');
+  const [isAnonymous,    setIsAnonymous]    = useState(false);
+  const [submitting,     setSubmitting]     = useState(false);
+  const [postingComment, setPostingComment] = useState(false);
 
   // current vote state for selected spot
   const [currentVote, setCurrentVote] = useState<1 | -1 | null>(null);
@@ -177,18 +193,14 @@ export default function MapScreen() {
   const handleMapPress = (e: MapPressEvent) => {
     const coords = e.nativeEvent.coordinate;
     if (spotPinMode) {
-      setSpotPin(coords);
-      setSpotPinMode(false);
-      setShowAddSpot(true);
+      setSpotPin(coords); setSpotPinMode(false); setShowAddSpot(true);
     } else if (evtPinMode) {
-      setEvtPin(coords);
-      setEvtPinMode(false);
-      setShowAddEvent(true);
+      setEvtPin(coords); setEvtPinMode(false); setShowAddEvent(true);
     }
   };
 
   // ── Toggle filters ──────────────────────────────────────────────────────────
-  const toggleSpotType = (t: string) =>
+  const toggleSpotType  = (t: string) =>
     setSpotTypeFilters(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
   const toggleEventType = (t: string) =>
     setEventTypeFilters(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
@@ -200,11 +212,9 @@ export default function MapScreen() {
     }
     setSubmitting(true);
     const { data, error } = await addSpot(
-      {
-        name: spotName.trim(), description: spotDesc.trim(),
+      { name: spotName.trim(), description: spotDesc.trim(),
         spot_type: spotType, hazard_level: spotHazard,
-        latitude: spotPin.latitude, longitude: spotPin.longitude,
-      },
+        latitude: spotPin.latitude, longitude: spotPin.longitude },
       user?.email ?? 'Pilot',
     );
     setSubmitting(false);
@@ -240,9 +250,7 @@ export default function MapScreen() {
 
   // ── Open spot detail ────────────────────────────────────────────────────────
   const openSpot = async (spot: FlySpot) => {
-    setSelectedSpot(spot);
-    setCurrentVote(null);
-    setCommentText('');
+    setSelectedSpot(spot); setCurrentVote(null); setCommentText('');
     await fetchComments(spot.id);
   };
 
@@ -251,8 +259,7 @@ export default function MapScreen() {
     if (!selectedSpot || !commentText.trim()) return;
     setPostingComment(true);
     await addComment(selectedSpot.id, commentText.trim(), isAnonymous);
-    setCommentText('');
-    setPostingComment(false);
+    setCommentText(''); setPostingComment(false);
   };
 
   // ── Vote ────────────────────────────────────────────────────────────────────
@@ -318,7 +325,10 @@ export default function MapScreen() {
             coordinate={{ latitude: spot.latitude, longitude: spot.longitude }}
             onPress={() => openSpot(spot)}
           >
-            <PinMarker color={SPOT_CONFIG[spot.spot_type]?.color ?? '#888'} icon={SPOT_CONFIG[spot.spot_type]?.icon ?? 'location'} />
+            <PinMarker
+              color={SPOT_CONFIG[spot.spot_type]?.color ?? '#888'}
+              icon={SPOT_CONFIG[spot.spot_type]?.icon ?? 'location'}
+            />
           </Marker>
         ))}
         {visibleEvents.map(evt => (
@@ -368,47 +378,71 @@ export default function MapScreen() {
       <SafeAreaView style={styles.headerSafe} pointerEvents="box-none">
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={styles.headerTitle}>FPV Map</Text>
+            <Animated.Text style={[styles.headerTitle, { color: animatedColor }]}>
+              FPV Map
+            </Animated.Text>
+            <Text style={styles.headerSub}>
+              {radiusMiles}mi · {spots.length + events.length} pins
+            </Text>
             {loading && <ActivityIndicator size="small" color="#ff4500" style={{ marginLeft: 8 }} />}
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => setActiveView(v => v === 'map' ? 'events' : 'map')}>
-              <Ionicons name={activeView === 'map' ? 'list-outline' : 'map-outline'} size={20} color="#fff" />
+            <TouchableOpacity
+              style={[styles.iconBtn, activeView === 'events' && styles.iconBtnActive]}
+              onPress={() => setActiveView(v => v === 'map' ? 'events' : 'map')}
+            >
+              <Ionicons
+                name={activeView === 'map' ? 'list-outline' : 'map-outline'}
+                size={20}
+                color={activeView === 'events' ? '#ff4500' : '#fff'}
+              />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn} onPress={() => setShowFilterPanel(true)}>
               <Ionicons name="options-outline" size={20} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn} onPress={() => {
-              if (userLocation) mapRef.current?.animateToRegion({ ...userLocation, latitudeDelta: 0.3, longitudeDelta: 0.3 }, 600);
+              if (userLocation) mapRef.current?.animateToRegion(
+                { ...userLocation, latitudeDelta: 0.3, longitudeDelta: 0.3 }, 600,
+              );
             }}>
               <Ionicons name="locate-outline" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Legend chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.legendRow}>
-          {Object.entries(SPOT_CONFIG).map(([key, cfg]) => (
-            <TouchableOpacity
-              key={key}
-              style={[styles.legendChip, !spotTypeFilters.includes(key) && styles.legendChipOff]}
-              onPress={() => toggleSpotType(key)}
-            >
-              <View style={[styles.legendDot, { backgroundColor: cfg.color }]} />
-              <Text style={styles.legendLabel}>{cfg.label}</Text>
-            </TouchableOpacity>
-          ))}
-          {Object.entries(EVENT_CONFIG).map(([key, cfg]) => (
-            <TouchableOpacity
-              key={key}
-              style={[styles.legendChip, !eventTypeFilters.includes(key) && styles.legendChipOff]}
-              onPress={() => toggleEventType(key)}
-            >
-              <View style={[styles.legendDot, { backgroundColor: cfg.color }]} />
-              <Text style={styles.legendLabel}>{cfg.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {/* ── Legend: Spots ────────────────────────────────────────────────── */}
+        <View style={styles.legendSection}>
+          <Text style={styles.legendSectionLabel}>📍 SPOTS</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.legendRow}>
+            {Object.entries(SPOT_CONFIG).map(([key, cfg]) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.legendChip, { borderColor: cfg.color }, !spotTypeFilters.includes(key) && styles.legendChipOff]}
+                onPress={() => toggleSpotType(key)}
+              >
+                <View style={[styles.legendDot, { backgroundColor: cfg.color }]} />
+                <Text style={styles.legendLabel}>{cfg.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* ── Legend: Events ───────────────────────────────────────────────── */}
+        <View style={[styles.legendSection, { marginBottom: 4 }]}>
+          <Text style={styles.legendSectionLabel}>🏁 EVENTS</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.legendRow}>
+            {Object.entries(EVENT_CONFIG).map(([key, cfg]) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.legendChip, { borderColor: cfg.color }, !eventTypeFilters.includes(key) && styles.legendChipOff]}
+                onPress={() => toggleEventType(key)}
+              >
+                <View style={[styles.legendDot, { backgroundColor: cfg.color }]} />
+                <Text style={styles.legendLabel}>{cfg.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
       </SafeAreaView>
 
       {/* ── Events list view ─────────────────────────────────────────────────── */}
@@ -424,7 +458,7 @@ export default function MapScreen() {
               <View style={styles.emptyWrap}>
                 <Ionicons name="calendar-outline" size={44} color="#333" />
                 <Text style={styles.emptyText}>No events in this area</Text>
-                <Text style={styles.emptySub}>Tap the calendar FAB to post one!</Text>
+                <Text style={styles.emptySub}>Tap the Event FAB to post one!</Text>
               </View>
             }
             renderItem={({ item: evt }) => {
@@ -638,7 +672,6 @@ export default function MapScreen() {
             <View style={styles.sheetHandle} />
             {selectedSpot && (
               <>
-                {/* Spot header */}
                 <View style={styles.detailHeader}>
                   <View style={[styles.detailTypeBadge, { backgroundColor: SPOT_CONFIG[selectedSpot.spot_type]?.color ?? '#888' }]}>
                     <Text style={styles.detailTypeTxt}>{SPOT_CONFIG[selectedSpot.spot_type]?.label}</Text>
@@ -656,29 +689,17 @@ export default function MapScreen() {
                 {selectedSpot.description ? (
                   <Text style={styles.detailDesc}>{selectedSpot.description}</Text>
                 ) : null}
-
-                {/* Votes */}
                 <View style={styles.voteRow}>
-                  <TouchableOpacity
-                    style={[styles.voteBtn, currentVote === 1 && styles.voteBtnActive]}
-                    onPress={() => handleVote(1)}
-                  >
+                  <TouchableOpacity style={[styles.voteBtn, currentVote === 1 && styles.voteBtnActive]} onPress={() => handleVote(1)}>
                     <Ionicons name="thumbs-up" size={18} color={currentVote === 1 ? '#fff' : '#00C853'} />
                     <Text style={[styles.voteCount, currentVote === 1 && { color: '#fff' }]}>{selectedSpot.thumbs_up}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.voteBtn, styles.voteBtnDown, currentVote === -1 && styles.voteBtnDownActive]}
-                    onPress={() => handleVote(-1)}
-                  >
+                  <TouchableOpacity style={[styles.voteBtn, styles.voteBtnDown, currentVote === -1 && styles.voteBtnDownActive]} onPress={() => handleVote(-1)}>
                     <Ionicons name="thumbs-down" size={18} color={currentVote === -1 ? '#fff' : '#FF1744'} />
                     <Text style={[styles.voteCount, currentVote === -1 && { color: '#fff' }]}>{selectedSpot.thumbs_down}</Text>
                   </TouchableOpacity>
                 </View>
-
-                {/* Comments */}
-                <Text style={styles.commentsHeader}>
-                  Comments ({comments.length})
-                </Text>
+                <Text style={styles.commentsHeader}>Comments ({comments.length})</Text>
                 <FlatList
                   data={comments}
                   keyExtractor={c => c.id}
@@ -698,8 +719,6 @@ export default function MapScreen() {
                     </View>
                   )}
                 />
-
-                {/* Add comment */}
                 <View style={styles.commentInputRow}>
                   <TextInput
                     style={styles.commentInput}
@@ -715,12 +734,7 @@ export default function MapScreen() {
                   </TouchableOpacity>
                 </View>
                 <View style={styles.anonRow}>
-                  <Switch
-                    value={isAnonymous}
-                    onValueChange={setIsAnonymous}
-                    trackColor={{ false: '#333', true: '#ff4500' }}
-                    thumbColor="#fff"
-                  />
+                  <Switch value={isAnonymous} onValueChange={setIsAnonymous} trackColor={{ false: '#333', true: '#ff4500' }} thumbColor="#fff" />
                   <Text style={styles.anonLabel}>Post anonymously</Text>
                 </View>
               </>
@@ -762,7 +776,6 @@ export default function MapScreen() {
                 {selectedEvent.description ? (
                   <Text style={styles.detailDesc}>{selectedEvent.description}</Text>
                 ) : null}
-
                 <View style={styles.eventDetailFooter}>
                   <View style={styles.rsvpCountWrap}>
                     <Text style={styles.rsvpCountNum}>{selectedEvent.rsvp_count}</Text>
@@ -783,7 +796,6 @@ export default function MapScreen() {
                     <Text style={styles.rsvpBtnText}>{selectedEvent.user_rsvpd ? "I'm Going ✓" : "RSVP"}</Text>
                   </TouchableOpacity>
                 </View>
-
                 {selectedEvent.registration_url ? (
                   <Text style={styles.regLink} numberOfLines={1}>🔗 {selectedEvent.registration_url}</Text>
                 ) : null}
@@ -799,140 +811,142 @@ export default function MapScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container:    { flex: 1, backgroundColor: '#0a0a0a' },
+  container: { flex: 1, backgroundColor: '#0a0a0a' },
 
   // Permission screen
-  permScreen:   { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a', padding: 32 },
-  permTitle:    { color: '#fff', fontSize: 22, fontWeight: '700', marginTop: 16, marginBottom: 8 },
-  permDesc:     { color: '#888', fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
-  permBtn:      { backgroundColor: '#ff4500', paddingHorizontal: 28, paddingVertical: 12, borderRadius: 24 },
-  permBtnText:  { color: '#fff', fontWeight: '700', fontSize: 15 },
+  permScreen:  { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a', padding: 32 },
+  permTitle:   { color: '#fff', fontSize: 22, fontWeight: '700', marginTop: 16, marginBottom: 8 },
+  permDesc:    { color: '#888', fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  permBtn:     { backgroundColor: '#ff4500', paddingHorizontal: 28, paddingVertical: 12, borderRadius: 24 },
+  permBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
   // Header
-  headerSafe:   { position: 'absolute', top: 0, left: 0, right: 0 },
-  header:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 6 },
-  headerLeft:   { flexDirection: 'row', alignItems: 'center' },
-  headerTitle:  { color: '#fff', fontSize: 20, fontWeight: '800', textShadowColor: '#000', textShadowRadius: 6 },
-  headerRight:  { flexDirection: 'row', gap: 6 },
-  iconBtn:      { backgroundColor: 'rgba(0,0,0,0.65)', padding: 8, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
+  headerSafe:       { position: 'absolute', top: 0, left: 0, right: 0 },
+  header:           { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 4 },
+  headerLeft:       { flexDirection: 'column' },
+  headerTitle:      { fontSize: 22, fontWeight: '800', letterSpacing: 1, textShadowColor: '#000', textShadowRadius: 6 },
+  headerSub:        { color: '#888', fontSize: 11, fontWeight: '500', marginTop: 1 },
+  headerRight:      { flexDirection: 'row', gap: 6 },
+  iconBtn:          { backgroundColor: 'rgba(0,0,0,0.65)', padding: 8, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
+  iconBtnActive:    { borderColor: '#ff4500', backgroundColor: 'rgba(255,69,0,0.15)' },
 
-  // Legend chips
-  legendRow:    { paddingHorizontal: 10, paddingVertical: 4, gap: 6 },
-  legendChip:   { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1, borderColor: '#333', gap: 5 },
-  legendChipOff:{ opacity: 0.35 },
-  legendDot:    { width: 8, height: 8, borderRadius: 4 },
-  legendLabel:  { color: '#ddd', fontSize: 11, fontWeight: '600' },
+  // Legend
+  legendSection:      { paddingLeft: 10, paddingBottom: 2 },
+  legendSectionLabel: { color: '#666', fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 3, marginLeft: 2 },
+  legendRow:          { paddingRight: 10, gap: 6, flexDirection: 'row' },
+  legendChip:         { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 14, borderWidth: 1, gap: 4 },
+  legendChipOff:      { opacity: 0.3 },
+  legendDot:          { width: 7, height: 7, borderRadius: 4 },
+  legendLabel:        { color: '#ddd', fontSize: 10, fontWeight: '700' },
 
   // Pin drop overlay
-  pinDropOverlay: { position: 'absolute', bottom: 110, left: 0, right: 0, alignItems: 'center' },
-  pinDropBanner:  { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.85)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, gap: 8, borderWidth: 1, borderColor: '#ff4500' },
-  pinDropText:    { color: '#fff', fontWeight: '600', fontSize: 13 },
-  pinDropCancel:  { marginTop: 8, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 16 },
-  pinDropCancelText: { color: '#ff4500', fontWeight: '700' },
+  pinDropOverlay:    { position: 'absolute', bottom: 110, left: 0, right: 0, alignItems: 'center' },
+  pinDropBanner:     { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.85)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, gap: 8, borderWidth: 1, borderColor: '#ff4500' },
+  pinDropText:       { color: '#fff', fontWeight: '600', fontSize: 13 },
+  pinDropCancel:     { marginTop: 10, backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: '#444' },
+  pinDropCancelText: { color: '#ccc', fontWeight: '600', fontSize: 13 },
 
   // Events panel
-  eventsPanel:      { position: 'absolute', top: 120, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(10,10,10,0.96)' },
-  eventsPanelTitle: { color: '#aaa', fontSize: 12, fontWeight: '600', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  eventRow:         { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  eventsPanel:      { position: 'absolute', top: 180, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(10,10,10,0.97)' },
+  eventsPanelTitle: { color: '#888', fontSize: 12, fontWeight: '700', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  eventRow:         { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#1a1a1a', marginHorizontal: 12, marginVertical: 4, borderRadius: 10, overflow: 'hidden', backgroundColor: '#111' },
   eventTypeBar:     { width: 4 },
-  eventRowBody:     { flex: 1, padding: 12 },
-  eventRowTop:      { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
-  eventRowName:     { color: '#fff', fontWeight: '700', fontSize: 15, flex: 1 },
-  eventRowDate:     { color: '#aaa', fontSize: 12, marginBottom: 2 },
-  eventRowLoc:      { color: '#777', fontSize: 12, marginBottom: 6 },
-  eventRowFooter:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  eventRowBody:     { flex: 1, padding: 10 },
+  eventRowTop:      { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
+  eventRowName:     { color: '#fff', fontWeight: '700', fontSize: 14, flex: 1 },
+  eventRowDate:     { color: '#888', fontSize: 12, marginBottom: 2 },
+  eventRowLoc:      { color: '#666', fontSize: 11, marginBottom: 4 },
+  eventRowFooter:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   eventTypePill:    { fontSize: 11, fontWeight: '700' },
-  eventRowRsvp:     { color: '#888', fontSize: 11 },
-  multigpBadge:     { backgroundColor: '#FF6D00', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  multigpText:      { color: '#fff', fontSize: 10, fontWeight: '800' },
-
-  // Empty state
-  emptyWrap:  { alignItems: 'center', paddingTop: 60, gap: 8 },
-  emptyText:  { color: '#555', fontSize: 16, fontWeight: '600' },
-  emptySub:   { color: '#444', fontSize: 13 },
+  eventRowRsvp:     { color: '#666', fontSize: 11 },
+  emptyWrap:        { alignItems: 'center', paddingTop: 60, gap: 8 },
+  emptyText:        { color: '#555', fontSize: 16, fontWeight: '600' },
+  emptySub:         { color: '#444', fontSize: 13 },
 
   // FABs
-  fabGroup:   { position: 'absolute', bottom: 28, right: 16, gap: 10 },
-  fab:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ff4500', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 24, gap: 6, shadowColor: '#ff4500', shadowOpacity: 0.4, shadowRadius: 8, elevation: 6 },
-  fabEvent:   { backgroundColor: '#1a4a6b' },
-  fabLabel:   { color: '#fff', fontWeight: '700', fontSize: 13 },
+  fabGroup: { position: 'absolute', bottom: 32, right: 16, gap: 10, alignItems: 'flex-end' },
+  fab:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ff4500', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 24, gap: 6, elevation: 6, shadowColor: '#ff4500', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 },
+  fabEvent: { backgroundColor: '#1a3a5c' },
+  fabLabel: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
-  // Modal base
-  modalWrap:  { flex: 1, justifyContent: 'flex-end' },
-  backdrop:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
-  sheet:      { backgroundColor: '#111', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
-  sheetHandle:{ width: 40, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  sheetTitle: { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 16 },
-  sheetSection:{ color: '#888', fontSize: 12, fontWeight: '700', letterSpacing: 0.8, marginBottom: 8, marginTop: 4 },
+  // Sheet / Modal
+  modalWrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
+  backdrop:  { ...StyleSheet.absoluteFillObject },
+  sheet:     { backgroundColor: '#111', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 32 },
+  sheetHandle: { width: 36, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 14 },
+  sheetTitle:  { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 16 },
+  sheetSection:{ color: '#888', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 8, marginTop: 4 },
 
   // Radius
-  radiusRow:  { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  radiusBtn:  { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: '#1a1a1a', alignItems: 'center', borderWidth: 1, borderColor: '#333' },
-  radiusBtnActive: { backgroundColor: '#ff4500', borderColor: '#ff4500' },
-  radiusBtnText:   { color: '#888', fontWeight: '600', fontSize: 12 },
+  radiusRow:      { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  radiusBtn:      { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: '#1a1a1a', alignItems: 'center', borderWidth: 1, borderColor: '#333' },
+  radiusBtnActive:{ backgroundColor: '#ff4500', borderColor: '#ff4500' },
+  radiusBtnText:  { color: '#888', fontWeight: '700', fontSize: 13 },
 
   // Toggle
-  toggleRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
-  toggleLabel:{ color: '#ddd', fontWeight: '600', fontSize: 14 },
-  toggleCount:{ color: '#666', fontSize: 12, marginTop: 2 },
+  toggleRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  toggleLabel: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  toggleCount: { color: '#555', fontSize: 11, marginTop: 2 },
 
   // Chips
-  chipWrap:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  chip:       { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
-  chipOff:    { backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#333' },
-  chipText:   { color: '#fff', fontWeight: '600', fontSize: 12 },
-  chipTextOff:{ color: '#666' },
+  chipWrap:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  chip:        { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
+  chipOff:     { backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#333' },
+  chipText:    { color: '#fff', fontWeight: '700', fontSize: 12 },
+  chipTextOff: { color: '#555' },
 
   // Apply button
-  applyBtn:     { backgroundColor: '#ff4500', padding: 14, borderRadius: 12, alignItems: 'center', marginTop: 16 },
-  applyBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  applyBtn:     { backgroundColor: '#ff4500', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  applyBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
   // Form inputs
-  input:        { backgroundColor: '#1a1a1a', color: '#fff', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, borderWidth: 1, borderColor: '#2a2a2a', marginBottom: 10 },
-  fieldLabel:   { color: '#888', fontSize: 12, fontWeight: '700', letterSpacing: 0.6, marginBottom: 6, marginTop: 4 },
-  coordText:    { color: '#666', fontSize: 11, marginBottom: 10, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  input:       { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 12, color: '#fff', fontSize: 14, marginBottom: 10, borderWidth: 1, borderColor: '#2a2a2a' },
+  coordText:   { color: '#555', fontSize: 11, marginBottom: 10, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  fieldLabel:  { color: '#888', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 6, marginTop: 4 },
 
-  // Detail modal
-  detailHeader:   { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  detailTypeBadge:{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  detailTypeTxt:  { color: '#fff', fontWeight: '700', fontSize: 12 },
-  hazardBadge:    { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  hazardText:     { color: '#fff', fontWeight: '600', fontSize: 12 },
-  detailName:     { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 4 },
-  detailMeta:     { color: '#888', fontSize: 13, marginBottom: 3 },
-  detailDesc:     { color: '#bbb', fontSize: 14, lineHeight: 20, marginTop: 8, marginBottom: 4 },
+  // Spot detail
+  detailHeader:    { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  detailTypeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  detailTypeTxt:   { color: '#fff', fontWeight: '800', fontSize: 11 },
+  hazardBadge:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  hazardText:      { color: '#fff', fontWeight: '700', fontSize: 11 },
+  detailName:      { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 4 },
+  detailMeta:      { color: '#666', fontSize: 12, marginBottom: 3 },
+  detailDesc:      { color: '#aaa', fontSize: 14, lineHeight: 20, marginTop: 6, marginBottom: 8 },
 
   // Votes
-  voteRow:       { flexDirection: 'row', gap: 12, marginVertical: 14 },
-  voteBtn:       { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5, borderColor: '#00C853' },
-  voteBtnActive: { backgroundColor: '#00C853' },
-  voteBtnDown:   { borderColor: '#FF1744' },
-  voteBtnDownActive: { backgroundColor: '#FF1744' },
-  voteCount:     { color: '#00C853', fontWeight: '700', fontSize: 14 },
+  voteRow:          { flexDirection: 'row', gap: 10, marginVertical: 12 },
+  voteBtn:          { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a' },
+  voteBtnActive:    { backgroundColor: '#00C853', borderColor: '#00C853' },
+  voteBtnDown:      { borderColor: '#2a2a2a' },
+  voteBtnDownActive:{ backgroundColor: '#FF1744', borderColor: '#FF1744' },
+  voteCount:        { color: '#aaa', fontWeight: '700', fontSize: 14 },
 
   // Comments
-  commentsHeader: { color: '#888', fontSize: 12, fontWeight: '700', letterSpacing: 0.6, marginBottom: 8 },
-  noComments:     { color: '#444', fontSize: 13, textAlign: 'center', paddingVertical: 12 },
+  commentsHeader: { color: '#888', fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
+  noComments:     { color: '#444', fontSize: 13, textAlign: 'center', paddingVertical: 16 },
   commentItem:    { flexDirection: 'row', gap: 8, marginBottom: 10 },
   commentAvatar:  { width: 28, height: 28, borderRadius: 14, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' },
-  commentBody:    { flex: 1 },
-  commentUser:    { color: '#aaa', fontSize: 12, fontWeight: '700', marginBottom: 2 },
-  commentText:    { color: '#ddd', fontSize: 13, lineHeight: 18 },
-  commentInputRow:{ flexDirection: 'row', gap: 8, marginTop: 10 },
-  commentInput:   { flex: 1, backgroundColor: '#1a1a1a', color: '#fff', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, fontSize: 13, borderWidth: 1, borderColor: '#2a2a2a' },
-  commentSendBtn: { backgroundColor: '#ff4500', width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  commentBody:    { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 10, padding: 8 },
+  commentUser:    { color: '#ff4500', fontSize: 11, fontWeight: '700', marginBottom: 2 },
+  commentText:    { color: '#ccc', fontSize: 13 },
+  commentInputRow:{ flexDirection: 'row', gap: 8, marginTop: 8 },
+  commentInput:   { flex: 1, backgroundColor: '#1a1a1a', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, color: '#fff', fontSize: 13, borderWidth: 1, borderColor: '#2a2a2a' },
+  commentSendBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#ff4500', justifyContent: 'center', alignItems: 'center' },
   anonRow:        { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   anonLabel:      { color: '#666', fontSize: 12 },
 
   // Event detail
-  multigpBanner:      { backgroundColor: 'rgba(255,109,0,0.15)', borderWidth: 1, borderColor: '#FF6D00', borderRadius: 8, padding: 8, marginBottom: 10, alignItems: 'center' },
-  multigpBannerText:  { color: '#FF6D00', fontWeight: '700', fontSize: 13 },
-  eventDetailFooter:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 },
-  rsvpCountWrap:      { alignItems: 'center' },
-  rsvpCountNum:       { color: '#fff', fontSize: 24, fontWeight: '800' },
-  rsvpCountLabel:     { color: '#666', fontSize: 12 },
-  rsvpBtn:            { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1a4a6b', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 24 },
-  rsvpBtnActive:      { backgroundColor: '#00C853' },
-  rsvpBtnText:        { color: '#fff', fontWeight: '700', fontSize: 14 },
-  regLink:            { color: '#4a6fa5', fontSize: 12, marginTop: 10 },
+  multigpBanner:     { backgroundColor: '#1a1a2e', borderRadius: 8, padding: 8, marginBottom: 10, alignItems: 'center', borderWidth: 1, borderColor: '#2979FF' },
+  multigpBannerText: { color: '#2979FF', fontWeight: '800', fontSize: 13 },
+  multigpBadge:      { backgroundColor: '#2979FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  multigpText:       { color: '#fff', fontSize: 9, fontWeight: '800' },
+  eventDetailFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  rsvpCountWrap:     { alignItems: 'center' },
+  rsvpCountNum:      { color: '#fff', fontSize: 24, fontWeight: '800' },
+  rsvpCountLabel:    { color: '#666', fontSize: 11 },
+  rsvpBtn:           { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#1a3a5c', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: '#2979FF' },
+  rsvpBtnActive:     { backgroundColor: '#2979FF' },
+  rsvpBtnText:       { color: '#fff', fontWeight: '700', fontSize: 14 },
+  regLink:           { color: '#2979FF', fontSize: 12, marginTop: 8 },
 });
