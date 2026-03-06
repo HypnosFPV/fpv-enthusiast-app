@@ -157,9 +157,15 @@ export default function ProfileScreen() {
   const [editTiktok,    setEditTiktok]    = useState('');
 
   // ── MultiGP fields ────────────────────────────────────────────────────────
-  const [mgpKeyInput,      setMgpKeyInput]      = useState('');
-  const [mgpValidResult,   setMgpValidResult]   = useState<{ valid: boolean; chapterName: string | null; chapterId: string | null; error?: string } | null>(null);
-  const [mgpSyncMsg,       setMgpSyncMsg]       = useState('');
+  const [mgpKeyInput,    setMgpKeyInput]    = useState('');
+  const [mgpValidResult, setMgpValidResult] = useState<{
+    valid: boolean;
+    chapterName: string | null;
+    chapterId: string | null;
+    error?: string;
+  } | null>(null);
+  const [mgpSyncMsg,  setMgpSyncMsg]  = useState('');
+  const [showMgpHelp, setShowMgpHelp] = useState(false);   // ← THIS WAS MISSING
 
   // ── Build fields ──────────────────────────────────────────────────────────
   const [buildName,   setBuildName]   = useState('');
@@ -184,19 +190,31 @@ export default function ProfileScreen() {
   // ── Data loaders ──────────────────────────────────────────────────────────
   const loadMyPosts = useCallback(async () => {
     if (!user?.id) return;
-    const { data } = await supabase.from('posts').select('*, users(id, username, avatar_url)').eq('user_id', user.id).order('created_at', { ascending: false });
+    const { data } = await supabase
+      .from('posts')
+      .select('*, users(id, username, avatar_url)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
     setMyPosts((data as Post[]) ?? []);
   }, [user?.id]);
 
   const loadFeed = useCallback(async () => {
-    const { data } = await supabase.from('posts').select('*, users(id, username, avatar_url)').order('created_at', { ascending: false }).limit(50);
+    const { data } = await supabase
+      .from('posts')
+      .select('*, users(id, username, avatar_url)')
+      .order('created_at', { ascending: false })
+      .limit(50);
     const all = (data as Post[]) ?? [];
     setFeedPosts(mutedIds.length > 0 ? all.filter(p => !mutedIds.includes(p.user_id)) : all);
   }, [mutedIds]);
 
   const loadBuilds = useCallback(async () => {
     if (!user?.id) return;
-    const { data } = await supabase.from('fpv_builds').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+    const { data } = await supabase
+      .from('fpv_builds')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
     setBuilds((data as Build[]) ?? []);
   }, [user?.id]);
 
@@ -219,7 +237,10 @@ export default function ProfileScreen() {
   }, [fetchProfile, loadTabData, activeTab, fetchMutedUsers]);
 
   const mediaPosts = useMemo(
-    () => myPosts.filter(p => p.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(p.media_url ?? '')),
+    () => myPosts.filter(p =>
+      p.media_type === 'video' ||
+      /\.(mp4|mov|webm)(\?|$)/i.test(p.media_url ?? '')
+    ),
     [myPosts],
   );
 
@@ -248,9 +269,14 @@ export default function ProfileScreen() {
   const createBuild = useCallback(async () => {
     if (!buildName.trim()) { Alert.alert('Name required'); return; }
     const { error } = await supabase.from('fpv_builds').insert({
-      user_id: user?.id, name: buildName.trim(), frame: buildFrame.trim() || null,
-      motors: buildMotors.trim() || null, fc: buildFC.trim() || null,
-      vtx: buildVTX.trim() || null, camera: buildCamera.trim() || null, notes: buildNotes.trim() || null,
+      user_id:    user?.id,
+      name:       buildName.trim(),
+      frame:      buildFrame.trim()  || null,
+      motors:     buildMotors.trim() || null,
+      fc:         buildFC.trim()     || null,
+      vtx:        buildVTX.trim()    || null,
+      camera:     buildCamera.trim() || null,
+      notes:      buildNotes.trim()  || null,
     });
     if (error) { Alert.alert('Error', error.message); return; }
     setBuildName(''); setBuildFrame(''); setBuildMotors('');
@@ -284,9 +310,14 @@ export default function ProfileScreen() {
 
   const handleMgpConnect = useCallback(async () => {
     if (!mgpValidResult?.valid) return;
-    const result = await mgpSaveConnection(mgpKeyInput.trim(), mgpValidResult.chapterName, mgpValidResult.chapterId);
+    const result = await mgpSaveConnection(
+      mgpKeyInput.trim(),
+      mgpValidResult.chapterName,
+      mgpValidResult.chapterId,
+    );
     if (result?.error) { Alert.alert('Error', result.error); return; }
-    setMgpKeyInput(''); setMgpValidResult(null);
+    setMgpKeyInput('');
+    setMgpValidResult(null);
     Alert.alert('✅ Connected!', `${mgpValidResult.chapterName ?? 'Chapter'} linked successfully.`);
   }, [mgpValidResult, mgpKeyInput, mgpSaveConnection]);
 
@@ -315,7 +346,11 @@ export default function ProfileScreen() {
     const isYT    = allUrls.some(u => /youtu/i.test(u));
     const isIG    = item.platform === 'instagram' || (item.social_url ?? '').includes('instagram.com');
     return (
-      <TouchableOpacity style={styles.gridCell} onPress={() => { setSelectedPost(item); setShowPostDetail(true); }} activeOpacity={0.8}>
+      <TouchableOpacity
+        style={styles.gridCell}
+        onPress={() => { setSelectedPost(item); setShowPostDetail(true); }}
+        activeOpacity={0.8}
+      >
         {thumb ? (
           <Image source={{ uri: thumb }} style={styles.gridThumb} resizeMode="cover" />
         ) : isIG ? (
@@ -328,9 +363,21 @@ export default function ProfileScreen() {
             <Ionicons name={isVid ? 'videocam' : 'image-outline'} size={28} color="#444" />
           </View>
         )}
-        {isVid && !isYT && <View style={styles.gridPlayBadge}><Ionicons name="play-circle" size={22} color="rgba(255,255,255,0.85)" /></View>}
-        {isYT && <View style={styles.gridYtBadge}><Ionicons name="logo-youtube" size={14} color="#fff" /></View>}
-        {isIG && !thumb && <View style={styles.gridIgBadge}><Ionicons name="logo-instagram" size={14} color="#fff" /></View>}
+        {isVid && !isYT && (
+          <View style={styles.gridPlayBadge}>
+            <Ionicons name="play-circle" size={22} color="rgba(255,255,255,0.85)" />
+          </View>
+        )}
+        {isYT && (
+          <View style={styles.gridYtBadge}>
+            <Ionicons name="logo-youtube" size={14} color="#fff" />
+          </View>
+        )}
+        {isIG && !thumb && (
+          <View style={styles.gridIgBadge}>
+            <Ionicons name="logo-instagram" size={14} color="#fff" />
+          </View>
+        )}
       </TouchableOpacity>
     );
   }, []);
@@ -344,8 +391,11 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
       {([
-        ['Frame', item.frame], ['Motors', item.motors], ['FC', item.fc],
-        ['VTX', item.vtx],     ['Camera', item.camera],
+        ['Frame',  item.frame],
+        ['Motors', item.motors],
+        ['FC',     item.fc],
+        ['VTX',    item.vtx],
+        ['Camera', item.camera],
       ] as [string, string | null | undefined][])
         .filter(([, v]) => !!v)
         .map(([label, val]) => (
@@ -358,7 +408,11 @@ export default function ProfileScreen() {
   ), [deleteBuild]);
 
   if (profileLoading && !profile) {
-    return <View style={styles.loadingScreen}><ActivityIndicator size="large" color="#00d4ff" /></View>;
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#00d4ff" />
+      </View>
+    );
   }
 
   return (
@@ -373,7 +427,12 @@ export default function ProfileScreen() {
         <TouchableOpacity onPress={handleBannerPress} activeOpacity={0.85}>
           <View style={styles.bannerWrap}>
             {profile?.header_image_url ? (
-              <Image key={profile.header_image_url} source={{ uri: profile.header_image_url }} style={styles.banner} resizeMode="cover" />
+              <Image
+                key={profile.header_image_url}
+                source={{ uri: profile.header_image_url }}
+                style={styles.banner}
+                resizeMode="cover"
+              />
             ) : (
               <View style={[styles.banner, styles.bannerPlaceholder]}>
                 <Ionicons name="camera" size={28} color="#555" />
@@ -389,9 +448,13 @@ export default function ProfileScreen() {
             {profile?.avatar_url ? (
               <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
             ) : (
-              <View style={[styles.avatar, styles.avatarPlaceholder]}><Ionicons name="person" size={34} color="#555" /></View>
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Ionicons name="person" size={34} color="#555" />
+              </View>
             )}
-            <View style={styles.cameraBadge}><Ionicons name="camera" size={13} color="#fff" /></View>
+            <View style={styles.cameraBadge}>
+              <Ionicons name="camera" size={13} color="#fff" />
+            </View>
           </TouchableOpacity>
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.editBtn} onPress={() => setShowEditProfile(true)}>
@@ -419,16 +482,18 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.socialRow}>
             {([
-              { icon: 'logo-youtube', url: profile?.youtube_url },
+              { icon: 'logo-youtube',   url: profile?.youtube_url },
               { icon: 'logo-instagram', url: profile?.instagram_url },
-              { icon: 'logo-twitter', url: profile?.twitter_url },
-              { icon: 'logo-tiktok', url: profile?.tiktok_url },
-              { icon: 'globe-outline', url: profile?.website_url },
-            ] as { icon: string; url?: string | null }[]).filter(s => !!s.url).map(s => (
-              <TouchableOpacity key={s.icon} style={styles.socialChip}>
-                <Ionicons name={s.icon as any} size={18} color="#00d4ff" />
-              </TouchableOpacity>
-            ))}
+              { icon: 'logo-twitter',   url: profile?.twitter_url },
+              { icon: 'logo-tiktok',    url: profile?.tiktok_url },
+              { icon: 'globe-outline',  url: profile?.website_url },
+            ] as { icon: string; url?: string | null }[])
+              .filter(s => !!s.url)
+              .map(s => (
+                <TouchableOpacity key={s.icon} style={styles.socialChip}>
+                  <Ionicons name={s.icon as any} size={18} color="#00d4ff" />
+                </TouchableOpacity>
+              ))}
             <TouchableOpacity style={styles.socialChip} onPress={() => setShowSocialLinks(true)}>
               <Ionicons name="add-circle-outline" size={18} color="#555" />
             </TouchableOpacity>
@@ -438,23 +503,71 @@ export default function ProfileScreen() {
         {/* TAB BAR */}
         <View style={styles.tabBar}>
           {(['posts', 'media', 'feed', 'builds'] as const).map(tab => (
-            <TouchableOpacity key={tab} style={[styles.tabItem, activeTab === tab && styles.tabItemActive]} onPress={() => setActiveTab(tab)}>
-              <Ionicons name={tab === 'posts' ? 'grid-outline' : tab === 'media' ? 'film-outline' : tab === 'feed' ? 'newspaper-outline' : 'construct-outline'} size={18} color={activeTab === tab ? '#00d4ff' : '#666'} />
-              <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>{tab.charAt(0).toUpperCase() + tab.slice(1)}</Text>
+            <TouchableOpacity
+              key={tab}
+              style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}
+              onPress={() => setActiveTab(tab)}
+            >
+              <Ionicons
+                name={
+                  tab === 'posts'  ? 'grid-outline' :
+                  tab === 'media'  ? 'film-outline' :
+                  tab === 'feed'   ? 'newspaper-outline' :
+                  'construct-outline'
+                }
+                size={18}
+                color={activeTab === tab ? '#00d4ff' : '#666'}
+              />
+              <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
 
         {/* TAB CONTENT */}
-        {dataLoading ? <ActivityIndicator style={{ marginTop: 40 }} color="#00d4ff" /> : (
+        {dataLoading ? (
+          <ActivityIndicator style={{ marginTop: 40 }} color="#00d4ff" />
+        ) : (
           <>
-            {activeTab === 'posts' && (myPosts.length === 0 ? <EmptyState icon="camera-outline" text="No posts yet" /> : <FlatList data={myPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />)}
-            {activeTab === 'media' && (mediaPosts.length === 0 ? <EmptyState icon="videocam-outline" text="No videos yet" /> : <FlatList data={mediaPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />)}
-            {activeTab === 'feed' && (feedPosts.length === 0 ? <EmptyState icon="newspaper-outline" text="Nothing in the feed yet" /> : <View style={styles.feedList}>{feedPosts.map(p => <PostCard key={p.id} post={toFeedPost(p)} isVisible={false} shouldAutoplay={false} currentUserId={user?.id ?? undefined} onLike={() => {}} onDelete={(id: string) => setFeedPosts(prev => prev.filter(fp => fp.id !== id))} />)}</View>)}
+            {activeTab === 'posts' && (
+              myPosts.length === 0
+                ? <EmptyState icon="camera-outline" text="No posts yet" />
+                : <FlatList data={myPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />
+            )}
+            {activeTab === 'media' && (
+              mediaPosts.length === 0
+                ? <EmptyState icon="videocam-outline" text="No videos yet" />
+                : <FlatList data={mediaPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />
+            )}
+            {activeTab === 'feed' && (
+              feedPosts.length === 0
+                ? <EmptyState icon="newspaper-outline" text="Nothing in the feed yet" />
+                : (
+                  <View style={styles.feedList}>
+                    {feedPosts.map(p => (
+                      <PostCard
+                        key={p.id}
+                        post={toFeedPost(p)}
+                        isVisible={false}
+                        shouldAutoplay={false}
+                        currentUserId={user?.id ?? undefined}
+                        onLike={() => {}}
+                        onDelete={(id: string) => setFeedPosts(prev => prev.filter(fp => fp.id !== id))}
+                      />
+                    ))}
+                  </View>
+                )
+            )}
             {activeTab === 'builds' && (
               <View>
-                {builds.length === 0 ? <EmptyState icon="construct-outline" text="No builds logged yet" /> : <FlatList data={builds} keyExtractor={i => i.id} renderItem={renderBuild} scrollEnabled={false} contentContainerStyle={{ padding: 12 }} />}
-                <TouchableOpacity style={styles.fab} onPress={() => setShowCreateBuild(true)}><Ionicons name="add" size={28} color="#fff" /></TouchableOpacity>
+                {builds.length === 0
+                  ? <EmptyState icon="construct-outline" text="No builds logged yet" />
+                  : <FlatList data={builds} keyExtractor={i => i.id} renderItem={renderBuild} scrollEnabled={false} contentContainerStyle={{ padding: 12 }} />
+                }
+                <TouchableOpacity style={styles.fab} onPress={() => setShowCreateBuild(true)}>
+                  <Ionicons name="add" size={28} color="#fff" />
+                </TouchableOpacity>
               </View>
             )}
           </>
@@ -466,12 +579,26 @@ export default function ProfileScreen() {
       <Modal visible={showPostDetail} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowPostDetail(false)}>
         <View style={styles.detailRoot}>
           <View style={styles.detailHeader}>
-            <TouchableOpacity onPress={() => setShowPostDetail(false)}><Ionicons name="arrow-back" size={24} color="#fff" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowPostDetail(false)}>
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
             <Text style={styles.detailTitle}>Post</Text>
             <View style={{ width: 24 }} />
           </View>
           <ScrollView>
-            {selectedPost && <PostCard post={toFeedPost(selectedPost)} isVisible={true} shouldAutoplay={false} currentUserId={user?.id ?? undefined} onLike={() => {}} onDelete={(id: string) => { setMyPosts(prev => prev.filter(p => p.id !== id)); setShowPostDetail(false); }} />}
+            {selectedPost && (
+              <PostCard
+                post={toFeedPost(selectedPost)}
+                isVisible={true}
+                shouldAutoplay={false}
+                currentUserId={user?.id ?? undefined}
+                onLike={() => {}}
+                onDelete={(id: string) => {
+                  setMyPosts(prev => prev.filter(p => p.id !== id));
+                  setShowPostDetail(false);
+                }}
+              />
+            )}
           </ScrollView>
         </View>
       </Modal>
@@ -481,7 +608,9 @@ export default function ProfileScreen() {
         <View style={styles.modalRoot}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Settings</Text>
-            <TouchableOpacity onPress={() => setShowSettings(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowSettings(false)}>
+              <Ionicons name="close" size={26} color="#fff" />
+            </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
 
@@ -503,19 +632,29 @@ export default function ProfileScreen() {
               <Text style={styles.settingsSectionTitle}>Preferences</Text>
               <View style={styles.settingsRow}>
                 <Text style={styles.settingsLabel}>Autoplay Videos</Text>
-                <Switch value={profile?.autoplay_videos ?? true} onValueChange={(val: boolean) => { void updateProfile({ autoplay_videos: val }); }} trackColor={{ true: '#00d4ff', false: '#333' }} thumbColor="#fff" />
+                <Switch
+                  value={profile?.autoplay_videos ?? true}
+                  onValueChange={(val: boolean) => { void updateProfile({ autoplay_videos: val }); }}
+                  trackColor={{ true: '#00d4ff', false: '#333' }}
+                  thumbColor="#fff"
+                />
               </View>
             </View>
 
             {/* Privacy */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Privacy</Text>
-              <TouchableOpacity style={styles.settingsRow} onPress={() => { setShowSettings(false); setTimeout(() => setShowMuteList(true), 350); }}>
+              <TouchableOpacity
+                style={styles.settingsRow}
+                onPress={() => { setShowSettings(false); setTimeout(() => setShowMuteList(true), 350); }}
+              >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <Ionicons name="volume-mute-outline" size={20} color="#aaa" />
                   <View>
                     <Text style={styles.settingsLabel}>Muted Users</Text>
-                    {mutedUsers.length > 0 && <Text style={[styles.settingsValue, { fontSize: 11 }]}>{mutedUsers.length} muted</Text>}
+                    {mutedUsers.length > 0 && (
+                      <Text style={[styles.settingsValue, { fontSize: 11 }]}>{mutedUsers.length} muted</Text>
+                    )}
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color="#555" />
@@ -527,7 +666,10 @@ export default function ProfileScreen() {
               <Text style={styles.settingsSectionTitle}>Connected Accounts</Text>
 
               {/* Social Links */}
-              <TouchableOpacity style={styles.settingsRow} onPress={() => { setShowSettings(false); setTimeout(() => setShowSocialLinks(true), 350); }}>
+              <TouchableOpacity
+                style={styles.settingsRow}
+                onPress={() => { setShowSettings(false); setTimeout(() => setShowSocialLinks(true), 350); }}
+              >
                 <Text style={styles.settingsLabel}>Social Links</Text>
                 <Ionicons name="chevron-forward" size={18} color="#555" />
               </TouchableOpacity>
@@ -543,19 +685,30 @@ export default function ProfileScreen() {
                     </Text>
                   </View>
                 </View>
-                <TouchableOpacity style={[styles.ytAuthBtn, ytLinked ? styles.ytAuthBtnUnlink : styles.ytAuthBtnLink]} onPress={ytLinked ? unlinkYouTube : () => promptYouTubeAuth()} disabled={ytAuthLoading}>
-                  {ytAuthLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.ytAuthBtnText}>{ytLinked ? 'Unlink' : 'Connect'}</Text>}
+                <TouchableOpacity
+                  style={[styles.ytAuthBtn, ytLinked ? styles.ytAuthBtnUnlink : styles.ytAuthBtnLink]}
+                  onPress={ytLinked ? unlinkYouTube : () => promptYouTubeAuth()}
+                  disabled={ytAuthLoading}
+                >
+                  {ytAuthLoading
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={styles.ytAuthBtnText}>{ytLinked ? 'Unlink' : 'Connect'}</Text>
+                  }
                 </TouchableOpacity>
               </View>
 
-              {/* ── MultiGP Chapter ── */}
+              {/* MultiGP Chapter */}
               <View style={[styles.settingsRow, { borderTopWidth: 1, borderTopColor: '#2a2a4a', marginTop: 4, paddingTop: 10 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Ionicons name="radio-outline" size={20} color="#ff4500" />
                   <View>
                     <Text style={styles.settingsLabel}>MultiGP Chapter</Text>
                     <Text style={[styles.settingsValue, { fontSize: 11, color: mgpConnection?.is_active ? '#4caf50' : '#888' }]}>
-                      {mgpConnection ? (mgpConnection.is_active ? `● ${mgpConnection.chapter_name ?? 'Connected'}` : `○ ${mgpConnection.chapter_name ?? 'Paused'}`) : '○ Not connected'}
+                      {mgpConnection
+                        ? (mgpConnection.is_active
+                          ? `● ${mgpConnection.chapter_name ?? 'Connected'}`
+                          : `○ ${mgpConnection.chapter_name ?? 'Paused'}`)
+                        : '○ Not connected'}
                     </Text>
                   </View>
                 </View>
@@ -564,7 +717,10 @@ export default function ProfileScreen() {
                   onPress={() => { setShowSettings(false); setTimeout(() => setShowMultiGP(true), 350); }}
                   disabled={mgpLoading}
                 >
-                  {mgpLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.ytAuthBtnText}>{mgpConnection ? 'Manage' : 'Connect'}</Text>}
+                  {mgpLoading
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={styles.ytAuthBtnText}>{mgpConnection ? 'Manage' : 'Connect'}</Text>
+                  }
                 </TouchableOpacity>
               </View>
             </View>
@@ -582,32 +738,55 @@ export default function ProfileScreen() {
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>MultiGP Chapter</Text>
-            <TouchableOpacity onPress={() => setShowMultiGP(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowMultiGP(false)}>
+              <Ionicons name="close" size={26} color="#fff" />
+            </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {mgpConnection ? (
-              // ── Connected state ──
+              /* ── Connected state ── */
               <View>
                 <View style={styles.mgpConnectedCard}>
                   <Ionicons name="radio" size={32} color="#ff4500" />
                   <View style={{ marginLeft: 12, flex: 1 }}>
                     <Text style={styles.mgpChapterName}>{mgpConnection.chapter_name ?? 'Chapter Connected'}</Text>
-                    <Text style={styles.mgpChapterId}>{mgpConnection.chapter_id ? `ID: ${mgpConnection.chapter_id}` : ''}</Text>
+                    <Text style={styles.mgpChapterId}>
+                      {mgpConnection.chapter_id ? `ID: ${mgpConnection.chapter_id}` : ''}
+                    </Text>
                     {mgpConnection.last_synced_at && (
-                      <Text style={styles.mgpLastSync}>Last sync: {new Date(mgpConnection.last_synced_at).toLocaleString()}</Text>
+                      <Text style={styles.mgpLastSync}>
+                        Last sync: {new Date(mgpConnection.last_synced_at).toLocaleString()}
+                      </Text>
                     )}
                   </View>
                 </View>
 
                 {mgpSyncMsg ? <Text style={styles.mgpSyncMsg}>{mgpSyncMsg}</Text> : null}
 
-                <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: '#ff4500', marginTop: 16 }]} onPress={handleMgpSync} disabled={mgpSyncing}>
-                  {mgpSyncing ? <ActivityIndicator size="small" color="#fff" /> : <><Ionicons name="sync-outline" size={16} color="#fff" style={{ marginRight: 6 }} /><Text style={[styles.primaryBtnText, { color: '#fff' }]}>Sync Now</Text></>}
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { backgroundColor: '#ff4500', marginTop: 16 }]}
+                  onPress={handleMgpSync}
+                  disabled={mgpSyncing}
+                >
+                  {mgpSyncing
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : (
+                      <>
+                        <Ionicons name="sync-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+                        <Text style={[styles.primaryBtnText, { color: '#fff' }]}>Sync Now</Text>
+                      </>
+                    )
+                  }
                 </TouchableOpacity>
 
                 <View style={[styles.settingsRow, { marginTop: 16 }]}>
                   <Text style={styles.settingsLabel}>Auto-sync enabled</Text>
-                  <Switch value={mgpConnection.is_active} onValueChange={mgpToggleActive} trackColor={{ true: '#ff4500', false: '#333' }} thumbColor="#fff" />
+                  <Switch
+                    value={mgpConnection.is_active}
+                    onValueChange={mgpToggleActive}
+                    trackColor={{ true: '#ff4500', false: '#333' }}
+                    thumbColor="#fff"
+                  />
                 </View>
 
                 <TouchableOpacity style={[styles.signOutBtn, { marginTop: 24 }]} onPress={handleMgpDisconnect}>
@@ -616,67 +795,112 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
-              // ── Connect state ──
+              /* ── Connect state ── */
               <View>
                 <Text style={styles.mgpInstructions}>
                   Enter your MultiGP Timing System API key to link your chapter. Upcoming races will auto-sync to the map.
                 </Text>
+
                 <Text style={styles.mgpHint}>
-  Find your key at multigp.com → Chapter Dashboard → Settings → Timing System Key
-</Text>
+                  Find your key at multigp.com → Chapter Dashboard → Settings → Timing System Key
+                </Text>
 
-<TouchableOpacity
-  style={styles.mgpHelpLink}
-  onPress={() => setShowMgpHelp(true)}
->
-  <Ionicons name="help-circle-outline" size={15} color="#00d4ff" />
-  <Text style={styles.mgpHelpLinkText}>How do I find my API key?</Text>
-</TouchableOpacity>
+                {/* Help link */}
+                <TouchableOpacity
+                  style={styles.mgpHelpLink}
+                  onPress={() => setShowMgpHelp(prev => !prev)}
+                >
+                  <Ionicons name="help-circle-outline" size={15} color="#00d4ff" />
+                  <Text style={styles.mgpHelpLinkText}>
+                    {showMgpHelp ? 'Hide instructions ▲' : 'How do I find my API key? ▼'}
+                  </Text>
+                </TouchableOpacity>
 
-{showMgpHelp && (
-  <View style={styles.mgpHelpBox}>
-    <Text style={styles.mgpHelpTitle}>📡 How to Get Your MultiGP API Key</Text>
+                {/* Inline help guide */}
+                {showMgpHelp && (
+                  <View style={styles.mgpHelpBox}>
+                    <Text style={styles.mgpHelpTitle}>📡 How to Get Your MultiGP API Key</Text>
 
-    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>1. </Text>Go to <Text style={styles.mgpHelpBold}>multigp.com</Text> and sign in as a Chapter Organizer</Text>
-    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>2. </Text>Click your chapter name in the top navigation bar</Text>
-    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>3. </Text>Select <Text style={styles.mgpHelpBold}>Chapter Dashboard</Text> from the dropdown</Text>
-    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>4. </Text>Click <Text style={styles.mgpHelpBold}>Chapter Configuration</Text> or <Text style={styles.mgpHelpBold}>Settings</Text> in the left menu</Text>
-    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>5. </Text>Look for <Text style={styles.mgpHelpBold}>Timing System Key</Text> — copy and paste it above</Text>
+                    <Text style={styles.mgpHelpStep}>
+                      <Text style={styles.mgpHelpNum}>1. </Text>
+                      Go to <Text style={styles.mgpHelpBold}>multigp.com</Text> and sign in as a Chapter Organizer
+                    </Text>
+                    <Text style={styles.mgpHelpStep}>
+                      <Text style={styles.mgpHelpNum}>2. </Text>
+                      Click your chapter name in the top navigation bar
+                    </Text>
+                    <Text style={styles.mgpHelpStep}>
+                      <Text style={styles.mgpHelpNum}>3. </Text>
+                      Select <Text style={styles.mgpHelpBold}>Chapter Dashboard</Text> from the dropdown
+                    </Text>
+                    <Text style={styles.mgpHelpStep}>
+                      <Text style={styles.mgpHelpNum}>4. </Text>
+                      Click <Text style={styles.mgpHelpBold}>Chapter Configuration</Text> or{' '}
+                      <Text style={styles.mgpHelpBold}>Settings</Text> in the left menu
+                    </Text>
+                    <Text style={styles.mgpHelpStep}>
+                      <Text style={styles.mgpHelpNum}>5. </Text>
+                      Look for <Text style={styles.mgpHelpBold}>Timing System Key</Text> — copy and paste it below
+                    </Text>
 
-    <Text style={styles.mgpHelpNote}>⚠️ Only Chapter Organizers can access this key. If you are a member but not an organizer, ask your chapter admin to link the chapter instead.</Text>
+                    <Text style={styles.mgpHelpNote}>
+                      ⚠️ Only Chapter Organizers can access this key. If you are a member but not an organizer,
+                      ask your chapter admin to link the chapter instead.
+                    </Text>
 
-    <TouchableOpacity
-      style={styles.mgpHelpClose}
-      onPress={() => setShowMgpHelp(false)}
-    >
-      <Text style={styles.mgpHelpCloseText}>Got it ✓</Text>
-    </TouchableOpacity>
-  </View>
-)}
+                    <TouchableOpacity style={styles.mgpHelpClose} onPress={() => setShowMgpHelp(false)}>
+                      <Text style={styles.mgpHelpCloseText}>Got it ✓</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
                 <Text style={styles.inputLabel}>Timing System API Key</Text>
                 <TextInput
-                  style={styles.input} value={mgpKeyInput} onChangeText={t => { setMgpKeyInput(t); setMgpValidResult(null); }}
-                  placeholder="Paste your API key here" placeholderTextColor="#555"
-                  autoCapitalize="none" autoCorrect={false}
+                  style={styles.input}
+                  value={mgpKeyInput}
+                  onChangeText={t => { setMgpKeyInput(t); setMgpValidResult(null); }}
+                  placeholder="Paste your API key here"
+                  placeholderTextColor="#555"
+                  autoCapitalize="none"
+                  autoCorrect={false}
                 />
 
                 {mgpValidResult && (
                   <View style={[styles.mgpValidResult, { borderColor: mgpValidResult.valid ? '#4caf50' : '#e74c3c' }]}>
-                    <Ionicons name={mgpValidResult.valid ? 'checkmark-circle' : 'close-circle'} size={18} color={mgpValidResult.valid ? '#4caf50' : '#e74c3c'} />
+                    <Ionicons
+                      name={mgpValidResult.valid ? 'checkmark-circle' : 'close-circle'}
+                      size={18}
+                      color={mgpValidResult.valid ? '#4caf50' : '#e74c3c'}
+                    />
                     <Text style={[styles.mgpValidText, { color: mgpValidResult.valid ? '#4caf50' : '#e74c3c' }]}>
-                      {mgpValidResult.valid ? `✅ ${mgpValidResult.chapterName ?? 'Valid key'}` : mgpValidResult.error ?? 'Invalid key'}
+                      {mgpValidResult.valid
+                        ? `✅ ${mgpValidResult.chapterName ?? 'Valid key'}`
+                        : mgpValidResult.error ?? 'Invalid key'}
                     </Text>
                   </View>
                 )}
 
-                <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: '#1e1e3a', marginTop: 12 }]} onPress={handleMgpValidate} disabled={mgpValidating}>
-                  {mgpValidating ? <ActivityIndicator size="small" color="#00d4ff" /> : <Text style={[styles.primaryBtnText, { color: '#00d4ff' }]}>Validate Key</Text>}
+                <TouchableOpacity
+                  style={[styles.primaryBtn, { backgroundColor: '#1e1e3a', marginTop: 12 }]}
+                  onPress={handleMgpValidate}
+                  disabled={mgpValidating}
+                >
+                  {mgpValidating
+                    ? <ActivityIndicator size="small" color="#00d4ff" />
+                    : <Text style={[styles.primaryBtnText, { color: '#00d4ff' }]}>Validate Key</Text>
+                  }
                 </TouchableOpacity>
 
                 {mgpValidResult?.valid && (
-                  <TouchableOpacity style={[styles.primaryBtn, { marginTop: 10 }]} onPress={handleMgpConnect} disabled={mgpSaving}>
-                    {mgpSaving ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.primaryBtnText}>Connect Chapter</Text>}
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, { marginTop: 10 }]}
+                    onPress={handleMgpConnect}
+                    disabled={mgpSaving}
+                  >
+                    {mgpSaving
+                      ? <ActivityIndicator size="small" color="#000" />
+                      : <Text style={styles.primaryBtnText}>Connect Chapter</Text>
+                    }
                   </TouchableOpacity>
                 )}
               </View>
@@ -690,17 +914,41 @@ export default function ProfileScreen() {
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Edit Profile</Text>
-            <TouchableOpacity onPress={() => setShowEditProfile(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowEditProfile(false)}>
+              <Ionicons name="close" size={26} color="#fff" />
+            </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             <Text style={styles.inputLabel}>Username</Text>
-            <TextInput style={[styles.input, usernameError ? styles.inputError : undefined]} value={editUsername} onChangeText={t => { setEditUsername(t); setUsernameError(''); }} placeholder="username" placeholderTextColor="#555" autoCapitalize="none" />
+            <TextInput
+              style={[styles.input, usernameError ? styles.inputError : undefined]}
+              value={editUsername}
+              onChangeText={t => { setEditUsername(t); setUsernameError(''); }}
+              placeholder="username"
+              placeholderTextColor="#555"
+              autoCapitalize="none"
+            />
             {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : null}
             <Text style={styles.inputLabel}>Bio</Text>
-            <TextInput style={[styles.input, { height: 90 }]} value={editBio} onChangeText={setEditBio} placeholder="Tell the community about yourself…" placeholderTextColor="#555" multiline maxLength={200} />
+            <TextInput
+              style={[styles.input, { height: 90 }]}
+              value={editBio}
+              onChangeText={setEditBio}
+              placeholder="Tell the community about yourself…"
+              placeholderTextColor="#555"
+              multiline
+              maxLength={200}
+            />
             <Text style={styles.charCount}>{editBio.length}/200</Text>
-            <TouchableOpacity style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]} onPress={saveProfile} disabled={updating}>
-              {updating ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.primaryBtnText}>Save Changes</Text>}
+            <TouchableOpacity
+              style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]}
+              onPress={saveProfile}
+              disabled={updating}
+            >
+              {updating
+                ? <ActivityIndicator size="small" color="#000" />
+                : <Text style={styles.primaryBtnText}>Save Changes</Text>
+              }
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -711,26 +959,44 @@ export default function ProfileScreen() {
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Social Links</Text>
-            <TouchableOpacity onPress={() => setShowSocialLinks(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowSocialLinks(false)}>
+              <Ionicons name="close" size={26} color="#fff" />
+            </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {([
-              { label: 'YouTube', icon: 'logo-youtube', val: editYoutube, set: setEditYoutube },
+              { label: 'YouTube',   icon: 'logo-youtube',   val: editYoutube,   set: setEditYoutube },
               { label: 'Instagram', icon: 'logo-instagram', val: editInstagram, set: setEditInstagram },
-              { label: 'Twitter/X', icon: 'logo-twitter', val: editTwitter, set: setEditTwitter },
-              { label: 'TikTok', icon: 'logo-tiktok', val: editTiktok, set: setEditTiktok },
-              { label: 'Website', icon: 'globe-outline', val: editWebsite, set: setEditWebsite },
-            ] as { label: string; icon: string; val: string; set: (v: string) => void }[]).map(({ label, icon, val, set }) => (
-              <View key={label}>
-                <Text style={styles.inputLabel}>{label}</Text>
-                <View style={styles.socialInputRow}>
-                  <Ionicons name={icon as any} size={20} color="#00d4ff" style={{ marginRight: 8 }} />
-                  <TextInput style={[styles.input, { flex: 1 }]} value={val} onChangeText={set} placeholder="https://…" placeholderTextColor="#555" autoCapitalize="none" keyboardType="url" />
+              { label: 'Twitter/X', icon: 'logo-twitter',   val: editTwitter,   set: setEditTwitter },
+              { label: 'TikTok',    icon: 'logo-tiktok',    val: editTiktok,    set: setEditTiktok },
+              { label: 'Website',   icon: 'globe-outline',  val: editWebsite,   set: setEditWebsite },
+            ] as { label: string; icon: string; val: string; set: (v: string) => void }[])
+              .map(({ label, icon, val, set }) => (
+                <View key={label}>
+                  <Text style={styles.inputLabel}>{label}</Text>
+                  <View style={styles.socialInputRow}>
+                    <Ionicons name={icon as any} size={20} color="#00d4ff" style={{ marginRight: 8 }} />
+                    <TextInput
+                      style={[styles.input, { flex: 1 }]}
+                      value={val}
+                      onChangeText={set}
+                      placeholder="https://…"
+                      placeholderTextColor="#555"
+                      autoCapitalize="none"
+                      keyboardType="url"
+                    />
+                  </View>
                 </View>
-              </View>
-            ))}
-            <TouchableOpacity style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]} onPress={saveSocials} disabled={updating}>
-              {updating ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.primaryBtnText}>Save Links</Text>}
+              ))}
+            <TouchableOpacity
+              style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]}
+              onPress={saveSocials}
+              disabled={updating}
+            >
+              {updating
+                ? <ActivityIndicator size="small" color="#000" />
+                : <Text style={styles.primaryBtnText}>Save Links</Text>
+              }
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -741,34 +1007,66 @@ export default function ProfileScreen() {
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>New Build</Text>
-            <TouchableOpacity onPress={() => setShowCreateBuild(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowCreateBuild(false)}>
+              <Ionicons name="close" size={26} color="#fff" />
+            </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {([
-              { label: 'Build Name *', val: buildName, set: setBuildName, ph: 'e.g. Race Day 5"' },
-              { label: 'Frame', val: buildFrame, set: setBuildFrame, ph: 'e.g. ImpulseRC Apex' },
-              { label: 'Motors', val: buildMotors, set: setBuildMotors, ph: 'e.g. iFlight 2306 2450kv' },
-              { label: 'FC', val: buildFC, set: setBuildFC, ph: 'e.g. Betaflight F7' },
-              { label: 'VTX', val: buildVTX, set: setBuildVTX, ph: 'e.g. Rush Tank Ultimate' },
-              { label: 'Camera', val: buildCamera, set: setBuildCamera, ph: 'e.g. Caddx Ratel 2' },
-            ] as { label: string; val: string; set: (v: string) => void; ph: string }[]).map(({ label, val, set, ph }) => (
-              <View key={label}>
-                <Text style={styles.inputLabel}>{label}</Text>
-                <TextInput style={styles.input} value={val} onChangeText={set} placeholder={ph} placeholderTextColor="#555" />
-              </View>
-            ))}
+              { label: 'Build Name *', val: buildName,   set: setBuildName,   ph: 'e.g. Race Day 5"' },
+              { label: 'Frame',        val: buildFrame,  set: setBuildFrame,  ph: 'e.g. ImpulseRC Apex' },
+              { label: 'Motors',       val: buildMotors, set: setBuildMotors, ph: 'e.g. iFlight 2306 2450kv' },
+              { label: 'FC',           val: buildFC,     set: setBuildFC,     ph: 'e.g. Betaflight F7' },
+              { label: 'VTX',          val: buildVTX,    set: setBuildVTX,    ph: 'e.g. Rush Tank Ultimate' },
+              { label: 'Camera',       val: buildCamera, set: setBuildCamera, ph: 'e.g. Caddx Ratel 2' },
+            ] as { label: string; val: string; set: (v: string) => void; ph: string }[])
+              .map(({ label, val, set, ph }) => (
+                <View key={label}>
+                  <Text style={styles.inputLabel}>{label}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={val}
+                    onChangeText={set}
+                    placeholder={ph}
+                    placeholderTextColor="#555"
+                  />
+                </View>
+              ))}
             <Text style={styles.inputLabel}>Notes</Text>
-            <TextInput style={[styles.input, { height: 80 }]} value={buildNotes} onChangeText={setBuildNotes} placeholder="Tune notes, issues, mods…" placeholderTextColor="#555" multiline />
-            <TouchableOpacity style={styles.primaryBtn} onPress={createBuild}><Text style={styles.primaryBtnText}>Add Build</Text></TouchableOpacity>
+            <TextInput
+              style={[styles.input, { height: 80 }]}
+              value={buildNotes}
+              onChangeText={setBuildNotes}
+              placeholder="Tune notes, issues, mods…"
+              placeholderTextColor="#555"
+              multiline
+            />
+            <TouchableOpacity style={styles.primaryBtn} onPress={createBuild}>
+              <Text style={styles.primaryBtnText}>Add Build</Text>
+            </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
 
       {/* FOLLOW LIST MODAL */}
-      {user && <FollowListModal visible={followModal !== null} type={followModal ?? 'followers'} profileUserId={user.id} currentUserId={user.id} onClose={() => setFollowModal(null)} />}
+      {user && (
+        <FollowListModal
+          visible={followModal !== null}
+          type={followModal ?? 'followers'}
+          profileUserId={user.id}
+          currentUserId={user.id}
+          onClose={() => setFollowModal(null)}
+        />
+      )}
 
       {/* MUTE LIST MODAL */}
-      <MuteListModal visible={showMuteList} onClose={() => setShowMuteList(false)} mutedUsers={mutedUsers} loading={muteLoading} onUnmute={async (userId) => { await unmuteUser(userId); }} />
+      <MuteListModal
+        visible={showMuteList}
+        onClose={() => setShowMuteList(false)}
+        mutedUsers={mutedUsers}
+        loading={muteLoading}
+        onUnmute={async (userId) => { await unmuteUser(userId); }}
+      />
     </View>
   );
 }
@@ -869,17 +1167,19 @@ const styles = StyleSheet.create({
   signOutBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: '#3a1e1e', backgroundColor: '#1a0a0a' },
   signOutText: { color: '#e74c3c', fontWeight: '600', fontSize: 14 },
 
-  // MultiGP styles
-  mgpConnectedCard:  { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a2e', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#ff4500' },
-  mgpChapterName:    { color: '#fff', fontWeight: '700', fontSize: 16 },
-  mgpChapterId:      { color: '#888', fontSize: 12, marginTop: 2 },
-  mgpLastSync:       { color: '#666', fontSize: 11, marginTop: 4 },
-  mgpSyncMsg:        { textAlign: 'center', color: '#00d4ff', fontSize: 13, marginTop: 12, fontWeight: '600' },
-  mgpInstructions:   { color: '#ccc', fontSize: 14, lineHeight: 20, marginBottom: 8 },
-  mgpHint:           { color: '#666', fontSize: 12, lineHeight: 18, marginBottom: 16, fontStyle: 'italic' },
-  mgpValidResult:    { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 8, borderWidth: 1, marginTop: 8, backgroundColor: '#0f0f1a' },
-  mgpValidText:      { fontSize: 13, fontWeight: '600', flex: 1 },
-    mgpHelpLink:      { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 16, marginTop: 4 },
+  // ── MultiGP ──
+  mgpConnectedCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a2e', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#ff4500' },
+  mgpChapterName:   { color: '#fff', fontWeight: '700', fontSize: 16 },
+  mgpChapterId:     { color: '#888', fontSize: 12, marginTop: 2 },
+  mgpLastSync:      { color: '#666', fontSize: 11, marginTop: 4 },
+  mgpSyncMsg:       { textAlign: 'center', color: '#00d4ff', fontSize: 13, marginTop: 12, fontWeight: '600' },
+  mgpInstructions:  { color: '#ccc', fontSize: 14, lineHeight: 20, marginBottom: 8 },
+  mgpHint:          { color: '#666', fontSize: 12, lineHeight: 18, marginBottom: 4, fontStyle: 'italic' },
+  mgpValidResult:   { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 8, borderWidth: 1, marginTop: 8, backgroundColor: '#0f0f1a' },
+  mgpValidText:     { fontSize: 13, fontWeight: '600', flex: 1 },
+
+  // ── MultiGP Help ──
+  mgpHelpLink:      { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 12, marginTop: 4 },
   mgpHelpLinkText:  { color: '#00d4ff', fontSize: 13, textDecorationLine: 'underline' },
   mgpHelpBox:       { backgroundColor: '#0f1a2e', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#1e3a5a' },
   mgpHelpTitle:     { color: '#fff', fontWeight: '700', fontSize: 14, marginBottom: 12 },
@@ -889,5 +1189,4 @@ const styles = StyleSheet.create({
   mgpHelpNote:      { color: '#888', fontSize: 12, lineHeight: 18, marginTop: 10, fontStyle: 'italic' },
   mgpHelpClose:     { backgroundColor: '#1e3a5a', borderRadius: 8, paddingVertical: 8, alignItems: 'center', marginTop: 12 },
   mgpHelpCloseText: { color: '#00d4ff', fontWeight: '600', fontSize: 13 },
-
 });
