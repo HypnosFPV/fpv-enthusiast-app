@@ -1,0 +1,320 @@
+// src/hooks/useMap.ts
+import { useState, useCallback } from 'react';
+import { supabase } from '../services/supabase';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface FlySpot {
+  id: string;
+  created_by: string | null;
+  name: string;
+  description: string | null;
+  spot_type: 'freestyle' | 'bando' | 'race_track' | 'open_field' | 'indoor';
+  hazard_level: 'low' | 'medium' | 'high';
+  latitude: number;
+  longitude: number;
+  thumbs_up: number;
+  thumbs_down: number;
+  created_at: string;
+  creator_username?: string;
+}
+
+export interface RaceEvent {
+  id: string;
+  organizer_id: string | null;
+  name: string;
+  description: string | null;
+  event_type: 'race' | 'meetup' | 'training' | 'tiny_whoop' | 'championship' | 'fun_fly';
+  event_source: 'community' | 'multigp' | 'admin';
+  latitude: number;
+  longitude: number;
+  venue_name: string | null;
+  city: string | null;
+  state: string | null;
+  country: string;
+  start_time: string;
+  end_time: string | null;
+  rsvp_count: number;
+  max_participants: number | null;
+  registration_url: string | null;
+  multigp_race_id: string | null;
+  multigp_chapter_name: string | null;
+  is_cancelled: boolean;
+  created_at: string;
+  organizer_username?: string;
+  user_rsvpd?: boolean;
+}
+
+export interface SpotComment {
+  id: string;
+  spot_id: string;
+  user_id: string | null;
+  username: string | null;
+  content: string;
+  is_anonymous: boolean;
+  created_at: string;
+}
+
+export interface NewSpotData {
+  name: string;
+  description: string;
+  spot_type: FlySpot['spot_type'];
+  hazard_level: FlySpot['hazard_level'];
+  latitude: number;
+  longitude: number;
+}
+
+export interface NewEventData {
+  name: string;
+  description: string;
+  event_type: RaceEvent['event_type'];
+  latitude: number;
+  longitude: number;
+  venue_name: string;
+  city: string;
+  state: string;
+  start_time: string;
+  end_time: string;
+  max_participants: string;
+  registration_url: string;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+export function haversineDistance(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number,
+): number {
+  const R = 3959;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function boundingBox(lat: number, lng: number, miles: number) {
+  const latDelta = miles / 69;
+  const lngDelta = miles / (69 * Math.cos((lat * Math.PI) / 180));
+  return {
+    minLat: lat - latDelta, maxLat: lat + latDelta,
+    minLng: lng - lngDelta, maxLng: lng + lngDelta,
+  };
+}
+
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+
+export function useMap(userId?: string) {
+  const [spots,    setSpots]    = useState<FlySpot[]>([]);
+  const [events,   setEvents]   = useState<RaceEvent[]>([]);
+  const [comments, setComments] = useState<SpotComment[]>([]);
+  const [loading,  setLoading]  = useState(false);
+
+  // ── Fetch fly spots ────────────────────────────────────────────────────────
+  const fetchSpots = useCallback(async (
+    lat: number, lng: number,
+    radiusMiles: number,
+    typeFilters: string[],
+  ) => {
+    setLoading(true);
+    try {
+      const { minLat, maxLat, minLng, maxLng } = boundingBox(lat, lng, radiusMiles);
+      const { data, error } = await supabase
+        .from('fly_spots')
+        .select('*, users:created_by(username)')
+        .gte('latitude',  minLat).lte('latitude',  maxLat)
+        .gte('longitude', minLng).lte('longitude', maxLng)
+        .in('spot_type', typeFilters.length
+          ? typeFilters
+          : ['freestyle','bando','race_track','open_field','indoor']);
+      if (error) throw error;
+      const filtered = (data ?? [])
+        .map((s: any) => ({ ...s, creator_username: s.users?.username ?? null }))
+        .filter((s: FlySpot) =>
+          haversineDistance(lat, lng, s.latitude, s.longitude) <= radiusMiles
+        );
+      setSpots(filtered);
+    } catch (e) {
+      console.error('fetchSpots:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── Fetch race events ──────────────────────────────────────────────────────
+  const fetchEvents = useCallback(async (
+    lat: number, lng: number,
+    radiusMiles: number,
+    typeFilters: string[],
+  ) => {
+    try {
+      const { minLat, maxLat, minLng, maxLng } = boundingBox(lat, lng, radiusMiles);
+      const { data, error } = await supabase
+        .from('race_events')
+        .select('*, users:organizer_id(username)')
+        .gte('latitude',  minLat).lte('latitude',  maxLat)
+        .gte('longitude', minLng).lte('longitude', maxLng)
+        .in('event_type', typeFilters.length
+          ? typeFilters
+          : ['race','meetup','training','tiny_whoop','championship','fun_fly'])
+        .eq('is_cancelled', false)
+        .gte('start_time', new Date().toISOString())
+        .order('start_time', { ascending: true });
+      if (error) throw error;
+
+      let rsvpdIds: string[] = [];
+      if (userId) {
+        const { data: rsvps } = await supabase
+          .from('event_rsvps')
+          .select('event_id')
+          .eq('user_id', userId);
+        rsvpdIds = (rsvps ?? []).map((r: any) => r.event_id);
+      }
+
+      const filtered = (data ?? [])
+        .map((e: any) => ({
+          ...e,
+          organizer_username: e.users?.username ?? null,
+          user_rsvpd: rsvpdIds.includes(e.id),
+        }))
+        .filter((e: RaceEvent) =>
+          haversineDistance(lat, lng, e.latitude, e.longitude) <= radiusMiles
+        );
+      setEvents(filtered);
+    } catch (e) {
+      console.error('fetchEvents:', e);
+    }
+  }, [userId]);
+
+  // ── Fetch comments ─────────────────────────────────────────────────────────
+  const fetchComments = useCallback(async (spotId: string) => {
+    const { data, error } = await supabase
+      .from('spot_comments')
+      .select('*')
+      .eq('spot_id', spotId)
+      .order('created_at', { ascending: true });
+    if (!error) setComments(data ?? []);
+  }, []);
+
+  // ── Add spot ───────────────────────────────────────────────────────────────
+  const addSpot = useCallback(async (
+    spot: NewSpotData,
+    creatorUsername: string,
+  ): Promise<{ data: FlySpot | null; error: any }> => {
+    if (!userId) return { data: null, error: 'Not logged in' };
+    const { data, error } = await supabase
+      .from('fly_spots')
+      .insert({ ...spot, created_by: userId })
+      .select()
+      .single();
+    if (!error && data) {
+      setSpots(prev => [...prev, { ...data, creator_username: creatorUsername }]);
+    }
+    return { data: data ?? null, error };
+  }, [userId]);
+
+  // ── Vote on spot ───────────────────────────────────────────────────────────
+  const voteSpot = useCallback(async (
+    spotId: string,
+    vote: 1 | -1,
+    currentVote: 1 | -1 | null,
+  ) => {
+    if (!userId) return;
+    if (vote === currentVote) {
+      await supabase
+        .from('spot_votes')
+        .delete()
+        .eq('spot_id', spotId)
+        .eq('user_id', userId);
+    } else {
+      await supabase
+        .from('spot_votes')
+        .upsert(
+          { spot_id: spotId, user_id: userId, vote },
+          { onConflict: 'spot_id,user_id' },
+        );
+    }
+  }, [userId]);
+
+  // ── Add comment ────────────────────────────────────────────────────────────
+  const addComment = useCallback(async (
+    spotId: string,
+    content: string,
+    isAnonymous: boolean,
+  ) => {
+    if (!userId) return;
+    await supabase.from('spot_comments').insert({
+      spot_id:      spotId,
+      user_id:      userId,
+      content,
+      is_anonymous: isAnonymous,
+    });
+    await fetchComments(spotId);
+  }, [userId, fetchComments]);
+
+  // ── Add event ──────────────────────────────────────────────────────────────
+  const addEvent = useCallback(async (
+    evt: NewEventData,
+  ): Promise<{ data: RaceEvent | null; error: any }> => {
+    if (!userId) return { data: null, error: 'Not logged in' };
+    const { data, error } = await supabase
+      .from('race_events')
+      .insert({
+        organizer_id:     userId,
+        name:             evt.name,
+        description:      evt.description,
+        event_type:       evt.event_type,
+        event_source:     'community',
+        latitude:         evt.latitude,
+        longitude:        evt.longitude,
+        venue_name:       evt.venue_name,
+        city:             evt.city,
+        state:            evt.state,
+        start_time:       evt.start_time,
+        end_time:         evt.end_time || null,
+        max_participants: evt.max_participants ? parseInt(evt.max_participants) : null,
+        registration_url: evt.registration_url || null,
+      })
+      .select()
+      .single();
+    if (!error && data) {
+      setEvents(prev => [{ ...data, user_rsvpd: false }, ...prev]);
+    }
+    return { data: data ?? null, error };
+  }, [userId]);
+
+  // ── Toggle RSVP ────────────────────────────────────────────────────────────
+  const toggleRsvp = useCallback(async (eventId: string) => {
+    if (!userId) return;
+    const evt = events.find(e => e.id === eventId);
+    if (!evt) return;
+    if (evt.user_rsvpd) {
+      await supabase.from('event_rsvps').delete()
+        .eq('event_id', eventId).eq('user_id', userId);
+      await supabase.from('race_events')
+        .update({ rsvp_count: Math.max(0, evt.rsvp_count - 1) })
+        .eq('id', eventId);
+      setEvents(prev => prev.map(e => e.id !== eventId ? e : {
+        ...e, user_rsvpd: false, rsvp_count: Math.max(0, e.rsvp_count - 1),
+      }));
+    } else {
+      await supabase.from('event_rsvps').insert({ event_id: eventId, user_id: userId });
+      await supabase.from('race_events')
+        .update({ rsvp_count: evt.rsvp_count + 1 })
+        .eq('id', eventId);
+      setEvents(prev => prev.map(e => e.id !== eventId ? e : {
+        ...e, user_rsvpd: true, rsvp_count: e.rsvp_count + 1,
+      }));
+    }
+  }, [userId, events]);
+
+  return {
+    spots, events, comments, loading,
+    fetchSpots, fetchEvents, fetchComments,
+    addSpot, voteSpot, addComment,
+    addEvent, toggleRsvp,
+  };
+}
