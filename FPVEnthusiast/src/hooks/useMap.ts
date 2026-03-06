@@ -108,10 +108,12 @@ function boundingBox(lat: number, lng: number, miles: number) {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useMap(userId?: string) {
-  const [spots,    setSpots]    = useState<FlySpot[]>([]);
-  const [events,   setEvents]   = useState<RaceEvent[]>([]);
-  const [comments, setComments] = useState<SpotComment[]>([]);
-  const [loading,  setLoading]  = useState(false);
+  const [spots,        setSpots]        = useState<FlySpot[]>([]);
+  const [events,       setEvents]       = useState<RaceEvent[]>([]);
+  const [comments,     setComments]     = useState<SpotComment[]>([]);
+  const [loading,      setLoading]      = useState(false);
+  const [mgpSyncing,   setMgpSyncing]   = useState(false);
+  const [mgpSyncCount, setMgpSyncCount] = useState(0);
 
   // ── Fetch fly spots ────────────────────────────────────────────────────────
   const fetchSpots = useCallback(async (
@@ -188,6 +190,28 @@ export function useMap(userId?: string) {
       console.error('fetchEvents:', e);
     }
   }, [userId]);
+
+  // ── Sync MultiGP events via Supabase Edge Function ─────────────────────────
+  const syncMultiGPEvents = useCallback(async (
+    lat: number,
+    lng: number,
+    distanceMiles: number,
+  ) => {
+    setMgpSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('sync-multigp', {
+        body: { lat, lng, distance: distanceMiles },
+      });
+      if (!error && data?.synced) {
+        setMgpSyncCount(data.synced);
+        console.log(`[MultiGP] Synced ${data.synced} race events`);
+      }
+    } catch (e) {
+      console.log('[MultiGP] Sync skipped (edge function not deployed or no API key)');
+    } finally {
+      setMgpSyncing(false);
+    }
+  }, []);
 
   // ── Fetch comments ─────────────────────────────────────────────────────────
   const fetchComments = useCallback(async (spotId: string) => {
@@ -313,7 +337,9 @@ export function useMap(userId?: string) {
 
   return {
     spots, events, comments, loading,
+    mgpSyncing, mgpSyncCount,
     fetchSpots, fetchEvents, fetchComments,
+    syncMultiGPEvents,
     addSpot, voteSpot, addComment,
     addEvent, toggleRsvp,
   };
