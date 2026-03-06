@@ -1,986 +1,758 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+// src/components/PostCard.tsx
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  Linking,
-  Modal,
-  TextInput,
-  ScrollView,
-  ActivityIndicator,
-  Animated,
-  Image,
+  View, Text, Image, TouchableOpacity, StyleSheet,
+  AppState, Modal, Alert, ActivityIndicator, TextInput,
+  Dimensions, Linking, Platform, FlatList, KeyboardAvoidingView,
+  Keyboard, PanResponder, ScrollView,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
-import { useYouTubeAuth } from '../hooks/useYouTubeAuth';
-import { likeYouTubeVideo, subscribeToChannel } from '../utils/youtubeApi';
+import MentionTextInputComponent from './MentionTextInput';
+import MentionText from './MentionText';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const YT_API_KEY = 'AIzaSyExample'; // ← replace with your real key
+
+const MentionTextInput = MentionTextInputComponent as any;
+
 const MOBILE_UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) ' +
+  'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-export interface PostData {
-  id: string;
-  user_id: string;
-  caption?: string | null;
-  media_url?: string | null;
-  media_type?: string | null;
-  thumbnail_url?: string | null;
-  source_url?: string | null;
-  embed_url?: string | null;
-  source_platform?: string | null;
-  like_count?: number | null;
-  comment_count?: number | null;
-  created_at?: string;
-  isLiked?: boolean;
-  users?: {
-    id?: string;
-    username: string;
-    avatar_url?: string | null;
-  } | null;
-}
+const { width } = Dimensions.get('window');
 
-interface Props {
-  post: PostData;
-  currentUserId?: string;
-  onDelete?: (id: string) => void;
-  onCaptionUpdate?: (id: string, caption: string) => void;
-  visiblePostId?: string | null;
-  autoplay?: boolean;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function getYoutubeVideoId(url?: string | null): string | null {
   if (!url) return null;
   const m = url.match(
-    /(?:youtu\.be\/|(?:www\.)?youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/|v\/))([A-Za-z0-9_-]{11})/
+    /(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/
   );
   return m ? m[1] : null;
 }
 
-function getYoutubeThumbnail(videoId: string): string {
-  return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+function detectPlatform(url?: string | null): string {
+  if (!url) return 'unknown';
+  if (url.includes('youtube.com') || url.includes('youtu.be') || url.includes('youtube-nocookie.com')) return 'youtube';
+  if (url.includes('instagram.com')) return 'instagram';
+  if (url.includes('tiktok.com')) return 'tiktok';
+  if (url.includes('facebook.com') || url.includes('fb.watch')) return 'facebook';
+  if (url.includes('twitter.com') || url.includes('x.com')) return 'twitter';
+  return 'unknown';
 }
 
-function getInstagramShortcode(url?: string | null): string | null {
-  if (!url) return null;
-  const m = url.match(/instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/);
-  return m ? m[1] : null;
-}
-
-type SocialPlatform = 'youtube' | 'instagram' | 'tiktok' | 'twitter' | 'facebook' | 'other';
-
-function detectPlatform(post: PostData): SocialPlatform {
-  const p = (post.source_platform ?? '').toLowerCase();
-  if (p === 'youtube') return 'youtube';
-  if (p === 'instagram') return 'instagram';
-  if (p === 'tiktok') return 'tiktok';
-  if (p === 'twitter' || p === 'x') return 'twitter';
-  if (p === 'facebook') return 'facebook';
-  const url = post.source_url ?? post.embed_url ?? post.media_url ?? '';
-  if (/youtube|youtu\.be|youtube-nocookie/.test(url)) return 'youtube';
-  if (/instagram\.com/.test(url)) return 'instagram';
-  if (/tiktok\.com/.test(url)) return 'tiktok';
-  if (/twitter\.com|x\.com/.test(url)) return 'twitter';
-  if (/facebook\.com/.test(url)) return 'facebook';
-  return 'other';
-}
-
-function timeAgo(dateStr: string): string {
+function timeAgo(dateStr?: string | null): string {
+  if (!dateStr) return '';
   const diff = Date.now() - new Date(dateStr).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d ago`;
-  return `${Math.floor(d / 7)}w ago`;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return days + 'd ago';
+  if (days < 30) return Math.floor(days / 7) + 'w ago';
+  if (days < 365) return Math.floor(days / 30) + 'mo ago';
+  return Math.floor(days / 365) + 'y ago';
 }
 
-function buildYouTubeHtml(videoId: string): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; background:#000; }
-  html, body { width:100%; height:100%; overflow:hidden; }
-  iframe { width:100%; height:100%; border:none; }
-</style>
-</head>
-<body>
-<iframe
-  id="yt"
-  src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1&origin=https://www.youtube-nocookie.com"
-  allow="autoplay; fullscreen; encrypted-media"
-  allowfullscreen
-></iframe>
-<script>
-  // Force play on the video element once it exists
-  function tryPlay() {
-    var v = document.querySelector('video');
-    if (v) {
-      v.play().catch(function(){});
-    } else {
-      setTimeout(tryPlay, 500);
-    }
-  }
-  setTimeout(tryPlay, 800);
-
-  // Listen for YouTube iframe API errors
-  window.addEventListener('message', function(e) {
-    if (e.data && typeof e.data === 'string') {
-      try {
-        var d = JSON.parse(e.data);
-        if (d.event === 'infoDelivery' && d.info && d.info.title) {
-          var t = d.info.title;
-          if (t.startsWith('YT_ERROR:')) {
-            window.ReactNativeWebView.postMessage(t);
-          }
-        }
-        if (d.event === 'onError') {
-          window.ReactNativeWebView.postMessage('YT_ERROR:' + (d.info || 0));
-        }
-      } catch(ex) {}
-    }
-  });
-<\/script>
-</body>
-</html>`;
+function openYouTubeApp(videoId: string): void {
+  const appUrl = 'youtube://watch?v=' + videoId;
+  const webUrl = 'https://www.youtube.com/watch?v=' + videoId;
+  Linking.canOpenURL(appUrl)
+    .then(function (s) { return Linking.openURL(s ? appUrl : webUrl); })
+    .catch(function () { return Linking.openURL(webUrl); });
 }
 
-async function getChannelIdForVideo(videoId: string): Promise<string | null> {
-  try {
-    const res = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${YT_API_KEY}`
-    );
-    const json = await res.json();
-    return json?.items?.[0]?.snippet?.channelId ?? null;
-  } catch {
-    return null;
-  }
+function buildYouTubeHtml(videoId: string, startSeconds?: number): string {
+  const start = startSeconds || 0;
+  const src =
+    'https://www.youtube-nocookie.com/embed/' + videoId +
+    '?autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1' +
+    '&fs=0&iv_load_policy=3&controls=1&disablekb=0&enablejsapi=1' +
+    '&start=' + start + '&origin=https://www.youtube-nocookie.com';
+  return [
+    '<!DOCTYPE html><html><head>',
+    '<meta charset="utf-8"/>',
+    '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>',
+    '<meta name="referrer" content="strict-origin-when-cross-origin"/>',
+    '<style>*{margin:0;padding:0;box-sizing:border-box;background:#000}html,body{width:100%;height:100%;overflow:hidden}iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none}</style></head><body>',
+    '<iframe id="yt" src="' + src + '" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen></iframe>',
+    '<script>',
+    'var ifr=document.getElementById("yt");',
+    'function sendCmd(c){ifr.contentWindow.postMessage(JSON.stringify({event:"command",func:c,args:[]}),"*");}',
+    'window.addEventListener("message",function(e){try{var d=typeof e.data==="string"?JSON.parse(e.data):e.data;if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify(d));}catch(x){}});',
+    'document.addEventListener("message",function(e){try{var m=JSON.parse(e.data);if(m.command)sendCmd(m.command);}catch(x){}});',
+    '</script></body></html>',
+  ].join('');
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
-export default function PostCard({
-  post,
-  currentUserId,
-  onDelete,
-  onCaptionUpdate,
-  visiblePostId,
-  autoplay,
-}: Props) {
-  const { accessToken: ytToken } = useYouTubeAuth(currentUserId);
+function injectCmd(ref: React.RefObject<WebView | null>, cmd: string): void {
+  ref.current && ref.current.injectJavaScript(
+    '(function(){var f=document.getElementById("yt");if(f)f.contentWindow.postMessage(JSON.stringify({event:"command",func:"' + cmd + '",args:[]}),"*");})();true;'
+  );
+}
 
-  // Like / comment state
-  const [liked, setLiked] = useState(post.isLiked ?? false);
-  const [likeCount, setLikeCount] = useState(post.like_count ?? 0);
-  const [commentCount, setCommentCount] = useState(post.comment_count ?? 0);
-  const heartAnim = useRef(new Animated.Value(0)).current;
+interface PostData {
+  id: string;
+  user_id?: string | null;
+  media_url?: string | null;
+  social_url?: string | null;
+  embed_url?: string | null;
+  media_type?: string | null;
+  platform?: string | null;
+  thumbnail_url?: string | null;
+  caption?: string | null;
+  created_at?: string | null;
+  isLiked?: boolean;
+  likeCount?: number;
+  commentCount?: number;
+  likes_count?: number;
+  comments_count?: number;
+  users?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
+}
 
-  // YouTube state
-  const [ytPlaying, setYtPlaying] = useState(false);
+interface Comment {
+  id: string;
+  user_id?: string | null;
+  post_id?: string | null;
+  content?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  likes_count?: number;
+  users?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
+}
+
+interface CommentLikeState { liked: boolean; count: number; }
+
+interface Props {
+  post: PostData;
+  isVisible?: boolean;
+  currentUserId?: string | null;
+  onLike?: (postId: string, currentlyLiked: boolean) => void;
+  onDelete?: (postId: string) => void;
+  onCaptionUpdate?: (postId: string, caption: string) => void;
+  autoplay?: boolean;
+}
+
+export default function PostCard(props: Props) {
+  const { post, currentUserId, onLike, onDelete, onCaptionUpdate } = props;
+
+  const webViewRef = useRef<WebView | null>(null);
+  const commentInputRef = useRef<TextInput | null>(null);
+  const flatListRef = useRef<FlatList<Comment> | null>(null);
+
   const [isYtReady, setIsYtReady] = useState(false);
   const [ytError, setYtError] = useState(false);
-  const [ytLiked, setYtLiked] = useState(false);
-  const [ytSubscribed, setYtSubscribed] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
 
-  // Modals
-  const [commentModalVisible, setCommentModalVisible] = useState(false);
-  const [editCaptionVisible, setEditCaptionVisible] = useState(false);
-  const [editCaptionText, setEditCaptionText] = useState(post.caption ?? '');
-  const [comments, setComments] = useState<any[]>([]);
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [ownerMenuVisible, setOwnerMenuVisible] = useState(false);
+  const [submittingComment, setSubmittingComment] = useState(false);
 
-  const isOwner = currentUserId === post.user_id;
-  const platform = detectPlatform(post);
+  const [localCommentCount, setLocalCommentCount] = useState(
+    post.comments_count ?? post.commentCount ?? 0
+  );
 
-  // Reset when post changes
-  useEffect(() => {
-    setIsYtReady(false);
-    setYtError(false);
-    setYtPlaying(false);
-    setLiked(post.isLiked ?? false);
-    setLikeCount(post.like_count ?? 0);
-    setCommentCount(post.comment_count ?? 0);
-  }, [post.id]);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [showOwnerMenu, setShowOwnerMenu] = useState(false);
+  const [showEditCaption, setShowEditCaption] = useState(false);
+  const [editCaptionText, setEditCaptionText] = useState(post.caption || '');
+  const [commentLikes, setCommentLikes] = useState<Record<string, CommentLikeState>>({});
 
-  // Pause YouTube when scrolled off screen
-  useEffect(() => {
-    if (visiblePostId !== post.id) {
-      setYtPlaying(false);
-    }
-  }, [visiblePostId, post.id]);
+  const isOwner = !!currentUserId && currentUserId === post.user_id;
+  const insets = useSafeAreaInsets();
 
-  // ─── Like ──────────────────────────────────────────────────────────────────
-  const handleLike = useCallback(async () => {
-    const next = !liked;
-    setLiked(next);
-    setLikeCount((c) => c + (next ? 1 : -1));
-    Animated.sequence([
-      Animated.timing(heartAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
-      Animated.timing(heartAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
-    ]).start();
-    try {
-      if (next) {
-        await supabase.from('likes').insert({ post_id: post.id, user_id: currentUserId });
-      } else {
-        await supabase.from('likes').delete().match({ post_id: post.id, user_id: currentUserId });
-      }
-    } catch {
-      setLiked(!next);
-      setLikeCount((c) => c + (next ? -1 : 1));
-    }
-  }, [liked, post.id, currentUserId]);
 
-  // ─── Comments ──────────────────────────────────────────────────────────────
-  const loadComments = useCallback(async () => {
-    const { data } = await supabase
-      .from('comments')
-      .select('*, users(username, avatar_url)')
-      .eq('post_id', post.id)
-      .order('created_at', { ascending: true });
-    setComments(data ?? []);
-  }, [post.id]);
-
-  const handleAddComment = useCallback(async () => {
-    if (!newComment.trim()) return;
-    await supabase
-      .from('comments')
-      .insert({ post_id: post.id, user_id: currentUserId, content: newComment.trim() });
-    setNewComment('');
-    setCommentCount((c) => c + 1);
-    loadComments();
-  }, [newComment, post.id, currentUserId, loadComments]);
-
-  // ─── YouTube API actions ───────────────────────────────────────────────────
-  const handleYtLike = useCallback(async () => {
-    const videoId = getYoutubeVideoId(post.source_url ?? post.embed_url);
-    if (!videoId || !ytToken) return;
-    try {
-      await likeYouTubeVideo(videoId, ytToken);
-      setYtLiked(true);
-    } catch {
-      Alert.alert('Error', 'Could not like video. Make sure you are signed in with YouTube.');
-    }
-  }, [post.source_url, post.embed_url, ytToken]);
-
-  const handleYtSubscribe = useCallback(async () => {
-    const videoId = getYoutubeVideoId(post.source_url ?? post.embed_url);
-    if (!videoId || !ytToken) return;
-    try {
-      const channelId = await getChannelIdForVideo(videoId);
-      if (!channelId) throw new Error('No channel');
-      await subscribeToChannel(channelId, ytToken);
-      setYtSubscribed(true);
-    } catch {
-      Alert.alert('Error', 'Could not subscribe. Make sure you are signed in with YouTube.');
-    }
-  }, [post.source_url, post.embed_url, ytToken]);
-
-  // ─── Instagram tap ─────────────────────────────────────────────────────────
-  const handleInstagramOpen = useCallback(async () => {
-    const url = post.source_url ?? post.embed_url ?? post.media_url ?? '';
-    const shortcode = getInstagramShortcode(url);
-    const universalLink = shortcode
-      ? `https://www.instagram.com/p/${shortcode}/`
-      : url;
-
-    Alert.alert(
-      'Opening Instagram',
-      'Embedded playback is not supported for Instagram. You will be redirected to the Instagram app or browser.',
-      [
-        {
-          text: 'Open',
-          onPress: async () => {
-            const appLink = shortcode
-              ? `instagram://media?id=${shortcode}`
-              : 'instagram://';
-            const canOpen = await Linking.canOpenURL(appLink).catch(() => false);
-            if (canOpen) {
-              await Linking.openURL(appLink);
-            } else {
-              await Linking.openURL(universalLink);
-            }
-          },
-        },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
-  }, [post.source_url, post.embed_url, post.media_url]);
-
-  // ─── Delete / edit ─────────────────────────────────────────────────────────
-  const handleDelete = useCallback(async () => {
-    Alert.alert('Delete Post', 'Are you sure?', [
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await supabase.from('posts').delete().eq('id', post.id);
-          onDelete?.(post.id);
-        },
+  const commentsPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, g) => g.dy > 5,
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 50) setShowComments(false);
       },
+    })
+  ).current;
+
+  const resolvedPlatform: string = (function () {
+    if (post.platform && post.platform !== 'unknown') return post.platform;
+    const a = detectPlatform(post.media_url); if (a !== 'unknown') return a;
+    const b = detectPlatform(post.social_url); if (b !== 'unknown') return b;
+    if (post.media_type === 'social_embed') { const c = detectPlatform(post.embed_url); if (c !== 'unknown') return c; }
+    return 'unknown';
+  })();
+
+  const videoId: string | null = resolvedPlatform !== 'youtube' ? null :
+    (getYoutubeVideoId(post.media_url) || getYoutubeVideoId(post.social_url) || getYoutubeVideoId(post.embed_url) || null);
+
+  const thumbnail = post.thumbnail_url || (videoId ? 'https://img.youtube.com/vi/' + videoId + '/hqdefault.jpg' : null);
+
+  const inject = useCallback(function (cmd: string) { injectCmd(webViewRef, cmd); }, []);
+
+  useFocusEffect(useCallback(function () {
+    if (resolvedPlatform === 'youtube' && isYtReady && !ytError) inject('playVideo');
+    return function () { if (resolvedPlatform === 'youtube') inject('pauseVideo'); };
+  }, [resolvedPlatform, isYtReady, ytError, inject]));
+
+  useEffect(function () {
+    if (resolvedPlatform !== 'youtube') return;
+    const sub = AppState.addEventListener('change', function (s) {
+      if (s === 'active' && isYtReady && !ytError) inject('playVideo');
+      if (s === 'background') inject('pauseVideo');
+    });
+    return function () { sub.remove(); };
+  }, [resolvedPlatform, isYtReady, ytError, inject]);
+
+  useEffect(function () {
+    if (resolvedPlatform !== 'youtube' || !isYtReady || ytError) return;
+    props.isVisible ? inject('playVideo') : inject('pauseVideo');
+  }, [props.isVisible, resolvedPlatform, isYtReady, ytError, inject]);
+
+  const handleMessage = useCallback(function (e: { nativeEvent: { data: string } }) {
+    try {
+      const d = JSON.parse(e.nativeEvent.data);
+      if (d.event === 'onReady') setIsYtReady(true);
+      if (d.event === 'onError' && [2, 100, 101, 150, 152, 153].includes(d.info)) setYtError(true);
+    } catch (_) { }
+  }, []);
+
+  const handleInstagramOpen = useCallback(function () {
+    Alert.alert('Opening Instagram',
+      'Embedded playback is not supported. You\'ll be redirected to Instagram.\n\nCome back after viewing — this app is your one-stop FPV hub! 🚁',
+      [{ text: 'Cancel', style: 'cancel' },
+      { text: 'Open', onPress: function () { const u = post.social_url || post.media_url; if (u) Linking.openURL(u); } }]
+    );
+  }, [post.social_url, post.media_url]);
+
+  const fetchCommentLikes = useCallback(async function (loaded: Comment[]) {
+    const map: Record<string, CommentLikeState> = {};
+    loaded.forEach(function (c) { map[c.id] = { liked: false, count: c.likes_count ?? 0 }; });
+    if (!currentUserId || !loaded.length) { setCommentLikes(map); return; }
+    try {
+      const { data } = await supabase.from('comment_likes').select('comment_id')
+        .eq('user_id', currentUserId).in('comment_id', loaded.map(function (c) { return c.id; }));
+      const liked = new Set((data ?? []).map(function (l: any) { return l.comment_id; }));
+      loaded.forEach(function (c) { map[c.id] = { liked: liked.has(c.id), count: c.likes_count ?? 0 }; });
+    } catch (_) { }
+    setCommentLikes(map);
+  }, [currentUserId]);
+
+  const fetchComments = useCallback(async function () {
+    setCommentsLoading(true);
+    try {
+      const r = await supabase.from('comments')
+        .select('*, users:user_id(id,username,avatar_url)')
+        .eq('post_id', post.id).order('created_at', { ascending: true });
+      if (r.error) throw r.error;
+      const data: Comment[] = r.data || [];
+      setComments(data);
+      await fetchCommentLikes(data);
+      setTimeout(function () { flatListRef.current?.scrollToEnd({ animated: false }); }, 150);
+    } catch (err: any) { console.error('[PostCard] fetchComments:', err.message); }
+    finally { setCommentsLoading(false); }
+  }, [post.id, fetchCommentLikes]);
+
+  const handleOpenComments = useCallback(function () {
+    setShowComments(true);
+    fetchComments();
+  }, [fetchComments]);
+
+  const handleSubmitComment = useCallback(async function () {
+    const text = newComment.trim();
+    if (!text || !currentUserId || submittingComment) return;
+    commentInputRef.current?.blur();
+    setSubmittingComment(true);
+    setLocalCommentCount(function (n) { return n + 1; });
+    try {
+      const r = await supabase.from('comments')
+        .insert({ post_id: post.id, user_id: currentUserId, content: text });
+      if (r.error) throw r.error;
+
+      if (post.user_id && post.user_id !== currentUserId) {
+        void supabase.from('notifications').insert({
+          user_id: post.user_id,
+          actor_id: currentUserId,
+          type: 'comment',
+          post_id: post.id,
+        });
+      }
+
+      setNewComment('');
+      await fetchComments();
+    } catch (err: any) {
+      setLocalCommentCount(function (n) { return Math.max(0, n - 1); });
+      console.error('[PostCard] submitComment:', err.message);
+    } finally { setSubmittingComment(false); }
+  }, [newComment, currentUserId, submittingComment, post.id, post.user_id, fetchComments]);
+
+  const handleEditComment = useCallback(async function (id: string, txt: string) {
+    const text = txt.trim();
+    if (!text || !currentUserId) return;
+    try {
+      const r = await supabase.from('comments')
+        .update({ content: text, updated_at: new Date().toISOString() })
+        .eq('id', id).eq('user_id', currentUserId);
+      if (r.error) { Alert.alert('Error', 'Could not save edit.'); return; }
+      setEditingCommentId(null); setEditingCommentText('');
+      await fetchComments();
+    } catch (err: any) { console.error('[PostCard] editComment:', err.message); }
+  }, [currentUserId, fetchComments]);
+
+  const handleDeleteComment = useCallback(async function (id: string) {
+    if (!currentUserId) return;
+    Alert.alert('Delete Comment', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: async function () {
+          const r = await supabase.from('comments').delete().eq('id', id).eq('user_id', currentUserId);
+          if (!r.error) {
+            setLocalCommentCount(function (n) { return Math.max(0, n - 1); });
+            await fetchComments();
+          }
+        }
+      },
+    ]);
+  }, [currentUserId, fetchComments]);
+
+  const handleCommentLike = useCallback(async function (id: string) {
+    if (!currentUserId) return;
+    const cur = commentLikes[id] ?? { liked: false, count: 0 };
+    const nl = !cur.liked;
+    setCommentLikes(function (p) { return { ...p, [id]: { liked: nl, count: nl ? cur.count + 1 : Math.max(cur.count - 1, 0) } }; });
+    try {
+      nl
+        ? await supabase.from('comment_likes').insert({ comment_id: id, user_id: currentUserId })
+        : await supabase.from('comment_likes').delete().eq('comment_id', id).eq('user_id', currentUserId);
+    } catch (_) { setCommentLikes(function (p) { return { ...p, [id]: cur }; }); }
+  }, [currentUserId, commentLikes]);
+
+  const handleDeletePost = useCallback(function () {
+    Alert.alert('Delete Post', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: function () { setShowOwnerMenu(false); if (onDelete) onDelete(post.id); } },
     ]);
   }, [post.id, onDelete]);
 
-  const handleSaveCaption = useCallback(async () => {
-    await supabase
-      .from('posts')
-      .update({ caption: editCaptionText })
-      .eq('id', post.id);
-    onCaptionUpdate?.(post.id, editCaptionText);
-    setEditCaptionVisible(false);
-  }, [post.id, editCaptionText, onCaptionUpdate]);
+  const handleSaveCaption = useCallback(async function () {
+    const r = await supabase.from('posts').update({ caption: editCaptionText }).eq('id', post.id).eq('user_id', currentUserId);
+    if (r.error) { Alert.alert('Error', 'Could not update caption.'); return; }
+    setShowEditCaption(false);
+    if (onCaptionUpdate) onCaptionUpdate(post.id, editCaptionText);
+  }, [editCaptionText, post.id, currentUserId, onCaptionUpdate]);
 
-  // ─── Media renderer ────────────────────────────────────────────────────────
-  const renderMedia = () => {
-
-    // ── YouTube ──────────────────────────────────────────────────────────────
-    if (platform === 'youtube') {
-      const videoId = getYoutubeVideoId(
-        post.source_url ?? post.embed_url ?? post.media_url
-      );
-
-      if (!videoId) {
-        return (
-          <View style={styles.mediaWrap}>
-            <View style={styles.ytFallback}>
-              <Ionicons name="logo-youtube" size={40} color="#ff0000" />
-              <Text style={styles.ytFallbackText}>YouTube video unavailable</Text>
-            </View>
-          </View>
-        );
-      }
-
+  // ── Media renderer ────────────────────────────────────────────────────────
+  function renderMedia() {
+    if (resolvedPlatform === 'youtube' && videoId) {
       if (ytError) {
         return (
-          <View style={styles.mediaWrap}>
-            <View style={styles.ytFallback}>
-              <Ionicons name="warning-outline" size={36} color="#ff6b6b" />
-              <Text style={styles.ytFallbackText}>Video unavailable</Text>
-              <TouchableOpacity
-                style={styles.ytOpenBtn}
-                onPress={() =>
-                  Linking.openURL(`https://www.youtube.com/watch?v=${videoId}`)
-                }
-              >
-                <Text style={styles.ytOpenBtnText}>Open in YouTube</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
-      }
-
-      // Thumbnail / tap to play
-      if (!ytPlaying) {
-        const thumb = post.thumbnail_url ?? getYoutubeThumbnail(videoId);
-        return (
-          <TouchableOpacity
-            style={styles.mediaWrap}
-            activeOpacity={0.9}
-            onPress={() => setYtPlaying(true)}
-          >
-            <Image
-              source={{ uri: thumb }}
-              style={styles.mediaCover}
-              resizeMode="cover"
-            />
-            <View style={StyleSheet.absoluteFill}>
-              <View style={styles.ytThumbOverlay}>
-                <View style={styles.ytPlayBtnCircle}>
-                  <Ionicons name="play" size={28} color="#fff" />
-                </View>
-              </View>
-            </View>
-            <View style={styles.platformBadge}>
-              <Ionicons name="logo-youtube" size={14} color="#ff0000" />
-            </View>
+          <TouchableOpacity style={styles.thumbContainer} onPress={function () { openYouTubeApp(videoId); }} activeOpacity={0.9}>
+            {thumbnail ? <Image source={{ uri: thumbnail }} style={styles.thumb} resizeMode="cover" /> : <View style={[styles.thumb, styles.thumbDark]} />}
+            <View style={styles.ytErrorOverlay}><Ionicons name="logo-youtube" size={40} color="#FF0000" /><Text style={styles.ytOpenText}>Open in YouTube</Text></View>
           </TouchableOpacity>
         );
       }
-
-      // Playing: WebView
       return (
-        <View style={styles.mediaWrap}>
-          <WebView
-            source={{
-              html: buildYouTubeHtml(videoId),
-              baseUrl: 'https://www.youtube-nocookie.com',
-            }}
-            style={styles.webview}
-            userAgent={MOBILE_UA}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            allowsInlineMediaPlayback={true}
-            mediaPlaybackRequiresUserAction={false}
-            allowsFullscreenVideo={true}
-            onLoadEnd={() => setIsYtReady(true)}
-            onMessage={(e) => {
-              const msg = e.nativeEvent.data ?? '';
-              if (msg.startsWith('YT_ERROR:')) {
-                const code = parseInt(msg.replace('YT_ERROR:', ''), 10);
-                if ([2, 100, 101, 150, 152, 153].includes(code)) {
-                  setYtError(true);
-                }
-              }
-            }}
-            onError={() => setYtError(true)}
-          />
-          {!isYtReady && (
-            <View style={styles.ytLoader}>
-              <ActivityIndicator color="#ff0000" size="large" />
-            </View>
-          )}
-          <View style={styles.platformBadge}>
-            <Ionicons name="logo-youtube" size={14} color="#ff0000" />
-          </View>
+        <View style={styles.videoContainer}>
+          <WebView ref={webViewRef} source={{ html: buildYouTubeHtml(videoId), baseUrl: 'https://www.youtube-nocookie.com' }}
+            style={styles.webView} onMessage={handleMessage} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false}
+            userAgent={MOBILE_UA} javaScriptEnabled domStorageEnabled allowsFullscreenVideo={false} scrollEnabled={false} />
+          <TouchableOpacity style={styles.muteBtn} onPress={function () { inject(isMuted ? 'unMute' : 'mute'); setIsMuted(function (p) { return !p; }); }}>
+            <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.openYtBtn} onPress={function () { openYouTubeApp(videoId); }}>
+            <Ionicons name="logo-youtube" size={16} color="#FF0000" />
+          </TouchableOpacity>
         </View>
       );
     }
-
-    // ── Instagram ────────────────────────────────────────────────────────────
-    if (platform === 'instagram') {
+    if (resolvedPlatform === 'youtube') {
       return (
-        <TouchableOpacity
-          style={styles.mediaWrap}
-          activeOpacity={0.85}
-          onPress={handleInstagramOpen}
-        >
-          {post.thumbnail_url ? (
-            <>
-              <Image
-                source={{ uri: post.thumbnail_url }}
-                style={styles.mediaCover}
-                resizeMode="cover"
-              />
-              <View style={styles.igThumbOverlay}>
-                <View style={styles.igOpenPill}>
-                  <Ionicons name="logo-instagram" size={14} color="#fff" />
-                  <Text style={styles.igOpenPillText}>Watch on Instagram</Text>
-                </View>
-              </View>
-            </>
-          ) : (
-            <LinearGradient
-              colors={['#833ab4', '#fd1d1d', '#fcb045']}
-              style={styles.igCard}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <View style={styles.igCardInner}>
-                <Ionicons name="logo-instagram" size={48} color="#fff" />
-                <Text style={styles.igCardTitle}>Instagram Post</Text>
-                <Text style={styles.igCardSub}>Tap to open</Text>
-              </View>
-            </LinearGradient>
-          )}
-          <View style={styles.platformBadge}>
-            <Ionicons name="logo-instagram" size={14} color="#fff" />
-          </View>
+        <TouchableOpacity style={styles.thumbContainer} onPress={function () { if (post.media_url) Linking.openURL(post.media_url); }} activeOpacity={0.9}>
+          <View style={[styles.thumb, styles.thumbDark]}><Ionicons name="logo-youtube" size={48} color="#FF0000" /><Text style={styles.ytOpenText}>YouTube Video</Text></View>
         </TouchableOpacity>
       );
     }
-
-    // ── TikTok ────────────────────────────────────────────────────────────────
-    if (platform === 'tiktok') {
-      const url = post.source_url ?? post.embed_url ?? post.media_url ?? '';
+    if (resolvedPlatform === 'instagram') {
       return (
-        <TouchableOpacity
-          style={styles.mediaWrap}
-          activeOpacity={0.85}
-          onPress={() => Linking.openURL(url)}
-        >
-          {post.thumbnail_url ? (
-            <Image
-              source={{ uri: post.thumbnail_url }}
-              style={styles.mediaCover}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[styles.igCard, { backgroundColor: '#010101' }]}>
-              <View style={styles.igCardInner}>
-                <Ionicons name="musical-notes" size={48} color="#fff" />
-                <Text style={styles.igCardTitle}>TikTok Video</Text>
-                <Text style={styles.igCardSub}>Tap to open</Text>
-              </View>
-            </View>
-          )}
-          <View style={styles.platformBadge}>
-            <Ionicons name="musical-notes" size={14} color="#fff" />
-          </View>
+        <TouchableOpacity style={styles.igContainer} onPress={handleInstagramOpen} activeOpacity={0.85}>
+          <View style={styles.igInner}><Ionicons name="logo-instagram" size={48} color="#fff" /><Text style={styles.igLabel}>Instagram Post</Text><Text style={styles.igSub}>Tap to open</Text></View>
+          <View style={styles.platformBadge}><Ionicons name="logo-instagram" size={16} color="#fff" /></View>
         </TouchableOpacity>
       );
     }
-
-    // ── Twitter/X ─────────────────────────────────────────────────────────────
-    if (platform === 'twitter') {
-      const url = post.source_url ?? post.embed_url ?? post.media_url ?? '';
+    if (['tiktok', 'facebook', 'twitter'].includes(resolvedPlatform)) {
+      const icon: any = resolvedPlatform === 'tiktok' ? 'musical-notes' : resolvedPlatform === 'facebook' ? 'logo-facebook' : 'logo-twitter';
+      const label = resolvedPlatform === 'tiktok' ? 'TikTok Video' : resolvedPlatform === 'facebook' ? 'Facebook Post' : 'Twitter/X Post';
       return (
-        <TouchableOpacity
-          style={styles.mediaWrap}
-          activeOpacity={0.85}
-          onPress={() => Linking.openURL(url)}
-        >
-          <View style={[styles.igCard, { backgroundColor: '#000' }]}>
-            <View style={styles.igCardInner}>
-              <Ionicons name="logo-twitter" size={48} color="#1DA1F2" />
-              <Text style={styles.igCardTitle}>Post on X</Text>
-              <Text style={styles.igCardSub}>Tap to open</Text>
-            </View>
-          </View>
-          <View style={styles.platformBadge}>
-            <Ionicons name="logo-twitter" size={14} color="#1DA1F2" />
-          </View>
+        <TouchableOpacity style={styles.socialContainer} onPress={function () { const u = post.social_url || post.media_url; if (u) Linking.openURL(u); }} activeOpacity={0.85}>
+          <Ionicons name={icon} size={40} color="#fff" /><Text style={styles.socialLabel}>{label}</Text><Text style={styles.socialSub}>Tap to open</Text>
         </TouchableOpacity>
       );
     }
-
-    // ── Facebook ──────────────────────────────────────────────────────────────
-    if (platform === 'facebook') {
-      const url = post.source_url ?? post.embed_url ?? post.media_url ?? '';
+    if (post.media_type === 'social_embed') {
+      const u = post.media_url || post.embed_url;
       return (
-        <TouchableOpacity
-          style={styles.mediaWrap}
-          activeOpacity={0.85}
-          onPress={() => Linking.openURL(url)}
-        >
-          <View style={[styles.igCard, { backgroundColor: '#1877F2' }]}>
-            <View style={styles.igCardInner}>
-              <Ionicons name="logo-facebook" size={48} color="#fff" />
-              <Text style={styles.igCardTitle}>Facebook Post</Text>
-              <Text style={styles.igCardSub}>Tap to open</Text>
-            </View>
-          </View>
-          <View style={styles.platformBadge}>
-            <Ionicons name="logo-facebook" size={14} color="#fff" />
-          </View>
+        <TouchableOpacity style={styles.socialContainer} onPress={function () { if (u) Linking.openURL(u); }} activeOpacity={0.85}>
+          <Ionicons name="link-outline" size={40} color="#fff" /><Text style={styles.socialLabel}>External Link</Text>
+          {u ? <Text style={styles.socialSub} numberOfLines={1}>{u}</Text> : null}
         </TouchableOpacity>
       );
     }
-
-    // ── Generic image ─────────────────────────────────────────────────────────
     if (post.media_url) {
-      return (
-        <View style={styles.mediaWrap}>
-          <Image
-            source={{ uri: post.media_url }}
-            style={styles.mediaCover}
-            resizeMode="cover"
-          />
-        </View>
-      );
+      if (post.media_type === 'video') {
+        return (
+          <TouchableOpacity style={styles.thumbContainer} onPress={function () { if (post.media_url) Linking.openURL(post.media_url); }} activeOpacity={0.9}>
+            <View style={[styles.thumb, styles.thumbDark]}><Ionicons name="videocam" size={48} color="#fff" /><Text style={styles.ytOpenText}>Tap to play</Text></View>
+          </TouchableOpacity>
+        );
+      }
+      return <View style={styles.thumbContainer}><Image source={{ uri: post.media_url }} style={styles.thumb} resizeMode="cover" /></View>;
     }
-
     return null;
-  };
+  }
 
-  const heartScale = heartAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [1, 1.4],
-  });
+  // ── Comment row ───────────────────────────────────────────────────────────
+  function renderComment(info: { item: Comment }) {
+    const c = info.item;
+    const isMine = !!currentUserId && currentUserId === c.user_id;
+    const edited = c.updated_at && c.created_at && c.updated_at !== c.created_at;
+    const lk = commentLikes[c.id] ?? { liked: false, count: 0 };
 
-  // ─── Render ────────────────────────────────────────────────────────────────
-  return (
-    <View style={styles.card}>
-
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.avatar}>
-          {post.users?.avatar_url ? (
-            <Image source={{ uri: post.users.avatar_url }} style={styles.avatarImg} />
-          ) : (
-            <Ionicons name="person-circle" size={36} color="#888" />
-          )}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.username}>{post.users?.username ?? 'Unknown'}</Text>
-          {post.created_at ? (
-            <Text style={styles.timestamp}>{timeAgo(post.created_at)}</Text>
-          ) : null}
-        </View>
-        {isOwner && (
-          <TouchableOpacity
-            onPress={() => setOwnerMenuVisible(true)}
-            style={styles.moreBtn}
-          >
-            <Ionicons name="ellipsis-horizontal" size={20} color="#aaa" />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Media */}
-      {renderMedia()}
-
-      {/* YouTube controls while playing */}
-      {platform === 'youtube' && ytPlaying && !ytError && (
-        <View style={styles.ytControls}>
-          <TouchableOpacity
-            style={[styles.ytPill, ytLiked && styles.ytPillActive]}
-            onPress={handleYtLike}
-          >
-            <Ionicons
-              name={ytLiked ? 'thumbs-up' : 'thumbs-up-outline'}
-              size={14}
-              color={ytLiked ? '#fff' : '#aaa'}
-            />
-            <Text style={[styles.ytPillText, ytLiked && { color: '#fff' }]}>Like</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.ytPill, ytSubscribed && styles.ytPillActive]}
-            onPress={handleYtSubscribe}
-          >
-            <Ionicons
-              name="notifications-outline"
-              size={14}
-              color={ytSubscribed ? '#fff' : '#aaa'}
-            />
-            <Text style={[styles.ytPillText, ytSubscribed && { color: '#fff' }]}>
-              Subscribe
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Caption */}
-      {!!post.caption && (
-        <View style={styles.captionRow}>
-          <Text style={styles.usernameInline}>{post.users?.username ?? ''}</Text>
-          <Text style={styles.captionText}> {post.caption}</Text>
-        </View>
-      )}
-
-      {/* Actions */}
-      <View style={styles.actions}>
-        <TouchableOpacity onPress={handleLike} style={styles.actionBtn}>
-          <Animated.View style={{ transform: [{ scale: heartScale }] }}>
-            <Ionicons
-              name={liked ? 'heart' : 'heart-outline'}
-              size={24}
-              color={liked ? '#e74c3c' : '#ccc'}
-            />
-          </Animated.View>
-          <Text style={styles.actionCount}>{likeCount}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => { loadComments(); setCommentModalVisible(true); }}
-          style={styles.actionBtn}
-        >
-          <Ionicons name="chatbubble-outline" size={22} color="#ccc" />
-          <Text style={styles.actionCount}>{commentCount}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ── Comment Modal ── */}
-      <Modal visible={commentModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>Comments</Text>
-            <ScrollView style={{ flex: 1 }}>
-              {comments.map((c) => (
-                <View key={c.id} style={styles.commentRow}>
-                  <Text style={styles.commentUser}>{c.users?.username ?? 'User'}</Text>
-                  <Text style={styles.commentText}> {c.content}</Text>
-                </View>
-              ))}
-            </ScrollView>
-            <View style={styles.commentInputRow}>
-              <TextInput
-                style={styles.commentInput}
-                placeholder="Add a comment…"
-                placeholderTextColor="#666"
-                value={newComment}
-                onChangeText={setNewComment}
-              />
-              <TouchableOpacity onPress={handleAddComment}>
-                <Ionicons name="send" size={22} color="#6c63ff" />
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity
-              style={styles.modalClose}
-              onPress={() => setCommentModalVisible(false)}
-            >
-              <Text style={styles.modalCloseText}>Close</Text>
+    if (editingCommentId === c.id) {
+      return (
+        <View style={styles.commentRow}>
+          <TextInput
+            style={styles.editCommentInput}
+            value={editingCommentText}
+            onChangeText={setEditingCommentText}
+            multiline
+            autoFocus
+          />
+          <View style={styles.editCommentActions}>
+            <TouchableOpacity onPress={function () { handleEditComment(c.id, editingCommentText); }} style={styles.editCommentBtn}>
+              <Text style={styles.editCommentBtnText}>Save</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={function () { setEditingCommentId(null); setEditingCommentText(''); }} style={[styles.editCommentBtn, styles.cancelEditBtn]}>
+              <Text style={styles.editCommentBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
+      );
+    }
+
+    return (
+      <View style={styles.commentRow}>
+        <View style={styles.commentAvatarWrap}>
+          {c.users?.avatar_url
+            ? <Image source={{ uri: c.users.avatar_url }} style={styles.commentAvatarImg} />
+            : <View style={styles.commentAvatarFallback}>
+              <Text style={styles.commentAvatarInitial}>{(c.users?.username || '?')[0].toUpperCase()}</Text>
+            </View>
+          }
+        </View>
+        <View style={styles.commentBubble}>
+          <View style={styles.commentBubbleHeader}>
+            <Text style={styles.commentUsername} numberOfLines={1}>{c.users?.username || 'Unknown'}</Text>
+            {isMine ? (
+              <View style={styles.commentOwnerIcons}>
+                <TouchableOpacity
+                  onPress={function () { setEditingCommentId(c.id); setEditingCommentText(c.content || ''); }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+                >
+                  <Ionicons name="pencil-outline" size={13} color="#4fc3f7" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={function () { handleDeleteComment(c.id); }}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                >
+                  <Ionicons name="trash-outline" size={13} color="#e74c3c" />
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
+          <MentionText text={c.content ?? ''} style={styles.commentText} />
+          <View style={styles.commentMeta}>
+            <Text style={styles.commentTime}>{timeAgo(c.created_at)}</Text>
+            {edited ? <Text style={styles.commentEdited}> · edited</Text> : null}
+            <TouchableOpacity style={styles.commentLikeBtn} onPress={function () { handleCommentLike(c.id); }}>
+              <Ionicons name={lk.liked ? 'heart' : 'heart-outline'} size={12} color={lk.liked ? '#e74c3c' : '#666'} />
+              {lk.count > 0 ? <Text style={styles.commentLikeCount}>{lk.count}</Text> : null}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Comment input ─────────────────────────────────────────────────────────
+  function renderCommentInput() {
+    if (!currentUserId) return null;
+    const hasText = newComment.trim().length > 0;
+    return (
+      <View style={[styles.commentInputRow, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+
+        <View style={styles.commentInputInner}>
+          <MentionTextInput
+            containerStyle={styles.commentInputWrap}
+            inputStyle={styles.commentInput}
+            placeholder="Add a comment..."
+            placeholderTextColor="#555"
+            value={newComment}
+            onChangeText={setNewComment}
+            multiline={true}
+            maxLength={500}
+            currentUserId={currentUserId}
+            suggestionsAbove={true}
+          />
+          <TouchableOpacity
+            onPress={function () {
+              if (!submittingComment && newComment.trim()) {
+                handleSubmitComment();
+              }
+            }}
+            activeOpacity={0.7}
+            style={[
+              styles.commentSendBtn,
+              hasText ? styles.commentSendBtnActive : styles.commentSendBtnInactive,
+            ]}
+          >
+            {submittingComment
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="send" size={15} color={hasText ? '#fff' : '#3a3a5a'} />
+            }
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Main render ───────────────────────────────────────────────────────────
+  return (
+    <View style={styles.card}>
+      <View style={styles.header}>
+        <View style={styles.avatarWrap}>
+          {post.users?.avatar_url
+            ? <Image source={{ uri: post.users.avatar_url }} style={styles.avatar} />
+            : <View style={styles.avatarFallback}>
+              <Text style={styles.avatarInitial}>{(post.users?.username || '?')[0].toUpperCase()}</Text>
+            </View>
+          }
+        </View>
+        <View style={styles.headerInfo}>
+          <Text style={styles.username}>{post.users?.username || 'Unknown'}</Text>
+          <Text style={styles.timestamp}>{timeAgo(post.created_at)}</Text>
+        </View>
+        {isOwner ? (
+          <TouchableOpacity onPress={function () { setShowOwnerMenu(true); }} style={styles.menuBtn}>
+            <Ionicons name="ellipsis-horizontal" size={20} color="#666" />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {renderMedia()}
+
+      {post.caption
+        ? <View style={styles.captionWrap}><MentionText text={post.caption ?? ''} style={styles.caption} /></View>
+        : null}
+
+      <View style={styles.actions}>
+        <TouchableOpacity style={styles.actionBtn} onPress={function () { if (onLike) onLike(post.id, post.isLiked || false); }}>
+          <Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={22} color={post.isLiked ? '#e74c3c' : '#666'} />
+          <Text style={styles.actionCount}>{post.likes_count ?? post.likeCount ?? 0}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionBtn} onPress={handleOpenComments}>
+          <Ionicons name="chatbubble-outline" size={20} color="#666" />
+          <Text style={styles.actionCount}>{localCommentCount}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Comments Modal ── */}
+      <Modal visible={showComments} animationType="slide" transparent onRequestClose={function () { setShowComments(false); }}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+        >
+          <View style={styles.commentsSheet}>
+            <View style={styles.dragHandleContainer} {...commentsPanResponder.panHandlers}>
+              <View style={styles.dragHandle} />
+            </View>
+            <View style={styles.commentsHeader}>
+              <Text style={styles.commentsTitle}>Comments</Text>
+              <TouchableOpacity onPress={function () { setShowComments(false); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle" size={26} color="#444" />
+              </TouchableOpacity>
+            </View>
+            <View style={{ flex: 1 }}>
+              {commentsLoading ? (
+                <View style={styles.loadingWrap}>
+                  <ActivityIndicator color="#4fc3f7" size="large" />
+                </View>
+              ) : (
+                <FlatList
+                  ref={flatListRef}
+                  data={comments}
+                  keyExtractor={function (c) { return c.id; }}
+                  keyboardShouldPersistTaps="always"
+                  renderItem={renderComment}
+                  style={styles.commentsList}
+                  contentContainerStyle={styles.commentsListContent}
+                  ListEmptyComponent={
+                    <View style={styles.emptyWrap}>
+                      <Ionicons name="chatbubbles-outline" size={40} color="#333" />
+                      <Text style={styles.noComments}>No comments yet</Text>
+                      <Text style={styles.noCommentsSub}>Be the first to comment!</Text>
+                    </View>
+                  }
+                />
+              )}
+            </View>
+            <View>
+              {renderCommentInput()}
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Owner Menu Modal ── */}
-      <Modal visible={ownerMenuVisible} animationType="fade" transparent>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setOwnerMenuVisible(false)}
-        >
-          <View style={styles.ownerMenu}>
-            <TouchableOpacity
-              style={styles.ownerMenuItem}
-              onPress={() => { setOwnerMenuVisible(false); setEditCaptionVisible(true); }}
-            >
-              <Ionicons name="pencil-outline" size={18} color="#ccc" />
-              <Text style={styles.ownerMenuText}>Edit Caption</Text>
+      <Modal visible={showOwnerMenu} transparent animationType="fade" onRequestClose={function () { setShowOwnerMenu(false); }}>
+        <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={function () { setShowOwnerMenu(false); }}>
+          <View style={styles.menuSheet}>
+            <View style={styles.dragHandle} />
+            <TouchableOpacity style={styles.menuItem} onPress={function () { setShowOwnerMenu(false); setEditCaptionText(post.caption || ''); setShowEditCaption(true); }}>
+              <Ionicons name="create-outline" size={20} color="#ccc" />
+              <Text style={styles.menuItemText}>Edit Caption</Text>
             </TouchableOpacity>
-            <View style={styles.ownerDivider} />
-            <TouchableOpacity
-              style={styles.ownerMenuItem}
-              onPress={() => { setOwnerMenuVisible(false); handleDelete(); }}
-            >
-              <Ionicons name="trash-outline" size={18} color="#e74c3c" />
-              <Text style={[styles.ownerMenuText, { color: '#e74c3c' }]}>Delete Post</Text>
+            <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={handleDeletePost}>
+              <Ionicons name="trash-outline" size={20} color="#e74c3c" />
+              <Text style={[styles.menuItemText, { color: '#e74c3c' }]}>Delete Post</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuCancel} onPress={function () { setShowOwnerMenu(false); }}>
+              <Text style={styles.menuCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
 
       {/* ── Edit Caption Modal ── */}
-      <Modal visible={editCaptionVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>Edit Caption</Text>
-            <TextInput
-              style={styles.editCaptionInput}
+      <Modal visible={showEditCaption} transparent animationType="slide" onRequestClose={function () { setShowEditCaption(false); }}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.editCaptionSheet}>
+            <Text style={styles.editCaptionTitle}>Edit Caption</Text>
+            <MentionTextInput
               value={editCaptionText}
               onChangeText={setEditCaptionText}
+              inputStyle={styles.editCaptionInput}
               multiline
-              placeholderTextColor="#666"
               placeholder="Write a caption…"
+              placeholderTextColor="#555"
+              autoFocus
+              currentUserId={currentUserId}
+              suggestionsAbove={false}
             />
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSaveCaption}>
-              <Text style={styles.saveBtnText}>Save</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalClose}
-              onPress={() => setEditCaptionVisible(false)}
-            >
-              <Text style={styles.modalCloseText}>Cancel</Text>
-            </TouchableOpacity>
+            <View style={styles.editCaptionActions}>
+              <TouchableOpacity style={styles.editCaptionCancel} onPress={function () { setShowEditCaption(false); }}>
+                <Text style={styles.editCaptionCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.editCaptionSave} onPress={handleSaveCaption}>
+                <Text style={styles.editCaptionSaveText}>Save</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-
     </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#1a1a2e',
-    marginBottom: 12,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 12 },
-  avatar: { marginRight: 10 },
-  avatarImg: { width: 36, height: 36, borderRadius: 18 },
-  username: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  timestamp: { color: '#888', fontSize: 11 },
-  moreBtn: { padding: 4 },
-
-  mediaWrap: {
-    width: '100%',
-    aspectRatio: 1,
-    backgroundColor: '#000',
-    position: 'relative',
-  },
-  mediaCover: { width: '100%', height: '100%' },
-  webview: { flex: 1, backgroundColor: '#000' },
-
-  platformBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 10,
-    padding: 4,
-  },
-
-  ytThumbOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  ytPlayBtnCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingLeft: 4,
-  },
-  ytLoader: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  ytFallback: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#111',
-  },
-  ytFallbackText: { color: '#888', fontSize: 13 },
-  ytOpenBtn: {
-    marginTop: 8,
-    backgroundColor: '#ff0000',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  ytOpenBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  ytControls: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  ytPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    borderWidth: 1,
-    borderColor: '#444',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-  },
-  ytPillActive: { backgroundColor: '#6c63ff', borderColor: '#6c63ff' },
-  ytPillText: { color: '#aaa', fontSize: 12, fontWeight: '600' },
-
-  igCard: { width: '100%', height: '100%' },
-  igCardInner: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 10,
-  },
-  igCardTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  igCardSub: { color: 'rgba(255,255,255,0.8)', fontSize: 13 },
-  igThumbOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    justifyContent: 'flex-end',
-    padding: 14,
-  },
-  igOpenPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(193,53,132,0.9)',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  igOpenPillText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-
-  captionRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingTop: 6,
-    flexWrap: 'wrap',
-  },
-  usernameInline: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  captionText: { color: '#ddd', fontSize: 13, flexShrink: 1 },
-
-  actions: {
-    flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 16,
-  },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  actionCount: { color: '#aaa', fontSize: 13 },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: '#1e1e2e',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '75%',
-  },
-  modalTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  modalClose: { marginTop: 12, alignItems: 'center' },
-  modalCloseText: { color: '#888', fontSize: 14 },
-
-  commentRow: { flexDirection: 'row', paddingVertical: 6, flexWrap: 'wrap' },
-  commentUser: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  commentText: { color: '#ddd', fontSize: 13 },
-  commentInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderColor: '#333',
-    paddingTop: 10,
-    gap: 10,
-  },
-  commentInput: {
-    flex: 1,
-    color: '#fff',
-    backgroundColor: '#2a2a3e',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    fontSize: 13,
-  },
-
-  editCaptionInput: {
-    color: '#fff',
-    backgroundColor: '#2a2a3e',
-    borderRadius: 10,
-    padding: 12,
-    minHeight: 100,
-    textAlignVertical: 'top',
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  saveBtn: {
-    backgroundColor: '#6c63ff',
-    borderRadius: 20,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  saveBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-
-  ownerMenu: {
-    backgroundColor: '#1e1e2e',
-    borderRadius: 14,
-    marginHorizontal: 20,
-    marginBottom: 40,
-    overflow: 'hidden',
-  },
-  ownerMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 16,
-  },
-  ownerMenuText: { color: '#ccc', fontSize: 15 },
-  ownerDivider: { height: 1, backgroundColor: '#333' },
+  card: { backgroundColor: '#13132a', marginBottom: 10, borderRadius: 14, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
+  avatarWrap: { marginRight: 10 },
+  avatar: { width: 38, height: 38, borderRadius: 19 },
+  avatarFallback: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#2a2a4e', alignItems: 'center', justifyContent: 'center' },
+  avatarInitial: { color: '#4fc3f7', fontWeight: '700', fontSize: 16 },
+  headerInfo: { flex: 1 },
+  username: { color: '#f0f0f0', fontWeight: '700', fontSize: 14, letterSpacing: 0.2 },
+  timestamp: { color: '#666', fontSize: 11, marginTop: 1 },
+  menuBtn: { padding: 6 },
+  videoContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative' },
+  webView: { flex: 1, backgroundColor: '#000' },
+  muteBtn: { position: 'absolute', bottom: 10, right: 48, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, padding: 6 },
+  openYtBtn: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, padding: 6 },
+  thumbContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
+  thumb: { width: '100%', height: '100%' },
+  thumbDark: { backgroundColor: '#0a0a1a', justifyContent: 'center', alignItems: 'center' },
+  ytErrorOverlay: { position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center' } as any,
+  ytOpenText: { color: '#fff', marginTop: 8, fontSize: 13 },
+  igContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#833ab4', justifyContent: 'center', alignItems: 'center' },
+  igInner: { alignItems: 'center' },
+  igLabel: { color: '#fff', fontSize: 15, fontWeight: '600', marginTop: 8 },
+  igSub: { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 4 },
+  platformBadge: { position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 12, padding: 5 },
+  socialContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#16213e', justifyContent: 'center', alignItems: 'center' },
+  socialLabel: { color: '#fff', fontSize: 15, fontWeight: '600', marginTop: 8 },
+  socialSub: { color: '#888', fontSize: 11, marginTop: 4, paddingHorizontal: 16, textAlign: 'center' },
+  captionWrap: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 },
+  caption: { color: '#ddd', fontSize: 14, lineHeight: 21 },
+  actions: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#252540' },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', marginRight: 20 },
+  actionCount: { color: '#888', fontSize: 13, marginLeft: 5, fontWeight: '500' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
+  commentsSheet: { flex: 1, maxHeight: '85%', backgroundColor: '#0f0f23', borderTopLeftRadius: 22, borderTopRightRadius: 22 },
+  dragHandleContainer: { width: '100%', alignItems: 'center', paddingVertical: 10 },
+  dragHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#444', alignSelf: 'center' },
+  commentsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#1e1e3a' },
+  commentsTitle: { color: '#fff', fontWeight: '700', fontSize: 17 },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 32 },
+  commentsList: { flex: 1 },
+  commentsListContent: { paddingTop: 4, paddingBottom: 4 },
+  emptyWrap: { alignItems: 'center', paddingVertical: 40 },
+  noComments: { color: '#555', fontSize: 15, fontWeight: '600', marginTop: 12 },
+  noCommentsSub: { color: '#444', fontSize: 13, marginTop: 4 },
+  commentRow: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 10, alignItems: 'flex-start' },
+  commentAvatarWrap: { marginRight: 10, marginTop: 2 },
+  commentAvatarImg: { width: 34, height: 34, borderRadius: 17 },
+  commentAvatarFallback: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#1e1e3a', alignItems: 'center', justifyContent: 'center' },
+  commentAvatarInitial: { color: '#4fc3f7', fontWeight: '700', fontSize: 14 },
+  commentBubble: { flex: 1, backgroundColor: '#161630', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  commentBubbleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 },
+  commentUsername: { color: '#e0e0ff', fontWeight: '700', fontSize: 13, flex: 1 },
+  commentOwnerIcons: { flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 8 } as any,
+  commentText: { color: '#c8c8e0', fontSize: 14, lineHeight: 20 },
+  commentMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 6, flexWrap: 'wrap', gap: 6 } as any,
+  commentTime: { color: '#555', fontSize: 11 },
+  commentEdited: { color: '#444', fontSize: 11, fontStyle: 'italic' },
+  commentLikeBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 } as any,
+  commentLikeCount: { color: '#666', fontSize: 11 },
+  editCommentInput: { flex: 1, backgroundColor: '#1e1e3a', color: '#fff', borderRadius: 8, padding: 10, fontSize: 14 },
+  editCommentActions: { flexDirection: 'row', marginTop: 8 },
+  editCommentBtn: { backgroundColor: '#4fc3f7', borderRadius: 6, paddingHorizontal: 14, paddingVertical: 6, marginRight: 8 },
+  cancelEditBtn: { backgroundColor: '#2a2a4e' },
+  editCommentBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  commentInputRow: { paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#1e1e3a', backgroundColor: '#0f0f23' },
+  commentInputInner: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  commentInputWrap: { flex: 1, minWidth: 0 },
+  commentInput: { backgroundColor: '#1a1a35', color: '#ffffff', borderRadius: 18, paddingTop: 10, paddingBottom: 10, paddingLeft: 14, paddingRight: 14, fontSize: 15, lineHeight: 20, borderWidth: 1, borderColor: '#252545', minHeight: 42, maxHeight: 120 },
+  commentSendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginBottom: 1 },
+  commentSendBtnActive: { backgroundColor: '#4fc3f7' },
+  commentSendBtnInactive: { backgroundColor: '#2a2a48' },
+  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  menuSheet: { backgroundColor: '#0f0f23', borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingBottom: 34 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#1e1e3a' },
+  menuItemText: { color: '#e0e0e0', fontSize: 16, marginLeft: 14 },
+  menuCancel: { paddingVertical: 16, alignItems: 'center' },
+  menuCancelText: { color: '#666', fontSize: 16 },
+  editCaptionSheet: { backgroundColor: '#0f0f23', borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, paddingBottom: 34 },
+  editCaptionTitle: { color: '#fff', fontWeight: '700', fontSize: 18, marginBottom: 16 },
+  editCaptionInput: { backgroundColor: '#1a1a35', color: '#fff', borderRadius: 10, padding: 14, fontSize: 15, minHeight: 80, textAlignVertical: 'top', borderWidth: 1, borderColor: '#252545' },
+  editCaptionActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 },
+  editCaptionCancel: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1a1a35' },
+  editCaptionCancelText: { color: '#888', fontSize: 15 },
+  editCaptionSave: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, backgroundColor: '#4fc3f7', marginLeft: 12 },
+  editCaptionSaveText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
