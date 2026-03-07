@@ -6,7 +6,7 @@ import {
   View, Text, Image, StyleSheet, ScrollView, TouchableOpacity,
   FlatList, Modal, TextInput, ActivityIndicator,
   Alert, Switch, Dimensions, Platform, KeyboardAvoidingView,
-  RefreshControl, StatusBar,
+  RefreshControl, StatusBar, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth }          from '../../src/context/AuthContext';
@@ -51,18 +51,15 @@ function isRemoteUrl(url?: string | null): url is string {
   return typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'));
 }
 
-// ✅ FIX: resolve bare Supabase storage paths (no http prefix) to public URLs
 function resolveStorageUrl(url?: string | null): string | null {
   if (!url) return null;
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  // Bare storage path like "user-id/filename.jpg" — build a public URL
   try {
     const { data } = supabase.storage.from('posts').getPublicUrl(url);
     return data?.publicUrl ?? null;
-    } catch (_e) {
+  } catch (_e) {
     return null;
   }
-
 }
 
 function toFeedPost(p: Post): FeedPost {
@@ -80,26 +77,17 @@ function toFeedPost(p: Post): FeedPost {
   } as FeedPost;
 }
 
-// ✅ FIX: skip video posts, skip Instagram URLs, resolve bare Supabase paths
 function thumbnailUri(post: Post): string | null {
-  // ✅ FIX: videos have no image thumbnail — let the grid show the video icon
   if (post.media_type === 'video') return null;
-
-  // Prefer explicit thumbnail
   if (post.thumbnail_url && isRemoteUrl(post.thumbnail_url)) return post.thumbnail_url;
-
   const candidates = [post.media_url, post.social_url, post.embed_url];
   for (const raw of candidates) {
     const url = resolveStorageUrl(raw);
     if (!url) continue;
-    // ✅ FIX: skip Instagram URLs — they are not loadable as <Image> sources
     if (url.toLowerCase().includes('instagram')) continue;
-    // YouTube thumbnail
     const m = url.match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
     if (m?.[1]) return `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg`;
   }
-
-  // ✅ FIX: only return media_url as image if it's remote, not a video extension, not Instagram
   const mediaResolved = resolveStorageUrl(post.media_url);
   if (
     mediaResolved &&
@@ -107,7 +95,6 @@ function thumbnailUri(post: Post): string | null {
     !mediaResolved.match(/youtu/i) &&
     !mediaResolved.toLowerCase().includes('instagram')
   ) return mediaResolved;
-
   return null;
 }
 
@@ -132,20 +119,16 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
   );
 }
 
-// ✅ FIX: own component so each cell has independent imgFailed state + onError fallback
 function PostGridCell({ item, onPress }: { item: Post; onPress: () => void }) {
   const [imgFailed, setImgFailed] = useState(false);
   const thumb   = thumbnailUri(item);
   const allUrls = [item.media_url, item.social_url, item.embed_url].filter(Boolean) as string[];
   const isVid   = item.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(item.media_url ?? '');
   const isYT    = allUrls.some(u => /youtu/i.test(u));
-  // ✅ FIX: check platform, social_url AND media_url for Instagram
   const isIG    =
     item.platform === 'instagram' ||
     (item.social_url ?? '').toLowerCase().includes('instagram') ||
     (item.media_url  ?? '').toLowerCase().includes('instagram');
-
-  console.log(`[Grid] id=${item.id} media_type=${item.media_type} isIG=${isIG} isVid=${isVid} isYT=${isYT} thumb=${thumb} imgFailed=${imgFailed}`);
 
   return (
     <TouchableOpacity style={styles.gridCell} onPress={onPress} activeOpacity={0.8}>
@@ -154,10 +137,7 @@ function PostGridCell({ item, onPress }: { item: Post; onPress: () => void }) {
           source={{ uri: thumb }}
           style={styles.gridThumb}
           resizeMode="cover"
-          onError={() => {
-            console.log(`[Grid] Image failed to load: ${thumb}`);
-            setImgFailed(true);
-          }}
+          onError={() => setImgFailed(true)}
         />
       ) : isIG ? (
         <View style={[styles.gridThumb, styles.gridIgPlaceholder]}>
@@ -191,7 +171,6 @@ function PostGridCell({ item, onPress }: { item: Post; onPress: () => void }) {
 
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
-// ✅ FIX: Feed tab removed — only Posts, Media, Builds
 const TABS = [
   { key: 'posts',  label: 'Posts',  icon: 'grid-outline'      },
   { key: 'media',  label: 'Media',  icon: 'film-outline'      },
@@ -228,7 +207,6 @@ export default function ProfileScreen() {
 
   const { followersCount, followingCount } = useFollow(user?.id ?? '', user?.id);
 
-  // ✅ FIX: mutedIds removed — only need mutedUsers for the Mute List modal
   const {
     mutedUsers, loading: muteLoading,
     unmuteUser, fetchMutedUsers,
@@ -240,8 +218,6 @@ export default function ProfileScreen() {
   const [builds,      setBuilds]      = useState<Build[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
-
-  // ✅ FIX: cache loaded tabs so switching tabs doesn't re-fetch and show spinner
   const loadedTabsRef = useRef<Set<TabKey>>(new Set());
 
   // ── Modal visibility ──────────────────────────────────────────────────────
@@ -285,6 +261,13 @@ export default function ProfileScreen() {
   const [buildCamera, setBuildCamera] = useState('');
   const [buildNotes,  setBuildNotes]  = useState('');
 
+  // ── 🥚 Easter Egg state ───────────────────────────────────────────────────
+  const [eggTapCount, setEggTapCount] = useState(0);
+  const [eggVisible,  setEggVisible]  = useState(false);
+  const eggSpin                        = useRef(new Animated.Value(0)).current;
+  const eggTapTimer                    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const eggSpinAnim                    = useRef<Animated.CompositeAnimation | null>(null);
+
   useEffect(() => {
     if (!profile) return;
     setEditUsername(profile.username       ?? '');
@@ -313,7 +296,6 @@ export default function ProfileScreen() {
     setBuilds((data as Build[]) ?? []);
   }, [user?.id]);
 
-  // ✅ FIX: Feed tab removed — no loadFeed, no feed branch
   const loadTabData = useCallback(async (tab: TabKey, force = false) => {
     if (!force && loadedTabsRef.current.has(tab)) return;
     setDataLoading(true);
@@ -331,7 +313,6 @@ export default function ProfileScreen() {
 
   useEffect(() => { loadTabData(activeTab); }, [activeTab]);
 
-  // ✅ FIX: onRefresh clears cache so all tabs reload fresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     loadedTabsRef.current.clear();
@@ -339,12 +320,10 @@ export default function ProfileScreen() {
     setRefreshing(false);
   }, [fetchProfile, loadTabData, activeTab, fetchMutedUsers]);
 
-  // ✅ FIX: filter media posts — only remote video posts
   const mediaPosts = useMemo(
     () => myPosts.filter(p => {
       const url = p.media_url ?? '';
       const isVideo = p.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(url);
-      // ✅ FIX: avoid isRemoteUrl type-guard in || chain — TS narrows to 'never' on RHS
       const resolved = resolveStorageUrl(p.media_url);
       const isRemote = resolved !== null && !resolved.startsWith('file://');
       return isVideo && isRemote;
@@ -439,8 +418,37 @@ export default function ProfileScreen() {
     ]);
   }, [mgpDisconnect]);
 
+  // ── 🥚 Easter egg handlers ────────────────────────────────────────────────
+  const handleAvatarEggTap = useCallback(() => {
+    if (eggTapTimer.current) clearTimeout(eggTapTimer.current);
+    setEggTapCount(prev => {
+      const next = prev + 1;
+      if (next >= 7) {
+        setEggVisible(true);
+        eggSpin.setValue(0);
+        eggSpinAnim.current = Animated.loop(
+          Animated.timing(eggSpin, {
+            toValue: 1,
+            duration: 2800,
+            useNativeDriver: true,
+          })
+        );
+        eggSpinAnim.current.start();
+        return 0;
+      }
+      eggTapTimer.current = setTimeout(() => setEggTapCount(0), 2000);
+      return next;
+    });
+  }, [eggSpin]);
+
+  const closeEgg = useCallback(() => {
+    eggSpinAnim.current?.stop();
+    eggSpin.setValue(0);
+    setEggVisible(false);
+    setEggTapCount(0);
+  }, [eggSpin]);
+
   // ── Render helpers ────────────────────────────────────────────────────────
-  // ✅ FIX: renderGridCell now delegates to PostGridCell (has onError + own state)
   const renderGridCell = useCallback(({ item }: { item: Post }) => (
     <PostGridCell
       item={item}
@@ -516,7 +524,14 @@ export default function ProfileScreen() {
 
         {/* HEADER ROW */}
         <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.avatarWrap} onPress={uploadAvatar}>
+          {/* 🥚 Avatar — short press = upload, long press (rapid 7×) = easter egg */}
+          <TouchableOpacity
+            style={styles.avatarWrap}
+            onPress={uploadAvatar}
+            onLongPress={handleAvatarEggTap}
+            delayLongPress={120}
+            activeOpacity={0.85}
+          >
             {profile?.avatar_url
               ? <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
               : <View style={[styles.avatar, styles.avatarPlaceholder]}><Ionicons name="person" size={34} color="#555" /></View>
@@ -865,6 +880,55 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* ── 🥚 EASTER EGG MODAL ───────────────────────────────────────────── */}
+      <Modal
+        visible={eggVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={closeEgg}
+      >
+        <View style={styles.eggOverlay}>
+          <View style={styles.eggCard}>
+
+            {/* Spinning drone */}
+            <Animated.View style={{
+              transform: [{
+                rotate: eggSpin.interpolate({
+                  inputRange:  [0, 1],
+                  outputRange: ['0deg', '360deg'],
+                }),
+              }],
+              marginBottom: 16,
+            }}>
+              <Ionicons name="airplane" size={58} color="#00d4ff" />
+            </Animated.View>
+
+            {/* Title */}
+            <Text style={styles.eggTitle}>🥚 You found it.</Text>
+
+            {/* Signature */}
+            <View style={styles.eggSigBlock}>
+              <Text style={styles.eggSigLine}>Built by</Text>
+              <Text style={styles.eggSigName}>HypnosFPV</Text>
+              <Text style={styles.eggSigSub}>FPV Enthusiast App</Text>
+            </View>
+
+            {/* Notes */}
+            <View style={styles.eggMeta}>
+              <Text style={styles.eggMetaText}>☕  Crafted with caffeine & carbon fiber</Text>
+              <Text style={styles.eggMetaText}>📡  Powered by Expo + Supabase</Text>
+              <Text style={styles.eggMetaText}>🏁  Keep flying. Always throttle up.</Text>
+            </View>
+
+            {/* Close */}
+            <TouchableOpacity style={styles.eggCloseBtn} onPress={closeEgg} activeOpacity={0.8}>
+              <Text style={styles.eggCloseBtnText}>Back to the skies ✈️</Text>
+            </TouchableOpacity>
+
+          </View>
+        </View>
+      </Modal>
+
       {/* ── FOLLOW / MUTE MODALS ──────────────────────────────────────────── */}
       {user && <FollowListModal visible={followModal !== null} type={followModal ?? 'followers'} profileUserId={user.id} currentUserId={user.id} onClose={() => setFollowModal(null)} />}
       <MuteListModal visible={showMuteList} onClose={() => setShowMuteList(false)} mutedUsers={mutedUsers} loading={muteLoading} onUnmute={async (userId) => { await unmuteUser(userId); }} />
@@ -1008,4 +1072,90 @@ const styles = StyleSheet.create({
   mgpHelpNote:      { color: '#888', fontSize: 12, lineHeight: 18, marginTop: 10, fontStyle: 'italic' },
   mgpHelpClose:     { backgroundColor: '#1e3a5a', borderRadius: 8, paddingVertical: 8, alignItems: 'center', marginTop: 12 },
   mgpHelpCloseText: { color: '#00d4ff', fontWeight: '600', fontSize: 13 },
+
+  // ── 🥚 Easter Egg ────────────────────────────────────────────────────────
+  eggOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.93)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  eggCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#0d0d1a',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#00d4ff33',
+    alignItems: 'center',
+    padding: 32,
+    shadowColor: '#00d4ff',
+    shadowOpacity: 0.4,
+    shadowRadius: 32,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 20,
+  },
+  eggTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 1,
+    marginBottom: 22,
+  },
+  eggSigBlock: {
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e1e3a',
+    width: '100%',
+  },
+  eggSigLine: {
+    fontSize: 12,
+    color: '#555',
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+  },
+  eggSigName: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: '#00d4ff',
+    letterSpacing: -1,
+    marginTop: 4,
+  },
+  eggSigSub: {
+    fontSize: 11,
+    color: '#444',
+    letterSpacing: 2,
+    marginTop: 4,
+    textTransform: 'uppercase',
+  },
+  eggMeta: {
+    alignSelf: 'stretch',
+    backgroundColor: '#111124',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 24,
+    gap: 8,
+  },
+  eggMetaText: {
+    fontSize: 13,
+    color: '#777',
+    lineHeight: 20,
+  },
+  eggCloseBtn: {
+    backgroundColor: '#00d4ff',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+  },
+  eggCloseBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#000',
+    letterSpacing: 0.5,
+  },
 });
