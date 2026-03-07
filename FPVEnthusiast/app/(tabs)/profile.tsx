@@ -23,6 +23,7 @@ import MuteListModal        from '../../src/components/MuteListModal';
 
 const { width: W } = Dimensions.get('window');
 const CELL = (W - 4) / 3;
+const TAB_BAR_H = 46;
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -170,10 +171,8 @@ export default function ProfileScreen() {
   // ── MultiGP fields ────────────────────────────────────────────────────────
   const [mgpKeyInput,    setMgpKeyInput]    = useState('');
   const [mgpValidResult, setMgpValidResult] = useState<{
-    valid: boolean;
-    chapterName: string | null;
-    chapterId: string | null;
-    error?: string;
+    valid: boolean; chapterName: string | null;
+    chapterId: string | null; error?: string;
   } | null>(null);
   const [mgpSyncMsg,  setMgpSyncMsg]  = useState('');
   const [showMgpHelp, setShowMgpHelp] = useState(false);
@@ -202,19 +201,15 @@ export default function ProfileScreen() {
   const loadMyPosts = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await supabase
-      .from('posts')
-      .select('*, users(id, username, avatar_url)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+      .from('posts').select('*, users(id, username, avatar_url)')
+      .eq('user_id', user.id).order('created_at', { ascending: false });
     setMyPosts((data as Post[]) ?? []);
   }, [user?.id]);
 
   const loadFeed = useCallback(async () => {
     const { data } = await supabase
-      .from('posts')
-      .select('*, users(id, username, avatar_url)')
-      .order('created_at', { ascending: false })
-      .limit(50);
+      .from('posts').select('*, users(id, username, avatar_url)')
+      .order('created_at', { ascending: false }).limit(50);
     const all = (data as Post[]) ?? [];
     setFeedPosts(mutedIds.length > 0 ? all.filter(p => !mutedIds.includes(p.user_id)) : all);
   }, [mutedIds]);
@@ -222,10 +217,8 @@ export default function ProfileScreen() {
   const loadBuilds = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await supabase
-      .from('fpv_builds')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+      .from('fpv_builds').select('*')
+      .eq('user_id', user.id).order('created_at', { ascending: false });
     setBuilds((data as Build[]) ?? []);
   }, [user?.id]);
 
@@ -249,8 +242,7 @@ export default function ProfileScreen() {
 
   const mediaPosts = useMemo(
     () => myPosts.filter(p =>
-      p.media_type === 'video' ||
-      /\.(mp4|mov|webm)(\?|$)/i.test(p.media_url ?? '')
+      p.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(p.media_url ?? '')
     ),
     [myPosts],
   );
@@ -267,11 +259,9 @@ export default function ProfileScreen() {
 
   const saveSocials = useCallback(async () => {
     const result = await updateSocialLinks({
-      website_url:   editWebsite.trim()   || undefined,
-      youtube_url:   editYoutube.trim()   || undefined,
-      instagram_url: editInstagram.trim() || undefined,
-      twitter_url:   editTwitter.trim()   || undefined,
-      tiktok_url:    editTiktok.trim()    || undefined,
+      website_url: editWebsite.trim() || undefined, youtube_url: editYoutube.trim() || undefined,
+      instagram_url: editInstagram.trim() || undefined, twitter_url: editTwitter.trim() || undefined,
+      tiktok_url: editTiktok.trim() || undefined,
     });
     if (result?.error) { Alert.alert('Error', result.error); return; }
     setShowSocialLinks(false);
@@ -280,14 +270,9 @@ export default function ProfileScreen() {
   const createBuild = useCallback(async () => {
     if (!buildName.trim()) { Alert.alert('Name required'); return; }
     const { error } = await supabase.from('fpv_builds').insert({
-      user_id: user?.id,
-      name:    buildName.trim(),
-      frame:   buildFrame.trim()  || null,
-      motors:  buildMotors.trim() || null,
-      fc:      buildFC.trim()     || null,
-      vtx:     buildVTX.trim()    || null,
-      camera:  buildCamera.trim() || null,
-      notes:   buildNotes.trim()  || null,
+      user_id: user?.id, name: buildName.trim(), frame: buildFrame.trim() || null,
+      motors: buildMotors.trim() || null, fc: buildFC.trim() || null,
+      vtx: buildVTX.trim() || null, camera: buildCamera.trim() || null, notes: buildNotes.trim() || null,
     });
     if (error) { Alert.alert('Error', error.message); return; }
     setBuildName(''); setBuildFrame(''); setBuildMotors('');
@@ -312,23 +297,16 @@ export default function ProfileScreen() {
     if (!result?.canceled) await fetchProfile();
   }, [uploadHeaderImage, fetchProfile]);
 
-  // ── MultiGP handlers ──────────────────────────────────────────────────────
   const handleMgpValidate = useCallback(async () => {
     if (!mgpKeyInput.trim()) { Alert.alert('Enter your API key first'); return; }
-    const result = await mgpValidateKey(mgpKeyInput.trim());
-    setMgpValidResult(result);
+    setMgpValidResult(await mgpValidateKey(mgpKeyInput.trim()));
   }, [mgpKeyInput, mgpValidateKey]);
 
   const handleMgpConnect = useCallback(async () => {
     if (!mgpValidResult?.valid) return;
-    const result = await mgpSaveConnection(
-      mgpKeyInput.trim(),
-      mgpValidResult.chapterName,
-      mgpValidResult.chapterId,
-    );
+    const result = await mgpSaveConnection(mgpKeyInput.trim(), mgpValidResult.chapterName, mgpValidResult.chapterId);
     if (result?.error) { Alert.alert('Error', result.error); return; }
-    setMgpKeyInput('');
-    setMgpValidResult(null);
+    setMgpKeyInput(''); setMgpValidResult(null);
     Alert.alert('✅ Connected!', `${mgpValidResult.chapterName ?? 'Chapter'} linked successfully.`);
   }, [mgpValidResult, mgpKeyInput, mgpSaveConnection]);
 
@@ -342,10 +320,7 @@ export default function ProfileScreen() {
   const handleMgpDisconnect = useCallback(() => {
     Alert.alert('Disconnect MultiGP', 'Remove this chapter connection?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Disconnect', style: 'destructive', onPress: async () => {
-        await mgpDisconnect();
-        setShowMultiGP(false);
-      }},
+      { text: 'Disconnect', style: 'destructive', onPress: async () => { await mgpDisconnect(); setShowMultiGP(false); }},
     ]);
   }, [mgpDisconnect]);
 
@@ -357,11 +332,7 @@ export default function ProfileScreen() {
     const isYT    = allUrls.some(u => /youtu/i.test(u));
     const isIG    = item.platform === 'instagram' || (item.social_url ?? '').includes('instagram.com');
     return (
-      <TouchableOpacity
-        style={styles.gridCell}
-        onPress={() => { setSelectedPost(item); setShowPostDetail(true); }}
-        activeOpacity={0.8}
-      >
+      <TouchableOpacity style={styles.gridCell} onPress={() => { setSelectedPost(item); setShowPostDetail(true); }} activeOpacity={0.8}>
         {thumb ? (
           <Image source={{ uri: thumb }} style={styles.gridThumb} resizeMode="cover" />
         ) : isIG ? (
@@ -375,21 +346,9 @@ export default function ProfileScreen() {
             <Ionicons name={isVid ? 'videocam' : 'image-outline'} size={28} color="#444" />
           </View>
         )}
-        {isVid && !isYT && (
-          <View style={styles.gridPlayBadge}>
-            <Ionicons name="play-circle" size={22} color="rgba(255,255,255,0.85)" />
-          </View>
-        )}
-        {isYT && (
-          <View style={styles.gridYtBadge}>
-            <Ionicons name="logo-youtube" size={14} color="#fff" />
-          </View>
-        )}
-        {isIG && !thumb && (
-          <View style={styles.gridIgBadge}>
-            <Ionicons name="logo-instagram" size={14} color="#fff" />
-          </View>
-        )}
+        {isVid && !isYT && <View style={styles.gridPlayBadge}><Ionicons name="play-circle" size={22} color="rgba(255,255,255,0.85)" /></View>}
+        {isYT  && <View style={styles.gridYtBadge}><Ionicons name="logo-youtube" size={14} color="#fff" /></View>}
+        {isIG && !thumb && <View style={styles.gridIgBadge}><Ionicons name="logo-instagram" size={14} color="#fff" /></View>}
       </TouchableOpacity>
     );
   }, []);
@@ -402,17 +361,12 @@ export default function ProfileScreen() {
           <Ionicons name="trash-outline" size={18} color="#e74c3c" />
         </TouchableOpacity>
       </View>
-      {([
-        ['Frame',  item.frame],
-        ['Motors', item.motors],
-        ['FC',     item.fc],
-        ['VTX',    item.vtx],
-        ['Camera', item.camera],
-      ] as [string, string | null | undefined][])
+      {(['Frame','Motors','FC','VTX','Camera'] as const)
+        .map(k => [k, item[k.toLowerCase() as keyof Build]] as [string, unknown])
         .filter(([, v]) => !!v)
         .map(([label, val]) => (
           <Text key={label} style={styles.buildSpec}>
-            <Text style={styles.buildSpecLabel}>{label}: </Text>{val}
+            <Text style={styles.buildSpecLabel}>{label}: </Text>{val as string}
           </Text>
         ))}
       {item.notes ? <Text style={styles.buildNotes}>{item.notes}</Text> : null}
@@ -420,31 +374,59 @@ export default function ProfileScreen() {
   ), [deleteBuild]);
 
   if (profileLoading && !profile) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color="#00d4ff" />
-      </View>
-    );
+    return <View style={styles.loadingScreen}><ActivityIndicator size="large" color="#00d4ff" /></View>;
   }
+
+  // ── Tab bar — rendered as a standalone component to guarantee row layout ──
+  const TabBar = (
+    <View style={styles.tabBar}>
+      {TABS.map(tab => {
+        const active = activeTab === tab.key;
+        return (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.tabItem, active && styles.tabItemActive]}
+            onPress={() => setActiveTab(tab.key)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name={tab.icon as any} size={16} color={active ? '#00d4ff' : '#555'} />
+            <Text style={active ? styles.tabLabelActive : styles.tabLabel}>
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
+
+      {/*
+       * LAYOUT STRUCTURE (fixes vertical stacking of tabs):
+       *   ┌─────────────────────────────┐
+       *   │  ScrollView (header only)   │  ← banner + avatar + bio scroll freely
+       *   ├─────────────────────────────┤
+       *   │  Tab Bar  (fixed, row)      │  ← always horizontal, never inside sticky
+       *   ├─────────────────────────────┤
+       *   │  ScrollView (tab content)   │  ← posts/media/feed/builds
+       *   └─────────────────────────────┘
+       */}
+
+      {/* ── HEADER SCROLL AREA ──────────────────────────────────────────── */}
       <ScrollView
+        style={styles.headerScroll}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00d4ff" />}
-        stickyHeaderIndices={[3]}
+        scrollEnabled={true}
+        nestedScrollEnabled={true}
       >
-        {/* ── BANNER ─────────────────────────────────────────────────────── */}
+        {/* BANNER */}
         <TouchableOpacity onPress={handleBannerPress} activeOpacity={0.85}>
           <View style={styles.bannerWrap}>
             {profile?.header_image_url ? (
-              <Image
-                key={profile.header_image_url}
-                source={{ uri: profile.header_image_url }}
-                style={styles.banner}
-                resizeMode="cover"
-              />
+              <Image key={profile.header_image_url} source={{ uri: profile.header_image_url }} style={styles.banner} resizeMode="cover" />
             ) : (
               <View style={[styles.banner, styles.bannerPlaceholder]}>
                 <Ionicons name="camera" size={28} color="#555" />
@@ -454,19 +436,14 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* ── HEADER ROW ─────────────────────────────────────────────────── */}
+        {/* HEADER ROW */}
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.avatarWrap} onPress={uploadAvatar}>
-            {profile?.avatar_url ? (
-              <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                <Ionicons name="person" size={34} color="#555" />
-              </View>
-            )}
-            <View style={styles.cameraBadge}>
-              <Ionicons name="camera" size={13} color="#fff" />
-            </View>
+            {profile?.avatar_url
+              ? <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+              : <View style={[styles.avatar, styles.avatarPlaceholder]}><Ionicons name="person" size={34} color="#555" /></View>
+            }
+            <View style={styles.cameraBadge}><Ionicons name="camera" size={13} color="#fff" /></View>
           </TouchableOpacity>
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.editBtn} onPress={() => setShowEditProfile(true)}>
@@ -478,7 +455,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── BIO ────────────────────────────────────────────────────────── */}
+        {/* BIO */}
         <View style={styles.bioSection}>
           <Text style={styles.displayName}>{profile?.username ?? 'FPV Pilot'}</Text>
           {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
@@ -499,82 +476,50 @@ export default function ProfileScreen() {
               { icon: 'logo-twitter',   url: profile?.twitter_url },
               { icon: 'logo-tiktok',    url: profile?.tiktok_url },
               { icon: 'globe-outline',  url: profile?.website_url },
-            ] as { icon: string; url?: string | null }[])
-              .filter(s => !!s.url)
-              .map(s => (
-                <TouchableOpacity key={s.icon} style={styles.socialChip}>
-                  <Ionicons name={s.icon as any} size={18} color="#00d4ff" />
-                </TouchableOpacity>
-              ))}
+            ] as { icon: string; url?: string | null }[]).filter(s => !!s.url).map(s => (
+              <TouchableOpacity key={s.icon} style={styles.socialChip}>
+                <Ionicons name={s.icon as any} size={18} color="#00d4ff" />
+              </TouchableOpacity>
+            ))}
             <TouchableOpacity style={styles.socialChip} onPress={() => setShowSocialLinks(true)}>
               <Ionicons name="add-circle-outline" size={18} color="#555" />
             </TouchableOpacity>
           </View>
         </View>
+      </ScrollView>
 
-        {/* ── TAB BAR ────────────────────────────────────────────────────── */}
-        {/* icon + label always visible, side-by-side (flexDirection:'row')  */}
-        <View style={styles.tabBar}>
-          {TABS.map(tab => {
-            const active = activeTab === tab.key;
-            return (
-              <TouchableOpacity
-                key={tab.key}
-                style={[styles.tabItem, active && styles.tabItemActive]}
-                onPress={() => setActiveTab(tab.key)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={tab.icon as any}
-                  size={17}
-                  color={active ? '#00d4ff' : '#555'}
-                />
-                <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+      {/* ── TAB BAR — outside ScrollView, guaranteed horizontal row ─────── */}
+      {TabBar}
 
-        {/* ── TAB CONTENT ────────────────────────────────────────────────── */}
+      {/* ── TAB CONTENT SCROLL AREA ─────────────────────────────────────── */}
+      <ScrollView
+        style={styles.contentScroll}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
+      >
         {dataLoading ? (
           <ActivityIndicator style={{ marginTop: 40 }} color="#00d4ff" />
         ) : (
           <>
             {activeTab === 'posts' && (
-              myPosts.length === 0
-                ? <EmptyState icon="camera-outline" text="No posts yet" />
+              myPosts.length === 0 ? <EmptyState icon="camera-outline" text="No posts yet" />
                 : <FlatList data={myPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />
             )}
             {activeTab === 'media' && (
-              mediaPosts.length === 0
-                ? <EmptyState icon="videocam-outline" text="No videos yet" />
+              mediaPosts.length === 0 ? <EmptyState icon="videocam-outline" text="No videos yet" />
                 : <FlatList data={mediaPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />
             )}
             {activeTab === 'feed' && (
-              feedPosts.length === 0
-                ? <EmptyState icon="newspaper-outline" text="Nothing in the feed yet" />
-                : (
-                  <View style={styles.feedList}>
-                    {feedPosts.map(p => (
-                      <PostCard
-                        key={p.id}
-                        post={toFeedPost(p)}
-                        isVisible={false}
-                        shouldAutoplay={false}
-                        currentUserId={user?.id ?? undefined}
-                        onLike={() => {}}
-                        onDelete={(id: string) => setFeedPosts(prev => prev.filter(fp => fp.id !== id))}
-                      />
-                    ))}
-                  </View>
-                )
+              feedPosts.length === 0 ? <EmptyState icon="newspaper-outline" text="Nothing in the feed yet" />
+                : <View style={styles.feedList}>{feedPosts.map(p => (
+                    <PostCard key={p.id} post={toFeedPost(p)} isVisible={false} shouldAutoplay={false}
+                      currentUserId={user?.id ?? undefined} onLike={() => {}}
+                      onDelete={(id: string) => setFeedPosts(prev => prev.filter(fp => fp.id !== id))} />
+                  ))}</View>
             )}
             {activeTab === 'builds' && (
               <View>
-                {builds.length === 0
-                  ? <EmptyState icon="construct-outline" text="No builds logged yet" />
+                {builds.length === 0 ? <EmptyState icon="construct-outline" text="No builds logged yet" />
                   : <FlatList data={builds} keyExtractor={i => i.id} renderItem={renderBuild} scrollEnabled={false} contentContainerStyle={{ padding: 12 }} />
                 }
                 <TouchableOpacity style={styles.fab} onPress={() => setShowCreateBuild(true)}>
@@ -591,25 +536,15 @@ export default function ProfileScreen() {
       <Modal visible={showPostDetail} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowPostDetail(false)}>
         <View style={styles.detailRoot}>
           <View style={styles.detailHeader}>
-            <TouchableOpacity onPress={() => setShowPostDetail(false)}>
-              <Ionicons name="arrow-back" size={24} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowPostDetail(false)}><Ionicons name="arrow-back" size={24} color="#fff" /></TouchableOpacity>
             <Text style={styles.detailTitle}>Post</Text>
             <View style={{ width: 24 }} />
           </View>
           <ScrollView>
             {selectedPost && (
-              <PostCard
-                post={toFeedPost(selectedPost)}
-                isVisible={true}
-                shouldAutoplay={false}
-                currentUserId={user?.id ?? undefined}
-                onLike={() => {}}
-                onDelete={(id: string) => {
-                  setMyPosts(prev => prev.filter(p => p.id !== id));
-                  setShowPostDetail(false);
-                }}
-              />
+              <PostCard post={toFeedPost(selectedPost)} isVisible={true} shouldAutoplay={false}
+                currentUserId={user?.id ?? undefined} onLike={() => {}}
+                onDelete={(id: string) => { setMyPosts(prev => prev.filter(p => p.id !== id)); setShowPostDetail(false); }} />
             )}
           </ScrollView>
         </View>
@@ -620,67 +555,41 @@ export default function ProfileScreen() {
         <View style={styles.modalRoot}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Settings</Text>
-            <TouchableOpacity onPress={() => setShowSettings(false)}>
-              <Ionicons name="close" size={26} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowSettings(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
 
-            {/* Account */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Account</Text>
-              <View style={styles.settingsRow}>
-                <Text style={styles.settingsLabel}>Email</Text>
-                <Text style={styles.settingsValue}>{user?.email ?? '—'}</Text>
-              </View>
-              <View style={styles.settingsRow}>
-                <Text style={styles.settingsLabel}>Username</Text>
-                <Text style={styles.settingsValue}>{profile?.username ?? '—'}</Text>
-              </View>
+              <View style={styles.settingsRow}><Text style={styles.settingsLabel}>Email</Text><Text style={styles.settingsValue}>{user?.email ?? '—'}</Text></View>
+              <View style={styles.settingsRow}><Text style={styles.settingsLabel}>Username</Text><Text style={styles.settingsValue}>{profile?.username ?? '—'}</Text></View>
             </View>
 
-            {/* Preferences */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Preferences</Text>
               <View style={styles.settingsRow}>
                 <Text style={styles.settingsLabel}>Autoplay Videos</Text>
-                <Switch
-                  value={profile?.autoplay_videos ?? true}
-                  onValueChange={(val: boolean) => { void updateProfile({ autoplay_videos: val }); }}
-                  trackColor={{ true: '#00d4ff', false: '#333' }}
-                  thumbColor="#fff"
-                />
+                <Switch value={profile?.autoplay_videos ?? true} onValueChange={(val: boolean) => { void updateProfile({ autoplay_videos: val }); }} trackColor={{ true: '#00d4ff', false: '#333' }} thumbColor="#fff" />
               </View>
             </View>
 
-            {/* Privacy */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Privacy</Text>
-              <TouchableOpacity
-                style={styles.settingsRow}
-                onPress={() => { setShowSettings(false); setTimeout(() => setShowMuteList(true), 350); }}
-              >
+              <TouchableOpacity style={styles.settingsRow} onPress={() => { setShowSettings(false); setTimeout(() => setShowMuteList(true), 350); }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <Ionicons name="volume-mute-outline" size={20} color="#aaa" />
                   <View>
                     <Text style={styles.settingsLabel}>Muted Users</Text>
-                    {mutedUsers.length > 0 && (
-                      <Text style={[styles.settingsValue, { fontSize: 11 }]}>{mutedUsers.length} muted</Text>
-                    )}
+                    {mutedUsers.length > 0 && <Text style={[styles.settingsValue, { fontSize: 11 }]}>{mutedUsers.length} muted</Text>}
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color="#555" />
               </TouchableOpacity>
             </View>
 
-            {/* Connected Accounts */}
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Connected Accounts</Text>
-
-              <TouchableOpacity
-                style={styles.settingsRow}
-                onPress={() => { setShowSettings(false); setTimeout(() => setShowSocialLinks(true), 350); }}
-              >
+              <TouchableOpacity style={styles.settingsRow} onPress={() => { setShowSettings(false); setTimeout(() => setShowSocialLinks(true), 350); }}>
                 <Text style={styles.settingsLabel}>Social Links</Text>
                 <Ionicons name="chevron-forward" size={18} color="#555" />
               </TouchableOpacity>
@@ -696,42 +605,24 @@ export default function ProfileScreen() {
                     </Text>
                   </View>
                 </View>
-                <TouchableOpacity
-                  style={[styles.ytAuthBtn, ytLinked ? styles.ytAuthBtnUnlink : styles.ytAuthBtnLink]}
-                  onPress={ytLinked ? unlinkYouTube : () => promptYouTubeAuth()}
-                  disabled={ytAuthLoading}
-                >
-                  {ytAuthLoading
-                    ? <ActivityIndicator size="small" color="#fff" />
-                    : <Text style={styles.ytAuthBtnText}>{ytLinked ? 'Unlink' : 'Connect'}</Text>
-                  }
+                <TouchableOpacity style={[styles.ytAuthBtn, ytLinked ? styles.ytAuthBtnUnlink : styles.ytAuthBtnLink]} onPress={ytLinked ? unlinkYouTube : () => promptYouTubeAuth()} disabled={ytAuthLoading}>
+                  {ytAuthLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.ytAuthBtnText}>{ytLinked ? 'Unlink' : 'Connect'}</Text>}
                 </TouchableOpacity>
               </View>
 
-              {/* MultiGP Chapter */}
+              {/* MultiGP */}
               <View style={[styles.settingsRow, { borderTopWidth: 1, borderTopColor: '#2a2a4a', marginTop: 4, paddingTop: 10 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Ionicons name="radio-outline" size={20} color="#ff4500" />
                   <View>
                     <Text style={styles.settingsLabel}>MultiGP Chapter</Text>
                     <Text style={[styles.settingsValue, { fontSize: 11, color: mgpConnection?.is_active ? '#4caf50' : '#888' }]}>
-                      {mgpConnection
-                        ? (mgpConnection.is_active
-                          ? `● ${mgpConnection.chapter_name ?? 'Connected'}`
-                          : `○ ${mgpConnection.chapter_name ?? 'Paused'}`)
-                        : '○ Not connected'}
+                      {mgpConnection ? (mgpConnection.is_active ? `● ${mgpConnection.chapter_name ?? 'Connected'}` : `○ ${mgpConnection.chapter_name ?? 'Paused'}`) : '○ Not connected'}
                     </Text>
                   </View>
                 </View>
-                <TouchableOpacity
-                  style={[styles.ytAuthBtn, mgpConnection ? styles.ytAuthBtnUnlink : styles.ytAuthBtnLink]}
-                  onPress={() => { setShowSettings(false); setTimeout(() => setShowMultiGP(true), 350); }}
-                  disabled={mgpLoading}
-                >
-                  {mgpLoading
-                    ? <ActivityIndicator size="small" color="#fff" />
-                    : <Text style={styles.ytAuthBtnText}>{mgpConnection ? 'Manage' : 'Connect'}</Text>
-                  }
+                <TouchableOpacity style={[styles.ytAuthBtn, mgpConnection ? styles.ytAuthBtnUnlink : styles.ytAuthBtnLink]} onPress={() => { setShowSettings(false); setTimeout(() => setShowMultiGP(true), 350); }} disabled={mgpLoading}>
+                  {mgpLoading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.ytAuthBtnText}>{mgpConnection ? 'Manage' : 'Connect'}</Text>}
                 </TouchableOpacity>
               </View>
             </View>
@@ -749,82 +640,40 @@ export default function ProfileScreen() {
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>MultiGP Chapter</Text>
-            <TouchableOpacity onPress={() => setShowMultiGP(false)}>
-              <Ionicons name="close" size={26} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowMultiGP(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {mgpConnection ? (
-              /* ── Connected state ── */
               <View>
                 <View style={styles.mgpConnectedCard}>
                   <Ionicons name="radio" size={32} color="#ff4500" />
                   <View style={{ marginLeft: 12, flex: 1 }}>
                     <Text style={styles.mgpChapterName}>{mgpConnection.chapter_name ?? 'Chapter Connected'}</Text>
-                    <Text style={styles.mgpChapterId}>
-                      {mgpConnection.chapter_id ? `ID: ${mgpConnection.chapter_id}` : ''}
-                    </Text>
-                    {mgpConnection.last_synced_at && (
-                      <Text style={styles.mgpLastSync}>
-                        Last sync: {new Date(mgpConnection.last_synced_at).toLocaleString()}
-                      </Text>
-                    )}
+                    <Text style={styles.mgpChapterId}>{mgpConnection.chapter_id ? `ID: ${mgpConnection.chapter_id}` : ''}</Text>
+                    {mgpConnection.last_synced_at && <Text style={styles.mgpLastSync}>Last sync: {new Date(mgpConnection.last_synced_at).toLocaleString()}</Text>}
                   </View>
                 </View>
-
                 {mgpSyncMsg ? <Text style={styles.mgpSyncMsg}>{mgpSyncMsg}</Text> : null}
-
-                <TouchableOpacity
-                  style={[styles.primaryBtn, { backgroundColor: '#ff4500', marginTop: 16 }]}
-                  onPress={handleMgpSync}
-                  disabled={mgpSyncing}
-                >
-                  {mgpSyncing
-                    ? <ActivityIndicator size="small" color="#fff" />
-                    : (
-                      <>
-                        <Ionicons name="sync-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
-                        <Text style={[styles.primaryBtnText, { color: '#fff' }]}>Sync Now</Text>
-                      </>
-                    )
-                  }
+                <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: '#ff4500', marginTop: 16 }]} onPress={handleMgpSync} disabled={mgpSyncing}>
+                  {mgpSyncing ? <ActivityIndicator size="small" color="#fff" /> : <><Ionicons name="sync-outline" size={16} color="#fff" style={{ marginRight: 6 }} /><Text style={[styles.primaryBtnText, { color: '#fff' }]}>Sync Now</Text></>}
                 </TouchableOpacity>
-
                 <View style={[styles.settingsRow, { marginTop: 16 }]}>
                   <Text style={styles.settingsLabel}>Auto-sync enabled</Text>
-                  <Switch
-                    value={mgpConnection.is_active}
-                    onValueChange={mgpToggleActive}
-                    trackColor={{ true: '#ff4500', false: '#333' }}
-                    thumbColor="#fff"
-                  />
+                  <Switch value={mgpConnection.is_active} onValueChange={mgpToggleActive} trackColor={{ true: '#ff4500', false: '#333' }} thumbColor="#fff" />
                 </View>
-
                 <TouchableOpacity style={[styles.signOutBtn, { marginTop: 24 }]} onPress={handleMgpDisconnect}>
                   <Ionicons name="unlink-outline" size={18} color="#e74c3c" />
                   <Text style={styles.signOutText}>Disconnect Chapter</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              /* ── Connect state ── */
               <View>
-                <Text style={styles.mgpInstructions}>
-                  Enter your MultiGP Timing System API key to link your chapter. Upcoming races will auto-sync to the map.
-                </Text>
-                <Text style={styles.mgpHint}>
-                  Find your key at multigp.com → Chapter Dashboard → Settings → Timing System Key
-                </Text>
-
-                <TouchableOpacity
-                  style={styles.mgpHelpLink}
-                  onPress={() => setShowMgpHelp(prev => !prev)}
-                >
+                <Text style={styles.mgpInstructions}>Enter your MultiGP Timing System API key to link your chapter. Upcoming races will auto-sync to the map.</Text>
+                <Text style={styles.mgpHint}>Find your key at multigp.com → Chapter Dashboard → Settings → Timing System Key</Text>
+                <TouchableOpacity style={styles.mgpHelpLink} onPress={() => setShowMgpHelp(prev => !prev)}>
                   <Ionicons name="help-circle-outline" size={15} color="#00d4ff" />
-                  <Text style={styles.mgpHelpLinkText}>
-                    {showMgpHelp ? 'Hide instructions ▲' : 'How do I find my API key? ▼'}
-                  </Text>
+                  <Text style={styles.mgpHelpLinkText}>{showMgpHelp ? 'Hide instructions ▲' : 'How do I find my API key? ▼'}</Text>
                 </TouchableOpacity>
-
                 {showMgpHelp && (
                   <View style={styles.mgpHelpBox}>
                     <Text style={styles.mgpHelpTitle}>📡 How to Get Your MultiGP API Key</Text>
@@ -833,60 +682,26 @@ export default function ProfileScreen() {
                     <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>3. </Text>Select <Text style={styles.mgpHelpBold}>Chapter Dashboard</Text> from the dropdown</Text>
                     <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>4. </Text>Click <Text style={styles.mgpHelpBold}>Chapter Configuration</Text> or <Text style={styles.mgpHelpBold}>Settings</Text> in the left menu</Text>
                     <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>5. </Text>Look for <Text style={styles.mgpHelpBold}>Timing System Key</Text> — copy and paste it below</Text>
-                    <Text style={styles.mgpHelpNote}>⚠️ Only Chapter Organizers can access this key. If you are a member but not an organizer, ask your chapter admin to link the chapter instead.</Text>
-                    <TouchableOpacity style={styles.mgpHelpClose} onPress={() => setShowMgpHelp(false)}>
-                      <Text style={styles.mgpHelpCloseText}>Got it ✓</Text>
-                    </TouchableOpacity>
+                    <Text style={styles.mgpHelpNote}>⚠️ Only Chapter Organizers can access this key.</Text>
+                    <TouchableOpacity style={styles.mgpHelpClose} onPress={() => setShowMgpHelp(false)}><Text style={styles.mgpHelpCloseText}>Got it ✓</Text></TouchableOpacity>
                   </View>
                 )}
-
                 <Text style={styles.inputLabel}>Timing System API Key</Text>
-                <TextInput
-                  style={styles.input}
-                  value={mgpKeyInput}
-                  onChangeText={t => { setMgpKeyInput(t); setMgpValidResult(null); }}
-                  placeholder="Paste your API key here"
-                  placeholderTextColor="#555"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-
+                <TextInput style={styles.input} value={mgpKeyInput} onChangeText={t => { setMgpKeyInput(t); setMgpValidResult(null); }} placeholder="Paste your API key here" placeholderTextColor="#555" autoCapitalize="none" autoCorrect={false} />
                 {mgpValidResult && (
                   <View style={[styles.mgpValidResult, { borderColor: mgpValidResult.valid ? '#4caf50' : '#e74c3c' }]}>
-                    <Ionicons
-                      name={mgpValidResult.valid ? 'checkmark-circle' : 'close-circle'}
-                      size={18}
-                      color={mgpValidResult.valid ? '#4caf50' : '#e74c3c'}
-                    />
+                    <Ionicons name={mgpValidResult.valid ? 'checkmark-circle' : 'close-circle'} size={18} color={mgpValidResult.valid ? '#4caf50' : '#e74c3c'} />
                     <Text style={[styles.mgpValidText, { color: mgpValidResult.valid ? '#4caf50' : '#e74c3c' }]}>
-                      {mgpValidResult.valid
-                        ? `✅ ${mgpValidResult.chapterName ?? 'Valid key'}`
-                        : mgpValidResult.error ?? 'Invalid key'}
+                      {mgpValidResult.valid ? `✅ ${mgpValidResult.chapterName ?? 'Valid key'}` : mgpValidResult.error ?? 'Invalid key'}
                     </Text>
                   </View>
                 )}
-
-                <TouchableOpacity
-                  style={[styles.primaryBtn, { backgroundColor: '#1e1e3a', marginTop: 12 }]}
-                  onPress={handleMgpValidate}
-                  disabled={mgpValidating}
-                >
-                  {mgpValidating
-                    ? <ActivityIndicator size="small" color="#00d4ff" />
-                    : <Text style={[styles.primaryBtnText, { color: '#00d4ff' }]}>Validate Key</Text>
-                  }
+                <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: '#1e1e3a', marginTop: 12 }]} onPress={handleMgpValidate} disabled={mgpValidating}>
+                  {mgpValidating ? <ActivityIndicator size="small" color="#00d4ff" /> : <Text style={[styles.primaryBtnText, { color: '#00d4ff' }]}>Validate Key</Text>}
                 </TouchableOpacity>
-
                 {mgpValidResult?.valid && (
-                  <TouchableOpacity
-                    style={[styles.primaryBtn, { marginTop: 10 }]}
-                    onPress={handleMgpConnect}
-                    disabled={mgpSaving}
-                  >
-                    {mgpSaving
-                      ? <ActivityIndicator size="small" color="#000" />
-                      : <Text style={styles.primaryBtnText}>Connect Chapter</Text>
-                    }
+                  <TouchableOpacity style={[styles.primaryBtn, { marginTop: 10 }]} onPress={handleMgpConnect} disabled={mgpSaving}>
+                    {mgpSaving ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.primaryBtnText}>Connect Chapter</Text>}
                   </TouchableOpacity>
                 )}
               </View>
@@ -900,41 +715,17 @@ export default function ProfileScreen() {
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Edit Profile</Text>
-            <TouchableOpacity onPress={() => setShowEditProfile(false)}>
-              <Ionicons name="close" size={26} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowEditProfile(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             <Text style={styles.inputLabel}>Username</Text>
-            <TextInput
-              style={[styles.input, usernameError ? styles.inputError : undefined]}
-              value={editUsername}
-              onChangeText={t => { setEditUsername(t); setUsernameError(''); }}
-              placeholder="username"
-              placeholderTextColor="#555"
-              autoCapitalize="none"
-            />
+            <TextInput style={[styles.input, usernameError ? styles.inputError : undefined]} value={editUsername} onChangeText={t => { setEditUsername(t); setUsernameError(''); }} placeholder="username" placeholderTextColor="#555" autoCapitalize="none" />
             {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : null}
             <Text style={styles.inputLabel}>Bio</Text>
-            <TextInput
-              style={[styles.input, { height: 90 }]}
-              value={editBio}
-              onChangeText={setEditBio}
-              placeholder="Tell the community about yourself…"
-              placeholderTextColor="#555"
-              multiline
-              maxLength={200}
-            />
+            <TextInput style={[styles.input, { height: 90 }]} value={editBio} onChangeText={setEditBio} placeholder="Tell the community about yourself…" placeholderTextColor="#555" multiline maxLength={200} />
             <Text style={styles.charCount}>{editBio.length}/200</Text>
-            <TouchableOpacity
-              style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]}
-              onPress={saveProfile}
-              disabled={updating}
-            >
-              {updating
-                ? <ActivityIndicator size="small" color="#000" />
-                : <Text style={styles.primaryBtnText}>Save Changes</Text>
-              }
+            <TouchableOpacity style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]} onPress={saveProfile} disabled={updating}>
+              {updating ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.primaryBtnText}>Save Changes</Text>}
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -945,44 +736,26 @@ export default function ProfileScreen() {
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Social Links</Text>
-            <TouchableOpacity onPress={() => setShowSocialLinks(false)}>
-              <Ionicons name="close" size={26} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowSocialLinks(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {([
-              { label: 'YouTube',   icon: 'logo-youtube',   val: editYoutube,   set: setEditYoutube },
+              { label: 'YouTube', icon: 'logo-youtube', val: editYoutube, set: setEditYoutube },
               { label: 'Instagram', icon: 'logo-instagram', val: editInstagram, set: setEditInstagram },
-              { label: 'Twitter/X', icon: 'logo-twitter',   val: editTwitter,   set: setEditTwitter },
-              { label: 'TikTok',    icon: 'logo-tiktok',    val: editTiktok,    set: setEditTiktok },
-              { label: 'Website',   icon: 'globe-outline',  val: editWebsite,   set: setEditWebsite },
-            ] as { label: string; icon: string; val: string; set: (v: string) => void }[])
-              .map(({ label, icon, val, set }) => (
-                <View key={label}>
-                  <Text style={styles.inputLabel}>{label}</Text>
-                  <View style={styles.socialInputRow}>
-                    <Ionicons name={icon as any} size={20} color="#00d4ff" style={{ marginRight: 8 }} />
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      value={val}
-                      onChangeText={set}
-                      placeholder="https://…"
-                      placeholderTextColor="#555"
-                      autoCapitalize="none"
-                      keyboardType="url"
-                    />
-                  </View>
+              { label: 'Twitter/X', icon: 'logo-twitter', val: editTwitter, set: setEditTwitter },
+              { label: 'TikTok', icon: 'logo-tiktok', val: editTiktok, set: setEditTiktok },
+              { label: 'Website', icon: 'globe-outline', val: editWebsite, set: setEditWebsite },
+            ] as { label: string; icon: string; val: string; set: (v: string) => void }[]).map(({ label, icon, val, set }) => (
+              <View key={label}>
+                <Text style={styles.inputLabel}>{label}</Text>
+                <View style={styles.socialInputRow}>
+                  <Ionicons name={icon as any} size={20} color="#00d4ff" style={{ marginRight: 8 }} />
+                  <TextInput style={[styles.input, { flex: 1 }]} value={val} onChangeText={set} placeholder="https://…" placeholderTextColor="#555" autoCapitalize="none" keyboardType="url" />
                 </View>
-              ))}
-            <TouchableOpacity
-              style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]}
-              onPress={saveSocials}
-              disabled={updating}
-            >
-              {updating
-                ? <ActivityIndicator size="small" color="#000" />
-                : <Text style={styles.primaryBtnText}>Save Links</Text>
-              }
+              </View>
+            ))}
+            <TouchableOpacity style={[styles.primaryBtn, updating ? styles.primaryBtnDisabled : undefined]} onPress={saveSocials} disabled={updating}>
+              {updating ? <ActivityIndicator size="small" color="#000" /> : <Text style={styles.primaryBtnText}>Save Links</Text>}
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -993,66 +766,32 @@ export default function ProfileScreen() {
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>New Build</Text>
-            <TouchableOpacity onPress={() => setShowCreateBuild(false)}>
-              <Ionicons name="close" size={26} color="#fff" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowCreateBuild(false)}><Ionicons name="close" size={26} color="#fff" /></TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {([
-              { label: 'Build Name *', val: buildName,   set: setBuildName,   ph: 'e.g. Race Day 5"' },
-              { label: 'Frame',        val: buildFrame,  set: setBuildFrame,  ph: 'e.g. ImpulseRC Apex' },
-              { label: 'Motors',       val: buildMotors, set: setBuildMotors, ph: 'e.g. iFlight 2306 2450kv' },
-              { label: 'FC',           val: buildFC,     set: setBuildFC,     ph: 'e.g. Betaflight F7' },
-              { label: 'VTX',          val: buildVTX,    set: setBuildVTX,    ph: 'e.g. Rush Tank Ultimate' },
-              { label: 'Camera',       val: buildCamera, set: setBuildCamera, ph: 'e.g. Caddx Ratel 2' },
-            ] as { label: string; val: string; set: (v: string) => void; ph: string }[])
-              .map(({ label, val, set, ph }) => (
-                <View key={label}>
-                  <Text style={styles.inputLabel}>{label}</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={val}
-                    onChangeText={set}
-                    placeholder={ph}
-                    placeholderTextColor="#555"
-                  />
-                </View>
-              ))}
+              { label: 'Build Name *', val: buildName, set: setBuildName, ph: 'e.g. Race Day 5"' },
+              { label: 'Frame', val: buildFrame, set: setBuildFrame, ph: 'e.g. ImpulseRC Apex' },
+              { label: 'Motors', val: buildMotors, set: setBuildMotors, ph: 'e.g. iFlight 2306 2450kv' },
+              { label: 'FC', val: buildFC, set: setBuildFC, ph: 'e.g. Betaflight F7' },
+              { label: 'VTX', val: buildVTX, set: setBuildVTX, ph: 'e.g. Rush Tank Ultimate' },
+              { label: 'Camera', val: buildCamera, set: setBuildCamera, ph: 'e.g. Caddx Ratel 2' },
+            ] as { label: string; val: string; set: (v: string) => void; ph: string }[]).map(({ label, val, set, ph }) => (
+              <View key={label}>
+                <Text style={styles.inputLabel}>{label}</Text>
+                <TextInput style={styles.input} value={val} onChangeText={set} placeholder={ph} placeholderTextColor="#555" />
+              </View>
+            ))}
             <Text style={styles.inputLabel}>Notes</Text>
-            <TextInput
-              style={[styles.input, { height: 80 }]}
-              value={buildNotes}
-              onChangeText={setBuildNotes}
-              placeholder="Tune notes, issues, mods…"
-              placeholderTextColor="#555"
-              multiline
-            />
-            <TouchableOpacity style={styles.primaryBtn} onPress={createBuild}>
-              <Text style={styles.primaryBtnText}>Add Build</Text>
-            </TouchableOpacity>
+            <TextInput style={[styles.input, { height: 80 }]} value={buildNotes} onChangeText={setBuildNotes} placeholder="Tune notes, issues, mods…" placeholderTextColor="#555" multiline />
+            <TouchableOpacity style={styles.primaryBtn} onPress={createBuild}><Text style={styles.primaryBtnText}>Add Build</Text></TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── FOLLOW LIST MODAL ──────────────────────────────────────────────── */}
-      {user && (
-        <FollowListModal
-          visible={followModal !== null}
-          type={followModal ?? 'followers'}
-          profileUserId={user.id}
-          currentUserId={user.id}
-          onClose={() => setFollowModal(null)}
-        />
-      )}
-
-      {/* ── MUTE LIST MODAL ────────────────────────────────────────────────── */}
-      <MuteListModal
-        visible={showMuteList}
-        onClose={() => setShowMuteList(false)}
-        mutedUsers={mutedUsers}
-        loading={muteLoading}
-        onUnmute={async (userId) => { await unmuteUser(userId); }}
-      />
+      {/* ── FOLLOW / MUTE MODALS ───────────────────────────────────────────── */}
+      {user && <FollowListModal visible={followModal !== null} type={followModal ?? 'followers'} profileUserId={user.id} currentUserId={user.id} onClose={() => setFollowModal(null)} />}
+      <MuteListModal visible={showMuteList} onClose={() => setShowMuteList(false)} mutedUsers={mutedUsers} loading={muteLoading} onUnmute={async (userId) => { await unmuteUser(userId); }} />
     </View>
   );
 }
@@ -1064,13 +803,17 @@ const styles = StyleSheet.create({
   emptyState:    { alignItems: 'center', paddingTop: 60, paddingBottom: 40 },
   emptyText:     { color: '#444', fontSize: 14, marginTop: 12 },
 
-  // ── Banner (200px tall so avatar overlap doesn't bury the image)
+  // Two-section scroll layout
+  headerScroll:  { flexGrow: 0, flexShrink: 0 },   // shrinks to content height
+  contentScroll: { flex: 1 },                        // fills remaining space
+
+  // Banner
   bannerWrap:        { width: '100%', height: 200, overflow: 'hidden', backgroundColor: '#111' },
   banner:            { width: '100%', height: 200 },
   bannerPlaceholder: { justifyContent: 'center', alignItems: 'center' },
   bannerHint:        { color: '#444', fontSize: 12, marginTop: 6 },
 
-  // ── Header row (reduced -20 overlap so banner stays visible)
+  // Header row
   headerRow:         { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: -20, marginBottom: 10 },
   avatarWrap:        { position: 'relative' },
   avatar:            { width: 84, height: 84, borderRadius: 42, borderWidth: 3, borderColor: '#0a0a1a' },
@@ -1081,7 +824,7 @@ const styles = StyleSheet.create({
   editBtnText:       { color: '#00d4ff', fontWeight: '600', fontSize: 13 },
   gearBtn:           { padding: 4 },
 
-  bioSection:  { paddingHorizontal: 16, paddingBottom: 8 },
+  bioSection:  { paddingHorizontal: 16, paddingBottom: 12 },
   displayName: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 4 },
   bio:         { color: '#aaa', fontSize: 13, lineHeight: 18, marginBottom: 10 },
 
@@ -1093,18 +836,19 @@ const styles = StyleSheet.create({
   socialRow:  { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 8 },
   socialChip: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1e1e3a', justifyContent: 'center', alignItems: 'center' },
 
-  // ── Tab bar — HORIZONTAL: icon beside label at all times ──────────────────
+  // ── Tab bar — lives OUTSIDE ScrollView, always a proper horizontal row ────
   tabBar: {
-    flexDirection: 'row',
+    flexDirection: 'row',       // ← THE fix: this View is never inside sticky
+    width: W,
+    height: TAB_BAR_H,
     backgroundColor: '#0d0d1f',
     borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: '#1e1e3a',
-    height: 46,
   },
   tabItem: {
     flex: 1,
-    flexDirection: 'row',        // ← horizontal: icon left, label right
+    flexDirection: 'row',       // icon + label side-by-side
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
@@ -1129,7 +873,6 @@ const styles = StyleSheet.create({
 
   feedList: { paddingHorizontal: 12 },
 
-  // ── Grid
   gridRow:              { gap: 2 },
   gridCell:             { width: CELL, height: CELL, backgroundColor: '#1a1a2e', overflow: 'hidden', position: 'relative', margin: 1 },
   gridThumb:            { width: '100%', height: '100%' },
@@ -1141,7 +884,6 @@ const styles = StyleSheet.create({
   gridYtBadge:          { position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 4, padding: 3 },
   gridIgBadge:          { position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(193,53,132,0.85)', borderRadius: 4, padding: 3 },
 
-  // ── Builds
   buildCard:      { backgroundColor: '#1a1a2e', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#2a2a4a' },
   buildHeader:    { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   buildName:      { color: '#fff', fontWeight: '700', fontSize: 15 },
@@ -1186,7 +928,7 @@ const styles = StyleSheet.create({
   signOutBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: '#3a1e1e', backgroundColor: '#1a0a0a' },
   signOutText: { color: '#e74c3c', fontWeight: '600', fontSize: 14 },
 
-  // ── MultiGP
+  // MultiGP
   mgpConnectedCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a2e', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#ff4500' },
   mgpChapterName:   { color: '#fff', fontWeight: '700', fontSize: 16 },
   mgpChapterId:     { color: '#888', fontSize: 12, marginTop: 2 },
@@ -1196,8 +938,6 @@ const styles = StyleSheet.create({
   mgpHint:          { color: '#666', fontSize: 12, lineHeight: 18, marginBottom: 4, fontStyle: 'italic' },
   mgpValidResult:   { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 8, borderWidth: 1, marginTop: 8, backgroundColor: '#0f0f1a' },
   mgpValidText:     { fontSize: 13, fontWeight: '600', flex: 1 },
-
-  // ── MultiGP Help
   mgpHelpLink:      { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 12, marginTop: 4 },
   mgpHelpLinkText:  { color: '#00d4ff', fontSize: 13, textDecorationLine: 'underline' },
   mgpHelpBox:       { backgroundColor: '#0f1a2e', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#1e3a5a' },
