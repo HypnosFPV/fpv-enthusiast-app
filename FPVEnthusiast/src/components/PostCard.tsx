@@ -127,12 +127,14 @@ interface CommentLikeState { liked: boolean; count: number; }
 interface Props {
   post: PostData;
   isVisible?: boolean;
+  shouldAutoplay?: boolean;   // ← ADD THIS LINE
   currentUserId?: string | null;
   onLike?: (postId: string, currentlyLiked: boolean) => void;
   onDelete?: (postId: string) => void;
   onCaptionUpdate?: (postId: string, caption: string) => void;
   autoplay?: boolean;
 }
+
 
 export default function PostCard(props: Props) {
   const { post, currentUserId, onLike, onDelete, onCaptionUpdate } = props;
