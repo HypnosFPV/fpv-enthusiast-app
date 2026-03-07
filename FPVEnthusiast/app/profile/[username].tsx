@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';          // ✅ Instagram gradient
 import { supabase } from '../../src/services/supabase';
 import { useAuth } from '../../src/context/AuthContext';
 import PostCard from '../../src/components/PostCard';
@@ -32,7 +33,7 @@ interface Post {
   user_id: string;
   caption?: string;
   media_url?: string;
-  media_type?: string;   // 'video' | 'image' | 'social_embed' | null
+  media_type?: string;
   platform?: string;
   created_at: string;
   likes_count?: number;
@@ -46,7 +47,7 @@ function getYoutubeVideoId(url: string): string | null {
     /youtu\.be\/([^?&]+)/,
     /youtube\.com\/watch\?v=([^?&]+)/,
     /youtube\.com\/embed\/([^?&]+)/,
-    /youtube-nocookie\.com\/embed\/([^?&]+)/,   // ✅ nocookie embed URLs
+    /youtube-nocookie\.com\/embed\/([^?&]+)/,
     /youtube\.com\/shorts\/([^?&]+)/,
   ];
   for (const p of patterns) {
@@ -61,36 +62,34 @@ function isInstagramUrl(url: string): boolean {
 }
 
 function thumbnailUri(post: Post): string | null {
-  // ✅ Guard — never attempt to render local device paths as remote images
+  // Guard — never render local device file paths
   if (!post.media_url || post.media_url.startsWith('file://')) return null;
 
-  // ✅ YouTube — extract video ID and return mqdefault thumbnail
+  // YouTube — extract ID → mqdefault thumbnail
   const vid = getYoutubeVideoId(post.media_url);
   if (vid) return `https://img.youtube.com/vi/${vid}/mqdefault.jpg`;
 
-  // ✅ Direct image URL (uploaded photos)
+  // Direct image file
   if (/\.(jpg|jpeg|png|gif|webp)/i.test(post.media_url)) return post.media_url;
 
-  // Instagram URLs: no public thumbnail API — handled in renderGridCell with branded placeholder
+  // Instagram — no public API, handled as gradient in renderGridCell
   return null;
 }
 
 function toFeedPost(p: Post, profile: Profile): FeedPost {
-  // ✅ When media_type is 'social_embed', the embed URL lives in media_url.
-  //    PostCard expects social_url for embed/social URLs and media_url for raw files.
   const isSocialEmbed = p.media_type === 'social_embed';
   return {
-    id: p.id,
-    user_id: p.user_id,
-    caption: p.caption ?? '',
-    media_url:  isSocialEmbed ? null                  : (p.media_url ?? null),
-    media_type: p.media_type  ?? null,
-    platform:   p.platform    ?? null,
-    social_url: isSocialEmbed ? (p.media_url ?? null) : null,
-    created_at: p.created_at,
+    id:            p.id,
+    user_id:       p.user_id,
+    caption:       p.caption      ?? '',
+    media_url:     isSocialEmbed  ? null                  : (p.media_url ?? null),
+    media_type:    p.media_type   ?? null,
+    platform:      p.platform     ?? null,
+    social_url:    isSocialEmbed  ? (p.media_url ?? null) : null,
+    created_at:    p.created_at,
     like_count:    p.likes_count    ?? 0,
     comment_count: p.comments_count ?? 0,
-    isLiked: false,
+    isLiked:       false,
     users: {
       id:         profile.id,
       username:   profile.username,
@@ -124,17 +123,11 @@ export default function UserProfileScreen() {
   const [activeTab,    setActiveTab]    = useState<'grid' | 'feed'>('grid');
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
-  // ── follow hook ───────────────────────────────────────────────────────────
   const {
-    isFollowing,
-    followersCount,
-    followingCount,
-    toggling,
-    checkingFollow,
-    toggleFollow,
+    isFollowing, followersCount, followingCount,
+    toggling, checkingFollow, toggleFollow,
   } = useFollow(profile?.id ?? '', currentUser?.id);
 
-  // ── load profile + posts ─────────────────────────────────────────────────
   useEffect(() => {
     if (!username) return;
     (async () => {
@@ -150,7 +143,6 @@ export default function UserProfileScreen() {
 
       const { data: postData } = await supabase
         .from('posts')
-        // ✅ No social_url / link_url — column does not exist in DB
         .select('id, user_id, caption, media_url, media_type, platform, created_at, likes_count, comments_count')
         .eq('user_id', prof.id)
         .order('created_at', { ascending: false });
@@ -170,28 +162,35 @@ export default function UserProfileScreen() {
     return (
       <TouchableOpacity style={styles.cell} onPress={() => setSelectedPost(item)} activeOpacity={0.8}>
 
-        {/* ── thumbnail / placeholder ── */}
+        {/* ── thumbnail / placeholder ─────────────────────────────────── */}
         {thumb ? (
           <Image source={{ uri: thumb }} style={styles.cellImg} />
         ) : isIG ? (
-          // ✅ Instagram branded gradient placeholder — no public thumbnail API available
-          <View style={[styles.cellImg, styles.igPlaceholder]}>
-            <Ionicons name="logo-instagram" size={32} color="#fff" />
-          </View>
+          // ✅ Instagram branded gradient — purple→pink→orange (Instagram's palette)
+          <LinearGradient
+            colors={['#405de6', '#5851db', '#833ab4', '#c13584', '#e1306c', '#fd1d1d']}
+            start={{ x: 0, y: 1 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.cellImg}
+          >
+            <View style={styles.igInner}>
+              <Ionicons name="logo-instagram" size={30} color="#fff" />
+              <Text style={styles.igLabel}>Instagram</Text>
+            </View>
+          </LinearGradient>
         ) : (
           <View style={[styles.cellImg, styles.cellPlaceholder]}>
             <Ionicons name="videocam-outline" size={24} color="#555" />
           </View>
         )}
 
-        {/* ── platform badges ── */}
+        {/* ── badges ──────────────────────────────────────────────────── */}
         {isYT && (
           <View style={styles.ytBadge}>
             <Ionicons name="logo-youtube" size={12} color="#fff" />
           </View>
         )}
         {isIG && (
-          // ✅ Instagram badge bottom-left
           <View style={styles.igBadge}>
             <Ionicons name="logo-instagram" size={12} color="#fff" />
           </View>
@@ -207,28 +206,24 @@ export default function UserProfileScreen() {
   }, []);
 
   // ── guard states ──────────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator color="#7c3aed" size="large" />
-      </View>
-    );
-  }
-  if (notFound || !profile) {
-    return (
-      <View style={styles.loadingScreen}>
-        <Ionicons name="person-outline" size={48} color="#555" />
-        <Text style={{ color: '#888', marginTop: 12 }}>User not found</Text>
-        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
-          <Text style={{ color: '#7c3aed' }}>Go back</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  if (loading) return (
+    <View style={styles.loadingScreen}>
+      <ActivityIndicator color="#7c3aed" size="large" />
+    </View>
+  );
+
+  if (notFound || !profile) return (
+    <View style={styles.loadingScreen}>
+      <Ionicons name="person-outline" size={48} color="#555" />
+      <Text style={{ color: '#888', marginTop: 12 }}>User not found</Text>
+      <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
+        <Text style={{ color: '#7c3aed' }}>Go back</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   const isOwnProfile = currentUser?.id === profile.id;
 
-  // ── render ────────────────────────────────────────────────────────────────
   return (
     <View style={styles.root}>
 
@@ -243,24 +238,20 @@ export default function UserProfileScreen() {
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* ── BANNER ── */}
+        {/* banner */}
         <View style={styles.bannerWrap}>
-          {profile.header_image_url ? (
-            <Image source={{ uri: profile.header_image_url }} style={styles.banner} resizeMode="cover" />
-          ) : (
-            <View style={[styles.banner, styles.bannerPlaceholder]} />
-          )}
+          {profile.header_image_url
+            ? <Image source={{ uri: profile.header_image_url }} style={styles.banner} resizeMode="cover" />
+            : <View style={[styles.banner, styles.bannerPlaceholder]} />}
         </View>
 
-        {/* ── AVATAR ROW ── */}
+        {/* avatar row */}
         <View style={styles.avatarRow}>
-          {profile.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
-          ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Ionicons name="person" size={36} color="#555" />
-            </View>
-          )}
+          {profile.avatar_url
+            ? <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+            : <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Ionicons name="person" size={36} color="#555" />
+              </View>}
 
           {!isOwnProfile && !checkingFollow && (
             <TouchableOpacity
@@ -269,31 +260,29 @@ export default function UserProfileScreen() {
               disabled={toggling}
               activeOpacity={0.8}
             >
-              {toggling ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={[styles.followBtnText, isFollowing && styles.followingBtnText]}>
-                  {isFollowing ? 'Following' : 'Follow'}
-                </Text>
-              )}
+              {toggling
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={[styles.followBtnText, isFollowing && styles.followingBtnText]}>
+                    {isFollowing ? 'Following' : 'Follow'}
+                  </Text>}
             </TouchableOpacity>
           )}
         </View>
 
-        {/* ── USERNAME & BIO ── */}
+        {/* bio */}
         <View style={styles.bioSection}>
           <Text style={styles.usernameText}>@{profile.username}</Text>
           {!!profile.bio && <Text style={styles.bioText}>{profile.bio}</Text>}
         </View>
 
-        {/* ── STATS ── */}
+        {/* stats */}
         <View style={styles.statsRow}>
           <StatBox label="Posts"     value={posts.length} />
           <StatBox label="Followers" value={followersCount} />
           <StatBox label="Following" value={followingCount} />
         </View>
 
-        {/* ── TAB BAR ── */}
+        {/* tab bar */}
         <View style={styles.tabBar}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'grid' && styles.tabActive]}
@@ -309,7 +298,7 @@ export default function UserProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── CONTENT ── */}
+        {/* content */}
         {activeTab === 'grid' ? (
           <FlatList
             data={posts}
@@ -340,7 +329,7 @@ export default function UserProfileScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* ── POST DETAIL MODAL ── */}
+      {/* post detail modal */}
       <Modal
         visible={!!selectedPost}
         animationType="slide"
@@ -405,7 +394,7 @@ const styles = StyleSheet.create({
 
   statsRow:          { flexDirection: 'row', justifyContent: 'space-around',
                        paddingVertical: 14, marginTop: 10,
-                       borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#1e1e3a',
+                       borderTopWidth: StyleSheet.hairlineWidth,    borderTopColor: '#1e1e3a',
                        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#1e1e3a' },
   statBox:           { alignItems: 'center', flex: 1 },
   statValue:         { color: '#fff', fontSize: 17, fontWeight: '700' },
@@ -420,17 +409,15 @@ const styles = StyleSheet.create({
   cellImg:           { width: '100%', height: '100%' },
   cellPlaceholder:   { alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1a2e' },
 
-  // ✅ Instagram branded placeholder — purple-to-pink gradient approximated with solid color
-  igPlaceholder:     { alignItems: 'center', justifyContent: 'center',
-                       backgroundColor: '#833ab4' /* Instagram purple */ },
+  // ✅ Instagram gradient inner layout
+  igInner:           { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  igLabel:           { color: '#fff', fontSize: 9, fontWeight: '600',
+                       marginTop: 4, letterSpacing: 0.5 },
 
   ytBadge:           { position: 'absolute', bottom: 4, left: 4,
                        backgroundColor: '#ff0000', borderRadius: 4, padding: 2 },
-
-  // ✅ Instagram badge — bottom-left, brand purple
   igBadge:           { position: 'absolute', bottom: 4, left: 4,
                        backgroundColor: '#833ab4', borderRadius: 4, padding: 2 },
-
   playBadge:         { position: 'absolute', bottom: 4, right: 4,
                        backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: 2 },
   empty:             { alignItems: 'center', paddingVertical: 60 },
