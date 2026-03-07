@@ -1,6 +1,8 @@
 // src/hooks/useFeed.ts
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../services/supabase';
+import * as FileSystem from 'expo-file-system';
+import { decode } from 'base64-arraybuffer';
 
 export interface FeedPost {
   id: string;
@@ -169,13 +171,18 @@ export function useFeed(currentUserId?: string) {
           ?? (mediaType === 'video' ? 'mp4' : 'jpg');
         const storagePath = `${currentUserId}/${Date.now()}.${ext}`;
 
-        const fileResponse = await fetch(mediaUrl);
-        const blob = await fileResponse.blob();
-        const mime = mediaType === 'video' ? 'video/mp4' : 'image/jpeg';
+                const mime = mediaType === 'video' ? 'video/mp4' : 'image/jpeg';
+
+        // Use FileSystem instead of fetch — fetch(file://) uploads empty blobs on iOS
+        const base64 = await FileSystem.readAsStringAsync(mediaUrl, {
+  encoding: 'base64' as any,
+        });
+        const arrayBuffer = decode(base64);
 
         const { error: upErr } = await supabase.storage
           .from('posts')
-          .upload(storagePath, blob, { contentType: mime, upsert: false });
+          .upload(storagePath, arrayBuffer, { contentType: mime, upsert: false });
+
 
         if (upErr) {
           console.error('[useFeed] storage upload failed:', upErr.message);

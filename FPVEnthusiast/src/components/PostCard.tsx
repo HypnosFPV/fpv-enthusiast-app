@@ -13,6 +13,7 @@ import { supabase } from '../services/supabase';
 import MentionTextInputComponent from './MentionTextInput';
 import MentionText from './MentionText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ImageZoomModal from './ImageZoomModal';
 
 const MentionTextInput = MentionTextInputComponent as any;
 
@@ -167,6 +168,8 @@ export default function PostCard(props: Props) {
   const [showEditCaption, setShowEditCaption] = useState(false);
   const [editCaptionText, setEditCaptionText] = useState(post.caption || '');
   const [commentLikes, setCommentLikes] = useState<Record<string, CommentLikeState>>({});
+  const [zoomUri, setZoomUri] = useState<string | null>(null);
+
 
   const isOwner = !!currentUserId && currentUserId === post.user_id;
   const insets = useSafeAreaInsets();

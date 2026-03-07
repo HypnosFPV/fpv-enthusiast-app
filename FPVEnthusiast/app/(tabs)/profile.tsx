@@ -80,24 +80,29 @@ function toFeedPost(p: Post): FeedPost {
 
 function thumbnailUri(post: Post): string | null {
   if (post.media_type === 'video') return null;
-  if (post.thumbnail_url && isRemoteUrl(post.thumbnail_url)) return post.thumbnail_url;
-  const candidates = [post.media_url, post.social_url, post.embed_url];
+
+  // Check all URL candidates in order
+  const candidates = [post.thumbnail_url, post.media_url, post.social_url, post.embed_url];
   for (const raw of candidates) {
+    if (!raw) continue;
+    if (raw.startsWith('file://')) continue;                        // skip local paths
     const url = resolveStorageUrl(raw);
     if (!url) continue;
-    if (url.toLowerCase().includes('instagram')) continue;
+    if (url.toLowerCase().includes('instagram')) continue;          // skip instagram
+
+    // YouTube → use thumbnail API
     const m = url.match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
     if (m?.[1]) return `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg`;
+
+    // Skip video files
+    if (url.match(/\.(mp4|mov|webm)(\?|$)/i)) continue;
+
+    // Plain image URL — return it
+    return url;
   }
-  const mediaResolved = resolveStorageUrl(post.media_url);
-  if (
-    mediaResolved &&
-    !mediaResolved.match(/\.(mp4|mov|webm)(\?|$)/i) &&
-    !mediaResolved.match(/youtu/i) &&
-    !mediaResolved.toLowerCase().includes('instagram')
-  ) return mediaResolved;
   return null;
 }
+
 
 // ─── Small components ─────────────────────────────────────────────────────────
 
