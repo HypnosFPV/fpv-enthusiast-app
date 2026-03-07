@@ -193,23 +193,35 @@ export default function PostCard(props: Props) {
   const inject = useCallback(function (cmd: string) { injectCmd(webViewRef, cmd); }, []);
 
   useFocusEffect(useCallback(function () {
-    if (resolvedPlatform === 'youtube' && isYtReady && !ytError) inject('playVideo');
-    return function () { if (resolvedPlatform === 'youtube') inject('pauseVideo'); };
-  }, [resolvedPlatform, isYtReady, ytError, inject]));
+  const canPlay = props.shouldAutoplay ?? props.autoplay ?? true;
+  if (resolvedPlatform === 'youtube' && isYtReady && !ytError && canPlay) {
+    inject('playVideo');
+  }
+  return function () {
+    if (resolvedPlatform === 'youtube') inject('pauseVideo');
+  };
+}, [resolvedPlatform, isYtReady, ytError, inject, props.shouldAutoplay, props.autoplay]));
+
+
+  const shouldAutoplayRef = useRef(props.shouldAutoplay ?? props.autoplay ?? true);
+useEffect(function () {
+  shouldAutoplayRef.current = props.shouldAutoplay ?? props.autoplay ?? true;
+}, [props.shouldAutoplay, props.autoplay]);
+
+useEffect(function () {
+  if (resolvedPlatform !== 'youtube') return;
+  const sub = AppState.addEventListener('change', function (s) {
+    if (s === 'active' && isYtReady && !ytError && shouldAutoplayRef.current) inject('playVideo');
+    if (s === 'background') inject('pauseVideo');
+  });
+  return function () { sub.remove(); };
+}, [resolvedPlatform, isYtReady, ytError, inject]);
 
   useEffect(function () {
-    if (resolvedPlatform !== 'youtube') return;
-    const sub = AppState.addEventListener('change', function (s) {
-      if (s === 'active' && isYtReady && !ytError) inject('playVideo');
-      if (s === 'background') inject('pauseVideo');
-    });
-    return function () { sub.remove(); };
-  }, [resolvedPlatform, isYtReady, ytError, inject]);
-
-  useEffect(function () {
-    if (resolvedPlatform !== 'youtube' || !isYtReady || ytError) return;
-    props.isVisible ? inject('playVideo') : inject('pauseVideo');
-  }, [props.isVisible, resolvedPlatform, isYtReady, ytError, inject]);
+  if (resolvedPlatform !== 'youtube' || !isYtReady || ytError) return;
+  const canPlay = props.isVisible && (props.shouldAutoplay ?? props.autoplay ?? true);
+  canPlay ? inject('playVideo') : inject('pauseVideo');
+}, [props.isVisible, props.shouldAutoplay, props.autoplay, resolvedPlatform, isYtReady, ytError, inject]);
 
   const handleMessage = useCallback(function (e: { nativeEvent: { data: string } }) {
     try {
