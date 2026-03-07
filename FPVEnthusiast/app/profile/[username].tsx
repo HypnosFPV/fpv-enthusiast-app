@@ -34,8 +34,6 @@ interface Post {
   media_url?: string;
   media_type?: string;   // 'video' | 'image' | 'social_embed' | null
   platform?: string;
-  // ✅ FIX A — removed social_url / link_url: neither column exists in DB.
-  //            Social embed URLs are stored directly in media_url.
   created_at: string;
   likes_count?: number;
   comments_count?: number;
@@ -48,7 +46,7 @@ function getYoutubeVideoId(url: string): string | null {
     /youtu\.be\/([^?&]+)/,
     /youtube\.com\/watch\?v=([^?&]+)/,
     /youtube\.com\/embed\/([^?&]+)/,
-    /youtube-nocookie\.com\/embed\/([^?&]+)/,  // ✅ FIX B — your DB stores nocookie embed URLs
+    /youtube-nocookie\.com\/embed\/([^?&]+)/,   // ✅ nocookie embed URLs
     /youtube\.com\/shorts\/([^?&]+)/,
   ];
   for (const p of patterns) {
@@ -58,30 +56,36 @@ function getYoutubeVideoId(url: string): string | null {
   return null;
 }
 
+function isInstagramUrl(url: string): boolean {
+  return /instagram\.com/i.test(url);
+}
+
 function thumbnailUri(post: Post): string | null {
-  if (post.media_url) {
-    // ✅ FIX C — check media_url for YouTube ID (social embed URLs live here, not social_url)
-    const vid = getYoutubeVideoId(post.media_url);
-    if (vid) return `https://img.youtube.com/vi/${vid}/mqdefault.jpg`;
-  }
-  // Fall through to image media_url
-  if (post.media_url && /\.(jpg|jpeg|png|gif|webp)/i.test(post.media_url))
-    return post.media_url;
+  // ✅ Guard — never attempt to render local device paths as remote images
+  if (!post.media_url || post.media_url.startsWith('file://')) return null;
+
+  // ✅ YouTube — extract video ID and return mqdefault thumbnail
+  const vid = getYoutubeVideoId(post.media_url);
+  if (vid) return `https://img.youtube.com/vi/${vid}/mqdefault.jpg`;
+
+  // ✅ Direct image URL (uploaded photos)
+  if (/\.(jpg|jpeg|png|gif|webp)/i.test(post.media_url)) return post.media_url;
+
+  // Instagram URLs: no public thumbnail API — handled in renderGridCell with branded placeholder
   return null;
 }
 
 function toFeedPost(p: Post, profile: Profile): FeedPost {
-  // ✅ FIX D — when media_type is 'social_embed', the embed URL lives in media_url.
-  //            PostCard expects social_url for embed URLs and media_url for raw files.
-  //            Split them here so PostCard renders the right component.
+  // ✅ When media_type is 'social_embed', the embed URL lives in media_url.
+  //    PostCard expects social_url for embed/social URLs and media_url for raw files.
   const isSocialEmbed = p.media_type === 'social_embed';
   return {
     id: p.id,
     user_id: p.user_id,
     caption: p.caption ?? '',
-    media_url:  isSocialEmbed ? null            : (p.media_url ?? null),
-    media_type: p.media_type ?? null,
-    platform:   p.platform   ?? null,
+    media_url:  isSocialEmbed ? null                  : (p.media_url ?? null),
+    media_type: p.media_type  ?? null,
+    platform:   p.platform    ?? null,
     social_url: isSocialEmbed ? (p.media_url ?? null) : null,
     created_at: p.created_at,
     like_count:    p.likes_count    ?? 0,
@@ -120,7 +124,7 @@ export default function UserProfileScreen() {
   const [activeTab,    setActiveTab]    = useState<'grid' | 'feed'>('grid');
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
 
-  // ── follow hook (wires up once profile.id is known) ──────────────────────
+  // ── follow hook ───────────────────────────────────────────────────────────
   const {
     isFollowing,
     followersCount,
@@ -146,7 +150,7 @@ export default function UserProfileScreen() {
 
       const { data: postData } = await supabase
         .from('posts')
-        // ✅ FIX E — removed social_url / link_url from SELECT (column doesn't exist in DB)
+        // ✅ No social_url / link_url — column does not exist in DB
         .select('id, user_id, caption, media_url, media_type, platform, created_at, likes_count, comments_count')
         .eq('user_id', prof.id)
         .order('created_at', { ascending: false });
@@ -159,20 +163,45 @@ export default function UserProfileScreen() {
   // ── grid cell ─────────────────────────────────────────────────────────────
   const renderGridCell = useCallback(({ item }: { item: Post }) => {
     const thumb = thumbnailUri(item);
-    // ✅ FIX F — check media_url for YouTube ID (not link_url / social_url)
     const isYT  = !!item.media_url && !!getYoutubeVideoId(item.media_url);
+    const isIG  = !!item.media_url && isInstagramUrl(item.media_url);
     const isVid = item.media_type === 'video';
+
     return (
       <TouchableOpacity style={styles.cell} onPress={() => setSelectedPost(item)} activeOpacity={0.8}>
+
+        {/* ── thumbnail / placeholder ── */}
         {thumb ? (
           <Image source={{ uri: thumb }} style={styles.cellImg} />
+        ) : isIG ? (
+          // ✅ Instagram branded gradient placeholder — no public thumbnail API available
+          <View style={[styles.cellImg, styles.igPlaceholder]}>
+            <Ionicons name="logo-instagram" size={32} color="#fff" />
+          </View>
         ) : (
           <View style={[styles.cellImg, styles.cellPlaceholder]}>
             <Ionicons name="videocam-outline" size={24} color="#555" />
           </View>
         )}
-        {isYT  && <View style={styles.ytBadge}><Ionicons name="logo-youtube" size={12} color="#fff" /></View>}
-        {isVid && !isYT && <View style={styles.playBadge}><Ionicons name="play" size={12} color="#fff" /></View>}
+
+        {/* ── platform badges ── */}
+        {isYT && (
+          <View style={styles.ytBadge}>
+            <Ionicons name="logo-youtube" size={12} color="#fff" />
+          </View>
+        )}
+        {isIG && (
+          // ✅ Instagram badge bottom-left
+          <View style={styles.igBadge}>
+            <Ionicons name="logo-instagram" size={12} color="#fff" />
+          </View>
+        )}
+        {isVid && !isYT && !isIG && (
+          <View style={styles.playBadge}>
+            <Ionicons name="play" size={12} color="#fff" />
+          </View>
+        )}
+
       </TouchableOpacity>
     );
   }, []);
@@ -390,10 +419,20 @@ const styles = StyleSheet.create({
   cell:              { width: CELL, height: CELL, margin: 1, backgroundColor: '#1a1a2e' },
   cellImg:           { width: '100%', height: '100%' },
   cellPlaceholder:   { alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1a2e' },
-  ytBadge:           { position: 'absolute', bottom: 4, left: 4, backgroundColor: '#ff0000',
-                       borderRadius: 4, padding: 2 },
-  playBadge:         { position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.6)',
-                       borderRadius: 4, padding: 2 },
+
+  // ✅ Instagram branded placeholder — purple-to-pink gradient approximated with solid color
+  igPlaceholder:     { alignItems: 'center', justifyContent: 'center',
+                       backgroundColor: '#833ab4' /* Instagram purple */ },
+
+  ytBadge:           { position: 'absolute', bottom: 4, left: 4,
+                       backgroundColor: '#ff0000', borderRadius: 4, padding: 2 },
+
+  // ✅ Instagram badge — bottom-left, brand purple
+  igBadge:           { position: 'absolute', bottom: 4, left: 4,
+                       backgroundColor: '#833ab4', borderRadius: 4, padding: 2 },
+
+  playBadge:         { position: 'absolute', bottom: 4, right: 4,
+                       backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: 2 },
   empty:             { alignItems: 'center', paddingVertical: 60 },
 
   overlayRoot:       { flex: 1, backgroundColor: '#0f0f23' },
