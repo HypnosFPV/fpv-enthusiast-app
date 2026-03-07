@@ -3,9 +3,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
   FlatList, ActivityIndicator, Platform, Alert, ScrollView,
-  KeyboardAvoidingView, Dimensions, SafeAreaView, Switch,
+  KeyboardAvoidingView, Dimensions, Switch,                // ← removed SafeAreaView
   Animated, Easing,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context'; // ← added here
+
+
 import MapView, { Marker, Circle, PROVIDER_GOOGLE, MapPressEvent } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
