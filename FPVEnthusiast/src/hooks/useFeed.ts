@@ -29,6 +29,10 @@ interface CreatePostParams {
   mediaUrl: string;
   mediaType: string;
   caption?: string;
+  // ── FIX: accept base64 directly from ImagePicker so we never rely on
+  //    FileSystem.readAsStringAsync for images (which returns empty on iOS
+  //    for iCloud / HEIC photos and produces 0-byte uploads).
+  mediaBase64?: string | null;
 }
 
 interface CreateSocialPostParams {
@@ -110,7 +114,7 @@ export function useFeed(currentUserId?: string) {
     }
   }, [loading, refreshing, page, fetchPosts]);
 
-  // ─── FIX: also sync likes_count so PostCard display updates immediately ───
+  // ── FIX: also sync likes_count so PostCard display updates immediately ───
   const toggleLike = useCallback(async (postId: string) => {
     if (!currentUserId) return;
 
@@ -155,34 +159,66 @@ export function useFeed(currentUserId?: string) {
     }
   }, [currentUserId, posts]);
 
-  // ─── FIX: upload file to Supabase Storage, store public URL in DB ─────────
-  // Previously the raw file:// URI from ImagePicker was stored directly.
-  // That works in the feed (file is on-device) but breaks the profile grid
-  // because resolveStorageUrl cannot make a public URL from a local path.
-  const createPost = useCallback(async ({ mediaUrl, mediaType, caption }: CreatePostParams) => {
+  // ── FIX: upload file to Supabase Storage, store public URL in DB ─────────
+  const createPost = useCallback(async ({
+    mediaUrl,
+    mediaType,
+    caption,
+    mediaBase64,
+  }: CreatePostParams) => {
     if (!currentUserId) return null;
 
     let finalUrl = mediaUrl;
 
-    // Only upload if it's a local file (file:// or a relative path)
+    // Only upload if it's a local file (not already a remote URL)
     if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://')) {
       try {
-        const ext = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase()
-          ?? (mediaType === 'video' ? 'mp4' : 'jpg');
+        let base64String: string;
+        let ext: string;
+        let mime: string;
+
+        if (mediaType === 'video') {
+          // Videos are too large for picker base64; use FileSystem
+          ext  = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'mp4';
+          mime = ext === 'mov' ? 'video/quicktime' : 'video/mp4';
+          base64String = await FileSystem.readAsStringAsync(mediaUrl, {
+            encoding: 'base64' as any,
+          });
+          console.log('[useFeed] video filesystem base64 chars:', base64String.length);
+        } else if (mediaBase64) {
+          // ── PRIMARY PATH: base64 came directly from ImagePicker ──────────
+          // ImagePicker with quality:0.8 always transcodes to JPEG, so
+          // we can safely use image/jpeg and .jpg extension.
+          base64String = mediaBase64;
+          ext  = 'jpg';
+          mime = 'image/jpeg';
+          console.log('[useFeed] using picker base64, chars:', base64String.length);
+        } else {
+          // ── FALLBACK PATH: no base64 from picker, read from filesystem ───
+          ext  = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'jpg';
+          mime = ext === 'png'  ? 'image/png'
+               : ext === 'heic' ? 'image/heic'
+               : ext === 'webp' ? 'image/webp'
+               : 'image/jpeg';
+          base64String = await FileSystem.readAsStringAsync(mediaUrl, {
+            encoding: 'base64' as any,
+          });
+          console.log('[useFeed] filesystem fallback base64 chars:', base64String.length);
+        }
+
+        const arrayBuffer = decode(base64String);
+        console.log('[useFeed] arrayBuffer byteLength:', arrayBuffer.byteLength);
+
+        if (arrayBuffer.byteLength === 0) {
+          console.error('[useFeed] empty buffer — aborting upload');
+          return null;
+        }
+
         const storagePath = `${currentUserId}/${Date.now()}.${ext}`;
-
-                const mime = mediaType === 'video' ? 'video/mp4' : 'image/jpeg';
-
-        // Use FileSystem instead of fetch — fetch(file://) uploads empty blobs on iOS
-        const base64 = await FileSystem.readAsStringAsync(mediaUrl, {
-  encoding: 'base64' as any,
-        });
-        const arrayBuffer = decode(base64);
 
         const { error: upErr } = await supabase.storage
           .from('posts')
           .upload(storagePath, arrayBuffer, { contentType: mime, upsert: false });
-
 
         if (upErr) {
           console.error('[useFeed] storage upload failed:', upErr.message);
@@ -193,6 +229,7 @@ export function useFeed(currentUserId?: string) {
           .from('posts')
           .getPublicUrl(storagePath);
         finalUrl = urlData.publicUrl;
+        console.log('[useFeed] upload success, publicUrl:', finalUrl);
       } catch (e: any) {
         console.error('[useFeed] upload exception:', e.message);
         return null;
@@ -201,7 +238,12 @@ export function useFeed(currentUserId?: string) {
 
     const { data, error } = await supabase
       .from('posts')
-      .insert({ user_id: currentUserId, media_url: finalUrl, media_type: mediaType, caption })
+      .insert({
+        user_id:    currentUserId,
+        media_url:  finalUrl,
+        media_type: mediaType,
+        caption,
+      })
       .select(SELECT)
       .single();
 
@@ -219,7 +261,11 @@ export function useFeed(currentUserId?: string) {
     return newPost;
   }, [currentUserId]);
 
-  const createSocialPost = useCallback(async ({ socialUrl, platform, caption }: CreateSocialPostParams) => {
+  const createSocialPost = useCallback(async ({
+    socialUrl,
+    platform,
+    caption,
+  }: CreateSocialPostParams) => {
     if (!currentUserId) return null;
     const { data, error } = await supabase
       .from('posts')

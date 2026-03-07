@@ -13,7 +13,7 @@ import { useFeed, FeedPost } from '../../src/hooks/useFeed';
 import { useAuth } from '../../src/context/AuthContext';
 import { useProfile } from '../../src/hooks/useProfile';
 import { useNotifications } from '../../src/hooks/useNotifications';
-import { useMute } from '../../src/hooks/useMute';                     // ← ADD 1
+import { useMute } from '../../src/hooks/useMute';
 import { detectPlatform } from '../../src/utils/socialMedia';
 import { supabase } from '../../src/services/supabase';
 import PostCard from '../../src/components/PostCard';
@@ -65,7 +65,7 @@ export default function FeedScreen() {
     createPost, createSocialPost, deletePost,
   } = useFeed(user?.id);
   const { unreadCount } = useNotifications(user?.id);
-  const { mutedIds } = useMute(user?.id);                              // ← ADD 2
+  const { mutedIds } = useMute(user?.id);
 
   // ── Animated title ───────────────────────────────────────────────────────
   const animValue = useRef(new Animated.Value(0)).current;
@@ -105,9 +105,21 @@ export default function FeedScreen() {
   const [socialUrl, setSocialUrl] = useState('');
   const [mediaUri, setMediaUri] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
+  // ── FIX: store base64 directly from ImagePicker so we don't rely on
+  //    FileSystem.readAsStringAsync (which silently returns empty data
+  //    on iOS for iCloud / HEIC photos → 0-byte Supabase uploads).
+  const [mediaBase64, setMediaBase64] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const detectedPlatform = detectPlatform(socialUrl);
+
+  const resetModal = () => {
+    setCaption('');
+    setSocialUrl('');
+    setMediaUri(null);
+    setMediaBase64(null);
+    setMediaType('image');
+  };
 
   const pickMedia = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -118,10 +130,17 @@ export default function FeedScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
       quality: 0.8,
+      // ── FIX: request base64 for images so we can bypass FileSystem read ──
+      base64: true,
+      exif: false,
     });
     if (!result.canceled && result.assets[0]) {
-      setMediaUri(result.assets[0].uri);
-      setMediaType(result.assets[0].type === 'video' ? 'video' : 'image');
+      const asset = result.assets[0];
+      setMediaUri(asset.uri);
+      const isVideo = asset.type === 'video';
+      setMediaType(isVideo ? 'video' : 'image');
+      // Only store base64 for images (videos are too large)
+      setMediaBase64(isVideo ? null : (asset.base64 ?? null));
     }
   };
 
@@ -142,7 +161,13 @@ export default function FeedScreen() {
         });
       } else {
         if (!mediaUri) { Alert.alert('Pick a media file first'); return; }
-        newPost = await createPost({ mediaUrl: mediaUri, mediaType, caption });
+        newPost = await createPost({
+          mediaUrl: mediaUri,
+          mediaType,
+          caption,
+          // ── FIX: pass picker base64 so useFeed never calls FileSystem ──
+          mediaBase64,
+        });
       }
 
       if (user?.id) {
@@ -152,9 +177,7 @@ export default function FeedScreen() {
       }
 
       setModalVisible(false);
-      setCaption('');
-      setSocialUrl('');
-      setMediaUri(null);
+      resetModal();
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Post failed');
     } finally {
@@ -173,8 +196,8 @@ export default function FeedScreen() {
 
   // ── Filter out muted users' posts ────────────────────────────────────────
   const visiblePosts = mutedIds.length > 0
-  ? posts.filter(p => !p.user_id || !mutedIds.includes(p.user_id))
-  : posts;
+    ? posts.filter(p => !p.user_id || !mutedIds.includes(p.user_id))
+    : posts;
 
   // ── Render post ──────────────────────────────────────────────────────────
   const renderPost = useCallback(({ item }: { item: FeedPost }) => (
@@ -233,8 +256,7 @@ export default function FeedScreen() {
 
       {/* ── Feed List ── */}
       <FlatList
-                data={visiblePosts}
-
+        data={visiblePosts}
         keyExtractor={item => item.id}
         renderItem={renderPost}
         refreshControl={
@@ -265,7 +287,7 @@ export default function FeedScreen() {
         visible={modalVisible}
         animationType="slide"
         transparent
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => { setModalVisible(false); resetModal(); }}
       >
         <View style={styles.modalOverlay}>
           <ScrollView
@@ -276,7 +298,7 @@ export default function FeedScreen() {
           >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>New Post</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <TouchableOpacity onPress={() => { setModalVisible(false); resetModal(); }}>
                 <Ionicons name="close" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
