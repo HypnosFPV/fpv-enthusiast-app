@@ -22,7 +22,7 @@
     "base64-arraybuffer": "^1.0.2",
     "expo": "~54.0.33",
     "expo-auth-session": "~7.0.10",
-    "expo-av": "^16.0.8",
+    "expo-av": "~16.0.8",
     "expo-camera": "~17.0.10",
     "expo-constants": "~18.0.13",
     "expo-file-system": "~19.0.21",
