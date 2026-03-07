@@ -34,7 +34,7 @@ interface Post {
   media_url?: string;
   media_type?: string;
   platform?: string;
-  link_url?: string;
+  social_url?: string; // ✅ FIX 1 — was link_url (interface already correct, kept clean)
   created_at: string;
   likes_count?: number;
   comments_count?: number;
@@ -57,8 +57,9 @@ function getYoutubeVideoId(url: string): string | null {
 }
 
 function thumbnailUri(post: Post): string | null {
-  if (post.link_url) {
-    const vid = getYoutubeVideoId(post.link_url);
+  // ✅ FIX 2 — was post.link_url
+  if (post.social_url) {
+    const vid = getYoutubeVideoId(post.social_url);
     if (vid) return `https://img.youtube.com/vi/${vid}/mqdefault.jpg`;
   }
   if (post.media_url && /\.(jpg|jpeg|png|gif|webp)/i.test(post.media_url))
@@ -74,7 +75,7 @@ function toFeedPost(p: Post, profile: Profile): FeedPost {
     media_url: p.media_url ?? null,
     media_type: p.media_type ?? null,
     platform: p.platform ?? null,
-    link_url: p.link_url ?? null,
+    social_url: p.social_url ?? null, // ✅ FIX 3 — was link_url: p.link_url
     created_at: p.created_at,
     like_count: p.likes_count ?? 0,
     comment_count: p.comments_count ?? 0,
@@ -138,7 +139,8 @@ export default function UserProfileScreen() {
 
       const { data: postData } = await supabase
         .from('posts')
-        .select('id, user_id, caption, media_url, media_type, platform, link_url, created_at, likes_count, comments_count')
+        // ✅ FIX 4 — was link_url in the SELECT string
+        .select('id, user_id, caption, media_url, media_type, platform, social_url, created_at, likes_count, comments_count')
         .eq('user_id', prof.id)
         .order('created_at', { ascending: false });
 
@@ -150,7 +152,8 @@ export default function UserProfileScreen() {
   // ── grid cell ─────────────────────────────────────────────────────────────
   const renderGridCell = useCallback(({ item }: { item: Post }) => {
     const thumb = thumbnailUri(item);
-    const isYT  = !!item.link_url && !!getYoutubeVideoId(item.link_url ?? '');
+    // ✅ FIX 5 — was item.link_url (both occurrences)
+    const isYT  = !!item.social_url && !!getYoutubeVideoId(item.social_url ?? '');
     const isVid = item.media_type === 'video';
     return (
       <TouchableOpacity style={styles.cell} onPress={() => setSelectedPost(item)} activeOpacity={0.8}>
