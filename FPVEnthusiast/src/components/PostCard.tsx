@@ -93,7 +93,7 @@ function injectCmd(ref: React.RefObject<WebView | null>, cmd: string): void {
   );
 }
 
-// ─── FIX: added like_count / comment_count (snake_case) so FeedPost fields ──
+// FIX: added like_count / comment_count (snake_case) so FeedPost fields
 // are typed correctly. PostCard previously only had camelCase likeCount which
 // is the legacy field name; useFeed stores the live value in like_count.
 interface PostData {
@@ -108,8 +108,8 @@ interface PostData {
   caption?: string | null;
   created_at?: string | null;
   isLiked?: boolean;
-  like_count?: number;       // ← snake_case (used by useFeed / toggleLike)
-  comment_count?: number;    // ← snake_case (used by useFeed)
+  like_count?: number;       // snake_case (used by useFeed / toggleLike)
+  comment_count?: number;    // snake_case (used by useFeed)
   likeCount?: number;        // legacy camelCase kept for compatibility
   commentCount?: number;     // legacy camelCase kept for compatibility
   likes_count?: number;
@@ -169,7 +169,6 @@ export default function PostCard(props: Props) {
   const [editCaptionText, setEditCaptionText] = useState(post.caption || '');
   const [commentLikes, setCommentLikes] = useState<Record<string, CommentLikeState>>({});
   const [zoomUri, setZoomUri] = useState<string | null>(null);
-
 
   const isOwner = !!currentUserId && currentUserId === post.user_id;
   const insets = useSafeAreaInsets();
@@ -356,7 +355,7 @@ export default function PostCard(props: Props) {
     if (onCaptionUpdate) onCaptionUpdate(post.id, editCaptionText);
   }, [editCaptionText, post.id, currentUserId, onCaptionUpdate]);
 
-  // ── Media renderer ────────────────────────────────────────────────────────
+  // ── Media renderer ──────────────────────────────────────────────────────────
   function renderMedia() {
     if (resolvedPlatform === 'youtube' && videoId) {
       if (ytError) {
@@ -422,18 +421,21 @@ export default function PostCard(props: Props) {
           </TouchableOpacity>
         );
       }
+      // ── FIX: wrap image in TouchableOpacity so tapping opens pinch-zoom modal ──
       return (
-        <Image
-          source={{ uri: post.media_url }}
-          style={styles.postImage}
-          resizeMode="cover"
-        />
+        <TouchableOpacity activeOpacity={0.92} onPress={function () { setZoomUri(post.media_url!); }}>
+          <Image
+            source={{ uri: post.media_url }}
+            style={styles.postImage}
+            resizeMode="cover"
+          />
+        </TouchableOpacity>
       );
     }
     return null;
   }
 
-  // ── Comment row ───────────────────────────────────────────────────────────
+  // ── Comment row ──────────────────────────────────────────────────────────────
   function renderComment(info: { item: Comment }) {
     const c = info.item;
     const isMine = !!currentUserId && currentUserId === c.user_id;
@@ -657,6 +659,14 @@ export default function PostCard(props: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* ── FIX: Pinch-Zoom Modal ── */}
+      <ImageZoomModal
+        visible={!!zoomUri}
+        uri={zoomUri}
+        onClose={function () { setZoomUri(null); }}
+      />
+
     </View>
   );
 }
