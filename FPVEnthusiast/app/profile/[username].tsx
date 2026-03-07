@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';          // ✅ Instagram gradient
+import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../src/services/supabase';
 import { useAuth } from '../../src/context/AuthContext';
 import PostCard from '../../src/components/PostCard';
@@ -62,17 +62,17 @@ function isInstagramUrl(url: string): boolean {
 }
 
 function thumbnailUri(post: Post): string | null {
-  // Guard — never render local device file paths
-  if (!post.media_url || post.media_url.startsWith('file://')) return null;
+  // ✅ Broadened guard — catches file:// (Android) and file:/ (iOS single-slash)
+  if (!post.media_url || post.media_url.startsWith('file:')) return null;
 
-  // YouTube — extract ID → mqdefault thumbnail
+  // YouTube → mqdefault thumbnail
   const vid = getYoutubeVideoId(post.media_url);
   if (vid) return `https://img.youtube.com/vi/${vid}/mqdefault.jpg`;
 
   // Direct image file
   if (/\.(jpg|jpeg|png|gif|webp)/i.test(post.media_url)) return post.media_url;
 
-  // Instagram — no public API, handled as gradient in renderGridCell
+  // Instagram — handled as gradient in renderGridCell
   return null;
 }
 
@@ -162,11 +162,11 @@ export default function UserProfileScreen() {
     return (
       <TouchableOpacity style={styles.cell} onPress={() => setSelectedPost(item)} activeOpacity={0.8}>
 
-        {/* ── thumbnail / placeholder ─────────────────────────────────── */}
+        {/* ── thumbnail / placeholder ─────────────────────────────── */}
         {thumb ? (
           <Image source={{ uri: thumb }} style={styles.cellImg} />
         ) : isIG ? (
-          // ✅ Instagram branded gradient — purple→pink→orange (Instagram's palette)
+          // ✅ Instagram gradient — uses expo-linear-gradient (run: npx expo install expo-linear-gradient)
           <LinearGradient
             colors={['#405de6', '#5851db', '#833ab4', '#c13584', '#e1306c', '#fd1d1d']}
             start={{ x: 0, y: 1 }}
@@ -184,7 +184,7 @@ export default function UserProfileScreen() {
           </View>
         )}
 
-        {/* ── badges ──────────────────────────────────────────────────── */}
+        {/* ── badges ──────────────────────────────────────────────── */}
         {isYT && (
           <View style={styles.ytBadge}>
             <Ionicons name="logo-youtube" size={12} color="#fff" />
@@ -227,7 +227,6 @@ export default function UserProfileScreen() {
   return (
     <View style={styles.root}>
 
-      {/* top bar */}
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color="#fff" />
@@ -238,14 +237,12 @@ export default function UserProfileScreen() {
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* banner */}
         <View style={styles.bannerWrap}>
           {profile.header_image_url
             ? <Image source={{ uri: profile.header_image_url }} style={styles.banner} resizeMode="cover" />
             : <View style={[styles.banner, styles.bannerPlaceholder]} />}
         </View>
 
-        {/* avatar row */}
         <View style={styles.avatarRow}>
           {profile.avatar_url
             ? <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
@@ -269,20 +266,17 @@ export default function UserProfileScreen() {
           )}
         </View>
 
-        {/* bio */}
         <View style={styles.bioSection}>
           <Text style={styles.usernameText}>@{profile.username}</Text>
           {!!profile.bio && <Text style={styles.bioText}>{profile.bio}</Text>}
         </View>
 
-        {/* stats */}
         <View style={styles.statsRow}>
           <StatBox label="Posts"     value={posts.length} />
           <StatBox label="Followers" value={followersCount} />
           <StatBox label="Following" value={followingCount} />
         </View>
 
-        {/* tab bar */}
         <View style={styles.tabBar}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'grid' && styles.tabActive]}
@@ -298,7 +292,6 @@ export default function UserProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* content */}
         {activeTab === 'grid' ? (
           <FlatList
             data={posts}
@@ -329,7 +322,6 @@ export default function UserProfileScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* post detail modal */}
       <Modal
         visible={!!selectedPost}
         animationType="slide"
@@ -409,7 +401,6 @@ const styles = StyleSheet.create({
   cellImg:           { width: '100%', height: '100%' },
   cellPlaceholder:   { alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1a2e' },
 
-  // ✅ Instagram gradient inner layout
   igInner:           { flex: 1, alignItems: 'center', justifyContent: 'center' },
   igLabel:           { color: '#fff', fontSize: 9, fontWeight: '600',
                        marginTop: 4, letterSpacing: 0.5 },
