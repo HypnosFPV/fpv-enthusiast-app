@@ -47,9 +47,22 @@ interface Build {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// ✅ FIX: only allow remote http(s) URLs through to PostCard — never local file:// paths
 function isRemoteUrl(url?: string | null): url is string {
   return typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'));
+}
+
+// ✅ FIX: resolve bare Supabase storage paths (no http prefix) to public URLs
+function resolveStorageUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  // Bare storage path like "user-id/filename.jpg" — build a public URL
+  try {
+    const { data } = supabase.storage.from('posts').getPublicUrl(url);
+    return data?.publicUrl ?? null;
+    } catch (_e) {
+    return null;
+  }
+
 }
 
 function toFeedPost(p: Post): FeedPost {
@@ -58,8 +71,7 @@ function toFeedPost(p: Post): FeedPost {
     like_count:    p.like_count    ?? p.likes_count    ?? 0,
     comment_count: p.comment_count ?? p.comments_count ?? 0,
     isLiked: false,
-    // ✅ FIX: strip local file:// URIs — PostCard calls Linking.openURL which crashes on them
-    media_url:   isRemoteUrl(p.media_url)   ? p.media_url   : null,
+    media_url:   resolveStorageUrl(p.media_url)  ?? null,
     social_url:  isRemoteUrl(p.social_url)  ? p.social_url  : null,
     embed_url:   isRemoteUrl(p.embed_url)   ? p.embed_url   : null,
     users: p.users
@@ -68,20 +80,34 @@ function toFeedPost(p: Post): FeedPost {
   } as FeedPost;
 }
 
+// ✅ FIX: skip video posts, skip Instagram URLs, resolve bare Supabase paths
 function thumbnailUri(post: Post): string | null {
+  // ✅ FIX: videos have no image thumbnail — let the grid show the video icon
+  if (post.media_type === 'video') return null;
+
+  // Prefer explicit thumbnail
   if (post.thumbnail_url && isRemoteUrl(post.thumbnail_url)) return post.thumbnail_url;
+
   const candidates = [post.media_url, post.social_url, post.embed_url];
-  for (const url of candidates) {
-    if (!url || !isRemoteUrl(url)) continue; // ✅ FIX: skip file:// candidates
+  for (const raw of candidates) {
+    const url = resolveStorageUrl(raw);
+    if (!url) continue;
+    // ✅ FIX: skip Instagram URLs — they are not loadable as <Image> sources
+    if (url.toLowerCase().includes('instagram')) continue;
+    // YouTube thumbnail
     const m = url.match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
     if (m?.[1]) return `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg`;
   }
-  // ✅ FIX: only return media_url if it's a remote image URL (not video, not local)
+
+  // ✅ FIX: only return media_url as image if it's remote, not a video extension, not Instagram
+  const mediaResolved = resolveStorageUrl(post.media_url);
   if (
-    isRemoteUrl(post.media_url) &&
-    !post.media_url.match(/\.(mp4|mov|webm)(\?|$)/i) &&
-    !post.media_url.match(/youtu/i)
-  ) return post.media_url;
+    mediaResolved &&
+    !mediaResolved.match(/\.(mp4|mov|webm)(\?|$)/i) &&
+    !mediaResolved.match(/youtu/i) &&
+    !mediaResolved.toLowerCase().includes('instagram')
+  ) return mediaResolved;
+
   return null;
 }
 
@@ -106,12 +132,69 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
   );
 }
 
+// ✅ FIX: own component so each cell has independent imgFailed state + onError fallback
+function PostGridCell({ item, onPress }: { item: Post; onPress: () => void }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const thumb   = thumbnailUri(item);
+  const allUrls = [item.media_url, item.social_url, item.embed_url].filter(Boolean) as string[];
+  const isVid   = item.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(item.media_url ?? '');
+  const isYT    = allUrls.some(u => /youtu/i.test(u));
+  // ✅ FIX: check platform, social_url AND media_url for Instagram
+  const isIG    =
+    item.platform === 'instagram' ||
+    (item.social_url ?? '').toLowerCase().includes('instagram') ||
+    (item.media_url  ?? '').toLowerCase().includes('instagram');
+
+  console.log(`[Grid] id=${item.id} media_type=${item.media_type} isIG=${isIG} isVid=${isVid} isYT=${isYT} thumb=${thumb} imgFailed=${imgFailed}`);
+
+  return (
+    <TouchableOpacity style={styles.gridCell} onPress={onPress} activeOpacity={0.8}>
+      {thumb && !imgFailed ? (
+        <Image
+          source={{ uri: thumb }}
+          style={styles.gridThumb}
+          resizeMode="cover"
+          onError={() => {
+            console.log(`[Grid] Image failed to load: ${thumb}`);
+            setImgFailed(true);
+          }}
+        />
+      ) : isIG ? (
+        <View style={[styles.gridThumb, styles.gridIgPlaceholder]}>
+          <Ionicons name="logo-instagram" size={26} color="#fff" />
+          <Text style={styles.gridIgText}>Instagram</Text>
+          <Text style={styles.gridIgSub}>Tap to open</Text>
+        </View>
+      ) : (
+        <View style={[styles.gridThumb, styles.gridThumbPlaceholder]}>
+          <Ionicons name={isVid ? 'videocam' : 'image-outline'} size={28} color="#444" />
+        </View>
+      )}
+      {isVid && !isYT && (
+        <View style={styles.gridPlayBadge}>
+          <Ionicons name="play-circle" size={22} color="rgba(255,255,255,0.85)" />
+        </View>
+      )}
+      {isYT && (
+        <View style={styles.gridYtBadge}>
+          <Ionicons name="logo-youtube" size={14} color="#fff" />
+        </View>
+      )}
+      {isIG && (
+        <View style={styles.gridIgBadge}>
+          <Ionicons name="logo-instagram" size={14} color="#fff" />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
+// ✅ FIX: Feed tab removed — only Posts, Media, Builds
 const TABS = [
   { key: 'posts',  label: 'Posts',  icon: 'grid-outline'      },
   { key: 'media',  label: 'Media',  icon: 'film-outline'      },
-  { key: 'feed',   label: 'Feed',   icon: 'newspaper-outline' },
   { key: 'builds', label: 'Builds', icon: 'construct-outline' },
 ] as const;
 
@@ -145,15 +228,15 @@ export default function ProfileScreen() {
 
   const { followersCount, followingCount } = useFollow(user?.id ?? '', user?.id);
 
+  // ✅ FIX: mutedIds removed — only need mutedUsers for the Mute List modal
   const {
-    mutedIds, mutedUsers, loading: muteLoading,
+    mutedUsers, loading: muteLoading,
     unmuteUser, fetchMutedUsers,
   } = useMute(user?.id);
 
   // ── Tab / data state ──────────────────────────────────────────────────────
   const [activeTab,   setActiveTab]   = useState<TabKey>('posts');
   const [myPosts,     setMyPosts]     = useState<Post[]>([]);
-  const [feedPosts,   setFeedPosts]   = useState<Post[]>([]);
   const [builds,      setBuilds]      = useState<Build[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
@@ -222,14 +305,6 @@ export default function ProfileScreen() {
     setMyPosts((data as Post[]) ?? []);
   }, [user?.id]);
 
-  const loadFeed = useCallback(async () => {
-    const { data } = await supabase
-      .from('posts').select('*, users(id, username, avatar_url)')
-      .order('created_at', { ascending: false }).limit(50);
-    const all = (data as Post[]) ?? [];
-    setFeedPosts(mutedIds.length > 0 ? all.filter(p => !mutedIds.includes(p.user_id)) : all);
-  }, [mutedIds]);
-
   const loadBuilds = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await supabase
@@ -238,7 +313,7 @@ export default function ProfileScreen() {
     setBuilds((data as Build[]) ?? []);
   }, [user?.id]);
 
-  // ✅ FIX: loadTabData now caches results — no spinner on tab revisit
+  // ✅ FIX: Feed tab removed — no loadFeed, no feed branch
   const loadTabData = useCallback(async (tab: TabKey, force = false) => {
     if (!force && loadedTabsRef.current.has(tab)) return;
     setDataLoading(true);
@@ -247,24 +322,14 @@ export default function ProfileScreen() {
         await loadMyPosts();
         loadedTabsRef.current.add('posts');
         loadedTabsRef.current.add('media');
-      } else if (tab === 'feed') {
-        await loadFeed();
-        loadedTabsRef.current.add('feed');
       } else if (tab === 'builds') {
         await loadBuilds();
         loadedTabsRef.current.add('builds');
       }
     } finally { setDataLoading(false); }
-  }, [loadMyPosts, loadFeed, loadBuilds]);
+  }, [loadMyPosts, loadBuilds]);
 
   useEffect(() => { loadTabData(activeTab); }, [activeTab]);
-
-  // ✅ When muted list changes, re-fetch feed (bypass cache intentionally)
-  useEffect(() => {
-    if (activeTab === 'feed') {
-      loadFeed().then(() => { loadedTabsRef.current.add('feed'); });
-    }
-  }, [mutedIds]);
 
   // ✅ FIX: onRefresh clears cache so all tabs reload fresh
   const onRefresh = useCallback(async () => {
@@ -274,12 +339,14 @@ export default function ProfileScreen() {
     setRefreshing(false);
   }, [fetchProfile, loadTabData, activeTab, fetchMutedUsers]);
 
-  // ✅ FIX: also filter out file:// URIs from media tab
+  // ✅ FIX: filter media posts — only remote video posts
   const mediaPosts = useMemo(
     () => myPosts.filter(p => {
       const url = p.media_url ?? '';
       const isVideo = p.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(url);
-      const isRemote = isRemoteUrl(p.media_url);
+      // ✅ FIX: avoid isRemoteUrl type-guard in || chain — TS narrows to 'never' on RHS
+      const resolved = resolveStorageUrl(p.media_url);
+      const isRemote = resolved !== null && !resolved.startsWith('file://');
       return isVideo && isRemote;
     }),
     [myPosts],
@@ -297,9 +364,11 @@ export default function ProfileScreen() {
 
   const saveSocials = useCallback(async () => {
     const result = await updateSocialLinks({
-      website_url: editWebsite.trim() || undefined, youtube_url: editYoutube.trim() || undefined,
-      instagram_url: editInstagram.trim() || undefined, twitter_url: editTwitter.trim() || undefined,
-      tiktok_url: editTiktok.trim() || undefined,
+      website_url:   editWebsite.trim()   || undefined,
+      youtube_url:   editYoutube.trim()   || undefined,
+      instagram_url: editInstagram.trim() || undefined,
+      twitter_url:   editTwitter.trim()   || undefined,
+      tiktok_url:    editTiktok.trim()    || undefined,
     });
     if (result?.error) { Alert.alert('Error', result.error); return; }
     setShowSocialLinks(false);
@@ -308,15 +377,19 @@ export default function ProfileScreen() {
   const createBuild = useCallback(async () => {
     if (!buildName.trim()) { Alert.alert('Name required'); return; }
     const { error } = await supabase.from('fpv_builds').insert({
-      user_id: user?.id, name: buildName.trim(), frame: buildFrame.trim() || null,
-      motors: buildMotors.trim() || null, fc: buildFC.trim() || null,
-      vtx: buildVTX.trim() || null, camera: buildCamera.trim() || null, notes: buildNotes.trim() || null,
+      user_id: user?.id, name: buildName.trim(),
+      frame:   buildFrame.trim()  || null,
+      motors:  buildMotors.trim() || null,
+      fc:      buildFC.trim()     || null,
+      vtx:     buildVTX.trim()    || null,
+      camera:  buildCamera.trim() || null,
+      notes:   buildNotes.trim()  || null,
     });
     if (error) { Alert.alert('Error', error.message); return; }
     setBuildName(''); setBuildFrame(''); setBuildMotors('');
     setBuildFC(''); setBuildVTX(''); setBuildCamera(''); setBuildNotes('');
     setShowCreateBuild(false);
-    loadedTabsRef.current.delete('builds'); // ✅ invalidate cache for builds
+    loadedTabsRef.current.delete('builds');
     await loadBuilds();
     loadedTabsRef.current.add('builds');
   }, [user?.id, buildName, buildFrame, buildMotors, buildFC, buildVTX, buildCamera, buildNotes, loadBuilds]);
@@ -360,38 +433,20 @@ export default function ProfileScreen() {
   const handleMgpDisconnect = useCallback(() => {
     Alert.alert('Disconnect MultiGP', 'Remove this chapter connection?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Disconnect', style: 'destructive', onPress: async () => { await mgpDisconnect(); setShowMultiGP(false); }},
+      { text: 'Disconnect', style: 'destructive', onPress: async () => {
+        await mgpDisconnect(); setShowMultiGP(false);
+      }},
     ]);
   }, [mgpDisconnect]);
 
   // ── Render helpers ────────────────────────────────────────────────────────
-  const renderGridCell = useCallback(({ item }: { item: Post }) => {
-    const thumb   = thumbnailUri(item);
-    const allUrls = [item.media_url, item.social_url, item.embed_url].filter(Boolean) as string[];
-    const isVid   = item.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(item.media_url ?? '');
-    const isYT    = allUrls.some(u => /youtu/i.test(u));
-    const isIG    = item.platform === 'instagram' || (item.social_url ?? '').includes('instagram.com');
-    return (
-      <TouchableOpacity style={styles.gridCell} onPress={() => { setSelectedPost(item); setShowPostDetail(true); }} activeOpacity={0.8}>
-        {thumb ? (
-          <Image source={{ uri: thumb }} style={styles.gridThumb} resizeMode="cover" />
-        ) : isIG ? (
-          <View style={[styles.gridThumb, styles.gridIgPlaceholder]}>
-            <Ionicons name="logo-instagram" size={26} color="#fff" />
-            <Text style={styles.gridIgText}>Instagram</Text>
-            <Text style={styles.gridIgSub}>Tap to open</Text>
-          </View>
-        ) : (
-          <View style={[styles.gridThumb, styles.gridThumbPlaceholder]}>
-            <Ionicons name={isVid ? 'videocam' : 'image-outline'} size={28} color="#444" />
-          </View>
-        )}
-        {isVid && !isYT && <View style={styles.gridPlayBadge}><Ionicons name="play-circle" size={22} color="rgba(255,255,255,0.85)" /></View>}
-        {isYT  && <View style={styles.gridYtBadge}><Ionicons name="logo-youtube" size={14} color="#fff" /></View>}
-        {isIG && !thumb && <View style={styles.gridIgBadge}><Ionicons name="logo-instagram" size={14} color="#fff" /></View>}
-      </TouchableOpacity>
-    );
-  }, []);
+  // ✅ FIX: renderGridCell now delegates to PostGridCell (has onError + own state)
+  const renderGridCell = useCallback(({ item }: { item: Post }) => (
+    <PostGridCell
+      item={item}
+      onPress={() => { setSelectedPost(item); setShowPostDetail(true); }}
+    />
+  ), []);
 
   const renderBuild = useCallback(({ item }: { item: Build }) => (
     <View style={styles.buildCard}>
@@ -443,9 +498,7 @@ export default function ProfileScreen() {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
 
-      {/* ── HEADER — plain View, not ScrollView: eliminates the gap ────── */}
-      {/* ✅ FIX: ScrollView with flexGrow:0 doesn't self-size reliably;   */}
-      {/*         a plain View always collapses to its content height.      */}
+      {/* ── HEADER ──────────────────────────────────────────────────────── */}
       <View style={styles.headerContainer}>
         {/* BANNER */}
         <TouchableOpacity onPress={handleBannerPress} activeOpacity={0.85}>
@@ -513,10 +566,10 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* ── TAB BAR — outside both scroll areas ─────────────────────────── */}
+      {/* ── TAB BAR ─────────────────────────────────────────────────────── */}
       {TabBar}
 
-      {/* ── TAB CONTENT — RefreshControl moved here (pull-to-refresh works) */}
+      {/* ── TAB CONTENT ─────────────────────────────────────────────────── */}
       <ScrollView
         style={styles.contentScroll}
         showsVerticalScrollIndicator={false}
@@ -538,15 +591,6 @@ export default function ProfileScreen() {
               mediaPosts.length === 0
                 ? <EmptyState icon="videocam-outline" text="No videos yet" />
                 : <FlatList data={mediaPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />
-            )}
-            {activeTab === 'feed' && (
-              feedPosts.length === 0
-                ? <EmptyState icon="newspaper-outline" text="Nothing in the feed yet" />
-                : <View style={styles.feedList}>{feedPosts.map(p => (
-                    <PostCard key={p.id} post={toFeedPost(p)} isVisible={false} shouldAutoplay={false}
-                      currentUserId={user?.id ?? undefined} onLike={() => {}}
-                      onDelete={(id: string) => setFeedPosts(prev => prev.filter(fp => fp.id !== id))} />
-                  ))}</View>
             )}
             {activeTab === 'builds' && (
               <View>
@@ -824,6 +868,7 @@ export default function ProfileScreen() {
       {/* ── FOLLOW / MUTE MODALS ──────────────────────────────────────────── */}
       {user && <FollowListModal visible={followModal !== null} type={followModal ?? 'followers'} profileUserId={user.id} currentUserId={user.id} onClose={() => setFollowModal(null)} />}
       <MuteListModal visible={showMuteList} onClose={() => setShowMuteList(false)} mutedUsers={mutedUsers} loading={muteLoading} onUnmute={async (userId) => { await unmuteUser(userId); }} />
+
     </View>
   );
 }
@@ -836,7 +881,6 @@ const styles = StyleSheet.create({
   emptyState:    { alignItems: 'center', paddingTop: 60, paddingBottom: 40 },
   emptyText:     { color: '#444', fontSize: 14, marginTop: 12 },
 
-  // ✅ FIX: plain View — always collapses to content height, no ScrollView gap
   headerContainer: {},
   contentScroll:   { flex: 1 },
 
