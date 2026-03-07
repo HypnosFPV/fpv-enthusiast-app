@@ -104,6 +104,7 @@ export default function FeedScreen() {
   const [mediaBase64, setMediaBase64] = useState<string | null>(null);
   const [videoThumbFrames, setVideoThumbFrames] = useState<string[]>([]);
   const [selectedThumb, setSelectedThumb] = useState<string | null>(null);
+  const [thumbsLoading, setThumbsLoading] = useState(false);
   const [creating, setCreating] = useState(false);
 
   const detectedPlatform = detectPlatform(socialUrl);
@@ -116,6 +117,7 @@ export default function FeedScreen() {
     setMediaType('image');
     setVideoThumbFrames([]);
     setSelectedThumb(null);
+    setThumbsLoading(false);
   };
 
   const pickMedia = async () => {
@@ -137,23 +139,34 @@ export default function FeedScreen() {
       setMediaType(isVideo ? 'video' : 'image');
       setMediaBase64(isVideo ? null : (asset.base64 ?? null));
 
-      // ── Generate thumbnail frames for video ──────────────────────────
+      // ── Generate 12 thumbnail frames spread across the full clip ──────
       if (isVideo) {
         setVideoThumbFrames([]);
         setSelectedThumb(null);
+        setThumbsLoading(true);
         try {
           const durationMs = (asset.duration ?? 5) * 1000;
-          const pcts = [0.05, 0.2, 0.4, 0.6, 0.8];
+          const COUNT = 12;
           const frames: string[] = [];
-          for (const pct of pcts) {
+          for (let i = 0; i < COUNT; i++) {
+            // Spread from 2% → 98% so first/last frames are never black
+            const pct  = 0.02 + (0.96 * i) / (COUNT - 1);
             const time = Math.max(0, Math.floor(durationMs * pct));
-            const { uri } = await VideoThumbnails.getThumbnailAsync(asset.uri, { time });
-            frames.push(uri);
+            try {
+              const { uri } = await VideoThumbnails.getThumbnailAsync(
+                asset.uri, { time }
+              );
+              frames.push(uri);
+            } catch {
+              // skip any single frame that fails — keep generating the rest
+            }
           }
           setVideoThumbFrames(frames);
           setSelectedThumb(frames[0] ?? null);
         } catch (e) {
           console.warn('[feed] thumbnail generation failed:', e);
+        } finally {
+          setThumbsLoading(false);
         }
       }
     }
@@ -326,6 +339,7 @@ export default function FeedScreen() {
 
             {modalMode === 'media' ? (
               <>
+                {/* Media preview / picker */}
                 <TouchableOpacity style={styles.mediaPicker} onPress={pickMedia}>
                   {mediaUri ? (
                     mediaType === 'video' ? (
@@ -334,7 +348,9 @@ export default function FeedScreen() {
                       ) : (
                         <View style={styles.mediaPlaceholder}>
                           <Ionicons name="videocam" size={40} color="#ff4500" />
-                          <Text style={styles.mediaPlaceholderText}>Video selected</Text>
+                          <Text style={styles.mediaPlaceholderText}>
+                            {thumbsLoading ? 'Generating frames…' : 'Video selected'}
+                          </Text>
                         </View>
                       )
                     ) : (
@@ -349,25 +365,39 @@ export default function FeedScreen() {
                 </TouchableOpacity>
 
                 {/* Thumbnail frame picker — video only */}
-                {mediaType === 'video' && videoThumbFrames.length > 0 && (
+                {mediaType === 'video' && (
                   <View style={styles.thumbPickerWrap}>
                     <Text style={styles.thumbPickerLabel}>Choose thumbnail frame:</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbPickerRow}>
-                      {videoThumbFrames.map((uri, i) => (
-                        <TouchableOpacity
-                          key={i}
-                          onPress={() => setSelectedThumb(uri)}
-                          style={[styles.thumbFrame, selectedThumb === uri && styles.thumbFrameSelected]}
-                        >
-                          <Image source={{ uri }} style={styles.thumbFrameImg} />
-                          {selectedThumb === uri && (
-                            <View style={styles.thumbCheckOverlay}>
-                              <Ionicons name="checkmark-circle" size={22} color="#ff4500" />
-                            </View>
-                          )}
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
+                    {thumbsLoading ? (
+                      <View style={styles.thumbLoadingRow}>
+                        <ActivityIndicator color="#ff4500" size="small" />
+                        <Text style={styles.thumbLoadingText}>Generating 12 frames…</Text>
+                      </View>
+                    ) : videoThumbFrames.length > 0 ? (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.thumbPickerRow}
+                      >
+                        {videoThumbFrames.map((uri, i) => (
+                          <TouchableOpacity
+                            key={i}
+                            onPress={() => setSelectedThumb(uri)}
+                            style={[
+                              styles.thumbFrame,
+                              selectedThumb === uri && styles.thumbFrameSelected,
+                            ]}
+                          >
+                            <Image source={{ uri }} style={styles.thumbFrameImg} />
+                            {selectedThumb === uri && (
+                              <View style={styles.thumbCheckOverlay}>
+                                <Ionicons name="checkmark-circle" size={22} color="#ff4500" />
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    ) : null}
                   </View>
                 )}
               </>
@@ -431,7 +461,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0a0a', borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
   },
   topBarTitle: { fontSize: 24, fontWeight: '800', letterSpacing: 1.5 },
-  topBarIcons: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  topBarIcons: { flexDirection: 'row', alignItems: 'center', gap: 4 } as any,
   topBarIcon: { padding: 6, position: 'relative' },
   badge: {
     position: 'absolute', top: 2, right: 2,
@@ -461,21 +491,23 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   modalTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
   modeToggle: { flexDirection: 'row', backgroundColor: '#1a1a1a', borderRadius: 10, marginBottom: 16, padding: 4 },
-  modeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, borderRadius: 8, gap: 6 },
+  modeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, borderRadius: 8, gap: 6 } as any,
   modeBtnActive: { backgroundColor: '#ff4500' },
   modeBtnText: { color: '#888', fontSize: 14, fontWeight: '600' },
   modeBtnTextActive: { color: '#fff' },
   mediaPicker: { backgroundColor: '#1a1a1a', borderRadius: 12, overflow: 'hidden', marginBottom: 12, height: 180 },
   mediaPreview: { width: '100%', height: '100%', resizeMode: 'cover' },
-  mediaPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
+  mediaPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 } as any,
   mediaPlaceholderText: { color: '#666', fontSize: 13 },
   thumbPickerWrap: { marginBottom: 12 },
   thumbPickerLabel: { color: '#888', fontSize: 12, marginBottom: 6 },
-  thumbPickerRow: { paddingRight: 8, gap: 8 },
+  thumbPickerRow: { paddingRight: 8, gap: 8 } as any,
   thumbFrame: { width: 80, height: 56, borderRadius: 8, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent' },
   thumbFrameSelected: { borderColor: '#ff4500' },
   thumbFrameImg: { width: '100%', height: '100%', resizeMode: 'cover' },
   thumbCheckOverlay: { position: 'absolute', bottom: 2, right: 2, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 11 },
+  thumbLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 } as any,
+  thumbLoadingText: { color: '#666', fontSize: 12 },
   urlInput: { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 12, color: '#fff', fontSize: 14, marginBottom: 8 },
   platformBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginBottom: 8 },
   youtubeBadge: { backgroundColor: '#ff0000' },
