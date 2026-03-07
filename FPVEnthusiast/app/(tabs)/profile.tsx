@@ -54,6 +54,7 @@ function isRemoteUrl(url?: string | null): url is string {
 function resolveStorageUrl(url?: string | null): string | null {
   if (!url) return null;
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('file://')) return null;  // ← local device path, no public URL possible
   try {
     const { data } = supabase.storage.from('posts').getPublicUrl(url);
     return data?.publicUrl ?? null;

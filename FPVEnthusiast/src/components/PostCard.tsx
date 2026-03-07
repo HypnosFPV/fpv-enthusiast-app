@@ -92,6 +92,9 @@ function injectCmd(ref: React.RefObject<WebView | null>, cmd: string): void {
   );
 }
 
+// ─── FIX: added like_count / comment_count (snake_case) so FeedPost fields ──
+// are typed correctly. PostCard previously only had camelCase likeCount which
+// is the legacy field name; useFeed stores the live value in like_count.
 interface PostData {
   id: string;
   user_id?: string | null;
@@ -104,8 +107,10 @@ interface PostData {
   caption?: string | null;
   created_at?: string | null;
   isLiked?: boolean;
-  likeCount?: number;
-  commentCount?: number;
+  like_count?: number;       // ← snake_case (used by useFeed / toggleLike)
+  comment_count?: number;    // ← snake_case (used by useFeed)
+  likeCount?: number;        // legacy camelCase kept for compatibility
+  commentCount?: number;     // legacy camelCase kept for compatibility
   likes_count?: number;
   comments_count?: number;
   users?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
@@ -127,14 +132,13 @@ interface CommentLikeState { liked: boolean; count: number; }
 interface Props {
   post: PostData;
   isVisible?: boolean;
-  shouldAutoplay?: boolean;   // ← ADD THIS LINE
+  shouldAutoplay?: boolean;
   currentUserId?: string | null;
   onLike?: (postId: string, currentlyLiked: boolean) => void;
   onDelete?: (postId: string) => void;
   onCaptionUpdate?: (postId: string, caption: string) => void;
   autoplay?: boolean;
 }
-
 
 export default function PostCard(props: Props) {
   const { post, currentUserId, onLike, onDelete, onCaptionUpdate } = props;
@@ -154,7 +158,7 @@ export default function PostCard(props: Props) {
   const [submittingComment, setSubmittingComment] = useState(false);
 
   const [localCommentCount, setLocalCommentCount] = useState(
-    post.comments_count ?? post.commentCount ?? 0
+    post.comment_count ?? post.comments_count ?? post.commentCount ?? 0
   );
 
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -193,35 +197,34 @@ export default function PostCard(props: Props) {
   const inject = useCallback(function (cmd: string) { injectCmd(webViewRef, cmd); }, []);
 
   useFocusEffect(useCallback(function () {
-  const canPlay = props.shouldAutoplay ?? props.autoplay ?? true;
-  if (resolvedPlatform === 'youtube' && isYtReady && !ytError && canPlay) {
-    inject('playVideo');
-  }
-  return function () {
-    if (resolvedPlatform === 'youtube') inject('pauseVideo');
-  };
-}, [resolvedPlatform, isYtReady, ytError, inject, props.shouldAutoplay, props.autoplay]));
-
+    const canPlay = props.shouldAutoplay ?? props.autoplay ?? true;
+    if (resolvedPlatform === 'youtube' && isYtReady && !ytError && canPlay) {
+      inject('playVideo');
+    }
+    return function () {
+      if (resolvedPlatform === 'youtube') inject('pauseVideo');
+    };
+  }, [resolvedPlatform, isYtReady, ytError, inject, props.shouldAutoplay, props.autoplay]));
 
   const shouldAutoplayRef = useRef(props.shouldAutoplay ?? props.autoplay ?? true);
-useEffect(function () {
-  shouldAutoplayRef.current = props.shouldAutoplay ?? props.autoplay ?? true;
-}, [props.shouldAutoplay, props.autoplay]);
-
-useEffect(function () {
-  if (resolvedPlatform !== 'youtube') return;
-  const sub = AppState.addEventListener('change', function (s) {
-    if (s === 'active' && isYtReady && !ytError && shouldAutoplayRef.current) inject('playVideo');
-    if (s === 'background') inject('pauseVideo');
-  });
-  return function () { sub.remove(); };
-}, [resolvedPlatform, isYtReady, ytError, inject]);
+  useEffect(function () {
+    shouldAutoplayRef.current = props.shouldAutoplay ?? props.autoplay ?? true;
+  }, [props.shouldAutoplay, props.autoplay]);
 
   useEffect(function () {
-  if (resolvedPlatform !== 'youtube' || !isYtReady || ytError) return;
-  const canPlay = props.isVisible && (props.shouldAutoplay ?? props.autoplay ?? true);
-  canPlay ? inject('playVideo') : inject('pauseVideo');
-}, [props.isVisible, props.shouldAutoplay, props.autoplay, resolvedPlatform, isYtReady, ytError, inject]);
+    if (resolvedPlatform !== 'youtube') return;
+    const sub = AppState.addEventListener('change', function (s) {
+      if (s === 'active' && isYtReady && !ytError && shouldAutoplayRef.current) inject('playVideo');
+      if (s === 'background') inject('pauseVideo');
+    });
+    return function () { sub.remove(); };
+  }, [resolvedPlatform, isYtReady, ytError, inject]);
+
+  useEffect(function () {
+    if (resolvedPlatform !== 'youtube' || !isYtReady || ytError) return;
+    const canPlay = props.isVisible && (props.shouldAutoplay ?? props.autoplay ?? true);
+    canPlay ? inject('playVideo') : inject('pauseVideo');
+  }, [props.isVisible, props.shouldAutoplay, props.autoplay, resolvedPlatform, isYtReady, ytError, inject]);
 
   const handleMessage = useCallback(function (e: { nativeEvent: { data: string } }) {
     try {
@@ -233,7 +236,7 @@ useEffect(function () {
 
   const handleInstagramOpen = useCallback(function () {
     Alert.alert('Opening Instagram',
-      'Embedded playback is not supported. You\'ll be redirected to Instagram.\n\nCome back after viewing — this app is your one-stop FPV hub! 🚁',
+      'Embedded playback is not supported. You\'ll be redirected to Instagram.\n\nCome back after viewing  this app is your one-stop FPV hub! ',
       [{ text: 'Cancel', style: 'cancel' },
       { text: 'Open', onPress: function () { const u = post.social_url || post.media_url; if (u) Linking.openURL(u); } }]
     );
@@ -416,9 +419,6 @@ useEffect(function () {
           </TouchableOpacity>
         );
       }
-      // ✅ FIX: aspectRatio applied directly to Image — reliable cross-platform sizing.
-      // Old pattern (<View aspectRatio><Image height="100%">) can miscalculate on some RN
-      // versions causing the image to render at wrong dimensions (appears stretched).
       return (
         <Image
           source={{ uri: post.media_url }}
@@ -557,7 +557,9 @@ useEffect(function () {
       <View style={styles.actions}>
         <TouchableOpacity style={styles.actionBtn} onPress={function () { if (onLike) onLike(post.id, post.isLiked || false); }}>
           <Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={22} color={post.isLiked ? '#e74c3c' : '#666'} />
-          <Text style={styles.actionCount}>{post.likes_count ?? post.likeCount ?? 0}</Text>
+          {/* FIX: prefer like_count (updated by toggleLike) then fall back to
+              likes_count (DB column) then legacy camelCase likeCount */}
+          <Text style={styles.actionCount}>{post.like_count ?? post.likes_count ?? post.likeCount ?? 0}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionBtn} onPress={handleOpenComments}>
           <Ionicons name="chatbubble-outline" size={20} color="#666" />
@@ -672,7 +674,6 @@ const styles = StyleSheet.create({
   webView: { flex: 1, backgroundColor: '#000' },
   muteBtn: { position: 'absolute', bottom: 10, right: 48, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, padding: 6 },
   openYtBtn: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, padding: 6 },
-  // Used for video/YouTube thumbnails (16:9 wrapper + fill child)
   thumbContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
   thumb: { width: '100%', height: '100%' },
   thumbDark: { backgroundColor: '#0a0a1a', justifyContent: 'center', alignItems: 'center' },
@@ -686,8 +687,6 @@ const styles = StyleSheet.create({
   socialContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#16213e', justifyContent: 'center', alignItems: 'center' },
   socialLabel: { color: '#fff', fontSize: 15, fontWeight: '600', marginTop: 8 },
   socialSub: { color: '#888', fontSize: 11, marginTop: 4, paddingHorizontal: 16, textAlign: 'center' },
-  // ✅ FIX: aspectRatio on the Image itself — eliminates stretch caused by
-  //         height:'100%' inside an aspectRatio container mismeasuring in RN.
   postImage: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
   captionWrap: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 },
   caption: { color: '#ddd', fontSize: 14, lineHeight: 21 },

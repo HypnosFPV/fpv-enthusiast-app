@@ -1,3 +1,4 @@
+// src/hooks/useFeed.ts
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 
@@ -51,7 +52,7 @@ export function useFeed(currentUserId?: string) {
   function mergeIsLiked(rawPosts: any[], likedIds: string[]): FeedPost[] {
     return rawPosts.map(p => ({
       ...p,
-      like_count: p.likes_count ?? 0,
+      like_count:    p.likes_count    ?? 0,
       comment_count: p.comments_count ?? 0,
       users: Array.isArray(p.users) ? (p.users[0] ?? null) : (p.users ?? null),
       isLiked: likedIds.includes(p.id),
@@ -60,7 +61,7 @@ export function useFeed(currentUserId?: string) {
 
   const fetchPosts = useCallback(async (pageIndex: number) => {
     const from = pageIndex * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+    const to   = from + PAGE_SIZE - 1;
 
     const { data, error } = await supabase
       .from('posts')
@@ -107,6 +108,7 @@ export function useFeed(currentUserId?: string) {
     }
   }, [loading, refreshing, page, fetchPosts]);
 
+  // ─── FIX: also sync likes_count so PostCard display updates immediately ───
   const toggleLike = useCallback(async (postId: string) => {
     if (!currentUserId) return;
 
@@ -114,14 +116,16 @@ export function useFeed(currentUserId?: string) {
     if (!targetPost) return;
 
     const isCurrentlyLiked = targetPost.isLiked;
+    const delta = isCurrentlyLiked ? -1 : 1;
 
     setPosts(prev =>
       prev.map(p =>
         p.id === postId
           ? {
               ...p,
-              isLiked: !isCurrentlyLiked,
-              like_count: p.like_count + (isCurrentlyLiked ? -1 : 1),
+              isLiked:     !isCurrentlyLiked,
+              like_count:  p.like_count + delta,
+              likes_count: (p.likes_count ?? p.like_count) + delta,
             }
           : p
       )
@@ -140,27 +144,66 @@ export function useFeed(currentUserId?: string) {
 
       if (targetPost.user_id && targetPost.user_id !== currentUserId) {
         void supabase.from('notifications').insert({
-          user_id: targetPost.user_id,
+          user_id:  targetPost.user_id,
           actor_id: currentUserId,
-          type: 'like',
-          post_id: postId,
+          type:     'like',
+          post_id:  postId,
         });
       }
     }
   }, [currentUserId, posts]);
 
+  // ─── FIX: upload file to Supabase Storage, store public URL in DB ─────────
+  // Previously the raw file:// URI from ImagePicker was stored directly.
+  // That works in the feed (file is on-device) but breaks the profile grid
+  // because resolveStorageUrl cannot make a public URL from a local path.
   const createPost = useCallback(async ({ mediaUrl, mediaType, caption }: CreatePostParams) => {
     if (!currentUserId) return null;
+
+    let finalUrl = mediaUrl;
+
+    // Only upload if it's a local file (file:// or a relative path)
+    if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://')) {
+      try {
+        const ext = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase()
+          ?? (mediaType === 'video' ? 'mp4' : 'jpg');
+        const storagePath = `${currentUserId}/${Date.now()}.${ext}`;
+
+        const fileResponse = await fetch(mediaUrl);
+        const blob = await fileResponse.blob();
+        const mime = mediaType === 'video' ? 'video/mp4' : 'image/jpeg';
+
+        const { error: upErr } = await supabase.storage
+          .from('posts')
+          .upload(storagePath, blob, { contentType: mime, upsert: false });
+
+        if (upErr) {
+          console.error('[useFeed] storage upload failed:', upErr.message);
+          return null;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('posts')
+          .getPublicUrl(storagePath);
+        finalUrl = urlData.publicUrl;
+      } catch (e: any) {
+        console.error('[useFeed] upload exception:', e.message);
+        return null;
+      }
+    }
+
     const { data, error } = await supabase
       .from('posts')
-      .insert({ user_id: currentUserId, media_url: mediaUrl, media_type: mediaType, caption })
+      .insert({ user_id: currentUserId, media_url: finalUrl, media_type: mediaType, caption })
       .select(SELECT)
       .single();
+
     if (error) { console.error('[useFeed] createPost error:', JSON.stringify(error)); return null; }
     if (!data) return null;
+
     const newPost: FeedPost = {
       ...data,
-      like_count: data.likes_count ?? 0,
+      like_count:    data.likes_count    ?? 0,
       comment_count: data.comments_count ?? 0,
       users: Array.isArray(data.users) ? (data.users[0] ?? null) : (data.users ?? null),
       isLiked: false,
@@ -180,7 +223,7 @@ export function useFeed(currentUserId?: string) {
     if (!data) return null;
     const newPost: FeedPost = {
       ...data,
-      like_count: data.likes_count ?? 0,
+      like_count:    data.likes_count    ?? 0,
       comment_count: data.comments_count ?? 0,
       users: Array.isArray(data.users) ? (data.users[0] ?? null) : (data.users ?? null),
       isLiked: false,
