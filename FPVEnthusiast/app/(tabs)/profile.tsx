@@ -245,7 +245,6 @@ export default function ProfileScreen() {
     try {
       if (tab === 'posts' || tab === 'media') {
         await loadMyPosts();
-        // posts and media share the same underlying data
         loadedTabsRef.current.add('posts');
         loadedTabsRef.current.add('media');
       } else if (tab === 'feed') {
@@ -263,9 +262,7 @@ export default function ProfileScreen() {
   // ✅ When muted list changes, re-fetch feed (bypass cache intentionally)
   useEffect(() => {
     if (activeTab === 'feed') {
-      loadFeed().then(() => {
-        loadedTabsRef.current.add('feed');
-      });
+      loadFeed().then(() => { loadedTabsRef.current.add('feed'); });
     }
   }, [mutedIds]);
 
@@ -420,7 +417,7 @@ export default function ProfileScreen() {
     return <View style={styles.loadingScreen}><ActivityIndicator size="large" color="#00d4ff" /></View>;
   }
 
-  // ── Tab bar — rendered as a standalone component to guarantee row layout ──
+  // ── Tab bar ───────────────────────────────────────────────────────────────
   const TabBar = (
     <View style={styles.tabBar}>
       {TABS.map(tab => {
@@ -446,14 +443,10 @@ export default function ProfileScreen() {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
 
-      {/* ── HEADER SCROLL AREA ──────────────────────────────────────────── */}
-      <ScrollView
-        style={styles.headerScroll}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00d4ff" />}
-        scrollEnabled={true}
-        nestedScrollEnabled={true}
-      >
+      {/* ── HEADER — plain View, not ScrollView: eliminates the gap ────── */}
+      {/* ✅ FIX: ScrollView with flexGrow:0 doesn't self-size reliably;   */}
+      {/*         a plain View always collapses to its content height.      */}
+      <View style={styles.headerContainer}>
         {/* BANNER */}
         <TouchableOpacity onPress={handleBannerPress} activeOpacity={0.85}>
           <View style={styles.bannerWrap}>
@@ -518,16 +511,19 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
+      </View>
 
-      {/* ── TAB BAR — outside ScrollView, guaranteed horizontal row ─────── */}
+      {/* ── TAB BAR — outside both scroll areas ─────────────────────────── */}
       {TabBar}
 
-      {/* ── TAB CONTENT SCROLL AREA ─────────────────────────────────────── */}
+      {/* ── TAB CONTENT — RefreshControl moved here (pull-to-refresh works) */}
       <ScrollView
         style={styles.contentScroll}
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00d4ff" />
+        }
       >
         {dataLoading ? (
           <ActivityIndicator style={{ marginTop: 40 }} color="#00d4ff" />
@@ -568,7 +564,7 @@ export default function ProfileScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* ── POST DETAIL MODAL ──────────────────────────────────────────────── */}
+      {/* ── POST DETAIL MODAL ─────────────────────────────────────────────── */}
       <Modal visible={showPostDetail} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowPostDetail(false)}>
         <View style={styles.detailRoot}>
           <View style={styles.detailHeader}>
@@ -586,7 +582,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* ── SETTINGS MODAL ─────────────────────────────────────────────────── */}
+      {/* ── SETTINGS MODAL ────────────────────────────────────────────────── */}
       <Modal visible={showSettings} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowSettings(false)}>
         <View style={styles.modalRoot}>
           <View style={styles.modalHeader}>
@@ -671,7 +667,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* ── MULTIGP MODAL ──────────────────────────────────────────────────── */}
+      {/* ── MULTIGP MODAL ─────────────────────────────────────────────────── */}
       <Modal visible={showMultiGP} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowMultiGP(false)}>
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
@@ -746,7 +742,7 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── EDIT PROFILE MODAL ─────────────────────────────────────────────── */}
+      {/* ── EDIT PROFILE MODAL ────────────────────────────────────────────── */}
       <Modal visible={showEditProfile} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowEditProfile(false)}>
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
@@ -767,7 +763,7 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── SOCIAL LINKS MODAL ─────────────────────────────────────────────── */}
+      {/* ── SOCIAL LINKS MODAL ────────────────────────────────────────────── */}
       <Modal visible={showSocialLinks} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowSocialLinks(false)}>
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
@@ -797,7 +793,7 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── CREATE BUILD MODAL ─────────────────────────────────────────────── */}
+      {/* ── CREATE BUILD MODAL ────────────────────────────────────────────── */}
       <Modal visible={showCreateBuild} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowCreateBuild(false)}>
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
@@ -806,8 +802,8 @@ export default function ProfileScreen() {
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {([
-              { label: 'Build Name *', val: buildName,   set: setBuildName,   ph: 'e.g. Race Day 5"'        },
-              { label: 'Frame',        val: buildFrame,  set: setBuildFrame,  ph: 'e.g. ImpulseRC Apex'     },
+              { label: 'Build Name *', val: buildName,   set: setBuildName,   ph: 'e.g. Race Day 5"'         },
+              { label: 'Frame',        val: buildFrame,  set: setBuildFrame,  ph: 'e.g. ImpulseRC Apex'      },
               { label: 'Motors',       val: buildMotors, set: setBuildMotors, ph: 'e.g. iFlight 2306 2450kv' },
               { label: 'FC',           val: buildFC,     set: setBuildFC,     ph: 'e.g. Betaflight F7'       },
               { label: 'VTX',          val: buildVTX,    set: setBuildVTX,    ph: 'e.g. Rush Tank Ultimate'  },
@@ -825,7 +821,7 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── FOLLOW / MUTE MODALS ───────────────────────────────────────────── */}
+      {/* ── FOLLOW / MUTE MODALS ──────────────────────────────────────────── */}
       {user && <FollowListModal visible={followModal !== null} type={followModal ?? 'followers'} profileUserId={user.id} currentUserId={user.id} onClose={() => setFollowModal(null)} />}
       <MuteListModal visible={showMuteList} onClose={() => setShowMuteList(false)} mutedUsers={mutedUsers} loading={muteLoading} onUnmute={async (userId) => { await unmuteUser(userId); }} />
     </View>
@@ -833,14 +829,16 @@ export default function ProfileScreen() {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   root:          { flex: 1, backgroundColor: '#0a0a1a' },
   loadingScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a1a' },
   emptyState:    { alignItems: 'center', paddingTop: 60, paddingBottom: 40 },
   emptyText:     { color: '#444', fontSize: 14, marginTop: 12 },
 
-  headerScroll:  { flexGrow: 0, flexShrink: 0 },
-  contentScroll: { flex: 1 },
+  // ✅ FIX: plain View — always collapses to content height, no ScrollView gap
+  headerContainer: {},
+  contentScroll:   { flex: 1 },
 
   bannerWrap:        { width: '100%', height: 200, overflow: 'hidden', backgroundColor: '#111' },
   banner:            { width: '100%', height: 200 },
@@ -866,8 +864,9 @@ const styles = StyleSheet.create({
   statValue: { color: '#fff', fontSize: 18, fontWeight: '800' },
   statLabel: { color: '#888', fontSize: 11, marginTop: 2 },
 
-  socialRow:  { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 8 },
-  socialChip: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1e1e3a', justifyContent: 'center', alignItems: 'center' },
+  socialRow:      { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 8 },
+  socialChip:     { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1e1e3a', justifyContent: 'center', alignItems: 'center' },
+  socialInputRow: { flexDirection: 'row', alignItems: 'center' },
 
   tabBar: {
     flexDirection: 'row',
@@ -887,10 +886,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
-  tabItemActive: {
-    borderBottomColor: '#00d4ff',
-    backgroundColor: 'rgba(0,212,255,0.06)',
-  },
+  tabItemActive:  { borderBottomColor: '#00d4ff', backgroundColor: 'rgba(0,212,255,0.06)' },
   tabLabel:       { color: '#555', fontSize: 11, fontWeight: '600' },
   tabLabelActive: { color: '#00d4ff', fontSize: 11, fontWeight: '700' },
 
@@ -936,8 +932,6 @@ const styles = StyleSheet.create({
   inputError: { borderColor: '#e74c3c' },
   errorText:  { color: '#e74c3c', fontSize: 12, marginTop: 4 },
   charCount:  { color: '#555', fontSize: 11, textAlign: 'right', marginTop: 4 },
-
-  socialInputRow: { flexDirection: 'row', alignItems: 'center' },
 
   primaryBtn:         { backgroundColor: '#00d4ff', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 20, flexDirection: 'row', justifyContent: 'center' },
   primaryBtnDisabled: { opacity: 0.5 },

@@ -14,7 +14,6 @@ import MentionTextInputComponent from './MentionTextInput';
 import MentionText from './MentionText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-
 const MentionTextInput = MentionTextInputComponent as any;
 
 const MOBILE_UA =
@@ -166,7 +165,6 @@ export default function PostCard(props: Props) {
   const isOwner = !!currentUserId && currentUserId === post.user_id;
   const insets = useSafeAreaInsets();
 
-
   const commentsPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
@@ -270,16 +268,11 @@ export default function PostCard(props: Props) {
       const r = await supabase.from('comments')
         .insert({ post_id: post.id, user_id: currentUserId, content: text });
       if (r.error) throw r.error;
-
       if (post.user_id && post.user_id !== currentUserId) {
         void supabase.from('notifications').insert({
-          user_id: post.user_id,
-          actor_id: currentUserId,
-          type: 'comment',
-          post_id: post.id,
+          user_id: post.user_id, actor_id: currentUserId, type: 'comment', post_id: post.id,
         });
       }
-
       setNewComment('');
       await fetchComments();
     } catch (err: any) {
@@ -409,7 +402,16 @@ export default function PostCard(props: Props) {
           </TouchableOpacity>
         );
       }
-      return <View style={styles.thumbContainer}><Image source={{ uri: post.media_url }} style={styles.thumb} resizeMode="cover" /></View>;
+      // ✅ FIX: aspectRatio applied directly to Image — reliable cross-platform sizing.
+      // Old pattern (<View aspectRatio><Image height="100%">) can miscalculate on some RN
+      // versions causing the image to render at wrong dimensions (appears stretched).
+      return (
+        <Image
+          source={{ uri: post.media_url }}
+          style={styles.postImage}
+          resizeMode="cover"
+        />
+      );
     }
     return null;
   }
@@ -424,13 +426,7 @@ export default function PostCard(props: Props) {
     if (editingCommentId === c.id) {
       return (
         <View style={styles.commentRow}>
-          <TextInput
-            style={styles.editCommentInput}
-            value={editingCommentText}
-            onChangeText={setEditingCommentText}
-            multiline
-            autoFocus
-          />
+          <TextInput style={styles.editCommentInput} value={editingCommentText} onChangeText={setEditingCommentText} multiline autoFocus />
           <View style={styles.editCommentActions}>
             <TouchableOpacity onPress={function () { handleEditComment(c.id, editingCommentText); }} style={styles.editCommentBtn}>
               <Text style={styles.editCommentBtnText}>Save</Text>
@@ -449,8 +445,8 @@ export default function PostCard(props: Props) {
           {c.users?.avatar_url
             ? <Image source={{ uri: c.users.avatar_url }} style={styles.commentAvatarImg} />
             : <View style={styles.commentAvatarFallback}>
-              <Text style={styles.commentAvatarInitial}>{(c.users?.username || '?')[0].toUpperCase()}</Text>
-            </View>
+                <Text style={styles.commentAvatarInitial}>{(c.users?.username || '?')[0].toUpperCase()}</Text>
+              </View>
           }
         </View>
         <View style={styles.commentBubble}>
@@ -458,16 +454,10 @@ export default function PostCard(props: Props) {
             <Text style={styles.commentUsername} numberOfLines={1}>{c.users?.username || 'Unknown'}</Text>
             {isMine ? (
               <View style={styles.commentOwnerIcons}>
-                <TouchableOpacity
-                  onPress={function () { setEditingCommentId(c.id); setEditingCommentText(c.content || ''); }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
-                >
+                <TouchableOpacity onPress={function () { setEditingCommentId(c.id); setEditingCommentText(c.content || ''); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}>
                   <Ionicons name="pencil-outline" size={13} color="#4fc3f7" />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={function () { handleDeleteComment(c.id); }}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-                >
+                <TouchableOpacity onPress={function () { handleDeleteComment(c.id); }} hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}>
                   <Ionicons name="trash-outline" size={13} color="#e74c3c" />
                 </TouchableOpacity>
               </View>
@@ -476,7 +466,7 @@ export default function PostCard(props: Props) {
           <MentionText text={c.content ?? ''} style={styles.commentText} />
           <View style={styles.commentMeta}>
             <Text style={styles.commentTime}>{timeAgo(c.created_at)}</Text>
-            {edited ? <Text style={styles.commentEdited}> · edited</Text> : null}
+            {edited ? <Text style={styles.commentEdited}>  edited</Text> : null}
             <TouchableOpacity style={styles.commentLikeBtn} onPress={function () { handleCommentLike(c.id); }}>
               <Ionicons name={lk.liked ? 'heart' : 'heart-outline'} size={12} color={lk.liked ? '#e74c3c' : '#666'} />
               {lk.count > 0 ? <Text style={styles.commentLikeCount}>{lk.count}</Text> : null}
@@ -493,7 +483,6 @@ export default function PostCard(props: Props) {
     const hasText = newComment.trim().length > 0;
     return (
       <View style={[styles.commentInputRow, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-
         <View style={styles.commentInputInner}>
           <MentionTextInput
             containerStyle={styles.commentInputWrap}
@@ -508,16 +497,9 @@ export default function PostCard(props: Props) {
             suggestionsAbove={true}
           />
           <TouchableOpacity
-            onPress={function () {
-              if (!submittingComment && newComment.trim()) {
-                handleSubmitComment();
-              }
-            }}
+            onPress={function () { if (!submittingComment && newComment.trim()) { handleSubmitComment(); } }}
             activeOpacity={0.7}
-            style={[
-              styles.commentSendBtn,
-              hasText ? styles.commentSendBtnActive : styles.commentSendBtnInactive,
-            ]}
+            style={[styles.commentSendBtn, hasText ? styles.commentSendBtnActive : styles.commentSendBtnInactive]}
           >
             {submittingComment
               ? <ActivityIndicator size="small" color="#fff" />
@@ -537,8 +519,8 @@ export default function PostCard(props: Props) {
           {post.users?.avatar_url
             ? <Image source={{ uri: post.users.avatar_url }} style={styles.avatar} />
             : <View style={styles.avatarFallback}>
-              <Text style={styles.avatarInitial}>{(post.users?.username || '?')[0].toUpperCase()}</Text>
-            </View>
+                <Text style={styles.avatarInitial}>{(post.users?.username || '?')[0].toUpperCase()}</Text>
+              </View>
           }
         </View>
         <View style={styles.headerInfo}>
@@ -569,13 +551,9 @@ export default function PostCard(props: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* ── Comments Modal ── */}
+      {/* Comments Modal */}
       <Modal visible={showComments} animationType="slide" transparent onRequestClose={function () { setShowComments(false); }}>
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={0}
-        >
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
           <View style={styles.commentsSheet}>
             <View style={styles.dragHandleContainer} {...commentsPanResponder.panHandlers}>
               <View style={styles.dragHandle} />
@@ -588,9 +566,7 @@ export default function PostCard(props: Props) {
             </View>
             <View style={{ flex: 1 }}>
               {commentsLoading ? (
-                <View style={styles.loadingWrap}>
-                  <ActivityIndicator color="#4fc3f7" size="large" />
-                </View>
+                <View style={styles.loadingWrap}><ActivityIndicator color="#4fc3f7" size="large" /></View>
               ) : (
                 <FlatList
                   ref={flatListRef}
@@ -610,14 +586,12 @@ export default function PostCard(props: Props) {
                 />
               )}
             </View>
-            <View>
-              {renderCommentInput()}
-            </View>
+            <View>{renderCommentInput()}</View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── Owner Menu Modal ── */}
+      {/* Owner Menu Modal */}
       <Modal visible={showOwnerMenu} transparent animationType="fade" onRequestClose={function () { setShowOwnerMenu(false); }}>
         <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={function () { setShowOwnerMenu(false); }}>
           <View style={styles.menuSheet}>
@@ -637,7 +611,7 @@ export default function PostCard(props: Props) {
         </TouchableOpacity>
       </Modal>
 
-      {/* ── Edit Caption Modal ── */}
+      {/* Edit Caption Modal */}
       <Modal visible={showEditCaption} transparent animationType="slide" onRequestClose={function () { setShowEditCaption(false); }}>
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.editCaptionSheet}>
@@ -647,7 +621,7 @@ export default function PostCard(props: Props) {
               onChangeText={setEditCaptionText}
               inputStyle={styles.editCaptionInput}
               multiline
-              placeholder="Write a caption…"
+              placeholder="Write a caption"
               placeholderTextColor="#555"
               autoFocus
               currentUserId={currentUserId}
@@ -684,6 +658,7 @@ const styles = StyleSheet.create({
   webView: { flex: 1, backgroundColor: '#000' },
   muteBtn: { position: 'absolute', bottom: 10, right: 48, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, padding: 6 },
   openYtBtn: { position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, padding: 6 },
+  // Used for video/YouTube thumbnails (16:9 wrapper + fill child)
   thumbContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
   thumb: { width: '100%', height: '100%' },
   thumbDark: { backgroundColor: '#0a0a1a', justifyContent: 'center', alignItems: 'center' },
@@ -697,6 +672,9 @@ const styles = StyleSheet.create({
   socialContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#16213e', justifyContent: 'center', alignItems: 'center' },
   socialLabel: { color: '#fff', fontSize: 15, fontWeight: '600', marginTop: 8 },
   socialSub: { color: '#888', fontSize: 11, marginTop: 4, paddingHorizontal: 16, textAlign: 'center' },
+  // ✅ FIX: aspectRatio on the Image itself — eliminates stretch caused by
+  //         height:'100%' inside an aspectRatio container mismeasuring in RN.
+  postImage: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
   captionWrap: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 },
   caption: { color: '#ddd', fontSize: 14, lineHeight: 21 },
   actions: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#252540' },
