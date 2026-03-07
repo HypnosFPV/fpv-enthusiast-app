@@ -92,6 +92,17 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
   );
 }
 
+// ─── Tab config ───────────────────────────────────────────────────────────────
+
+const TABS = [
+  { key: 'posts',  label: 'Posts',  icon: 'grid-outline'      },
+  { key: 'media',  label: 'Media',  icon: 'film-outline'      },
+  { key: 'feed',   label: 'Feed',   icon: 'newspaper-outline' },
+  { key: 'builds', label: 'Builds', icon: 'construct-outline' },
+] as const;
+
+type TabKey = typeof TABS[number]['key'];
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
@@ -126,7 +137,7 @@ export default function ProfileScreen() {
   } = useMute(user?.id);
 
   // ── Tab / data state ──────────────────────────────────────────────────────
-  const [activeTab,   setActiveTab]   = useState<'posts' | 'media' | 'feed' | 'builds'>('posts');
+  const [activeTab,   setActiveTab]   = useState<TabKey>('posts');
   const [myPosts,     setMyPosts]     = useState<Post[]>([]);
   const [feedPosts,   setFeedPosts]   = useState<Post[]>([]);
   const [builds,      setBuilds]      = useState<Build[]>([]);
@@ -165,7 +176,7 @@ export default function ProfileScreen() {
     error?: string;
   } | null>(null);
   const [mgpSyncMsg,  setMgpSyncMsg]  = useState('');
-  const [showMgpHelp, setShowMgpHelp] = useState(false);   // ← THIS WAS MISSING
+  const [showMgpHelp, setShowMgpHelp] = useState(false);
 
   // ── Build fields ──────────────────────────────────────────────────────────
   const [buildName,   setBuildName]   = useState('');
@@ -218,7 +229,7 @@ export default function ProfileScreen() {
     setBuilds((data as Build[]) ?? []);
   }, [user?.id]);
 
-  const loadTabData = useCallback(async (tab: typeof activeTab) => {
+  const loadTabData = useCallback(async (tab: TabKey) => {
     setDataLoading(true);
     try {
       if (tab === 'posts' || tab === 'media') await loadMyPosts();
@@ -269,14 +280,14 @@ export default function ProfileScreen() {
   const createBuild = useCallback(async () => {
     if (!buildName.trim()) { Alert.alert('Name required'); return; }
     const { error } = await supabase.from('fpv_builds').insert({
-      user_id:    user?.id,
-      name:       buildName.trim(),
-      frame:      buildFrame.trim()  || null,
-      motors:     buildMotors.trim() || null,
-      fc:         buildFC.trim()     || null,
-      vtx:        buildVTX.trim()    || null,
-      camera:     buildCamera.trim() || null,
-      notes:      buildNotes.trim()  || null,
+      user_id: user?.id,
+      name:    buildName.trim(),
+      frame:   buildFrame.trim()  || null,
+      motors:  buildMotors.trim() || null,
+      fc:      buildFC.trim()     || null,
+      vtx:     buildVTX.trim()    || null,
+      camera:  buildCamera.trim() || null,
+      notes:   buildNotes.trim()  || null,
     });
     if (error) { Alert.alert('Error', error.message); return; }
     setBuildName(''); setBuildFrame(''); setBuildMotors('');
@@ -355,8 +366,9 @@ export default function ProfileScreen() {
           <Image source={{ uri: thumb }} style={styles.gridThumb} resizeMode="cover" />
         ) : isIG ? (
           <View style={[styles.gridThumb, styles.gridIgPlaceholder]}>
-            <Ionicons name="logo-instagram" size={28} color="#fff" />
+            <Ionicons name="logo-instagram" size={26} color="#fff" />
             <Text style={styles.gridIgText}>Instagram</Text>
+            <Text style={styles.gridIgSub}>Tap to open</Text>
           </View>
         ) : (
           <View style={[styles.gridThumb, styles.gridThumbPlaceholder]}>
@@ -423,7 +435,7 @@ export default function ProfileScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00d4ff" />}
         stickyHeaderIndices={[3]}
       >
-        {/* BANNER */}
+        {/* ── BANNER ─────────────────────────────────────────────────────── */}
         <TouchableOpacity onPress={handleBannerPress} activeOpacity={0.85}>
           <View style={styles.bannerWrap}>
             {profile?.header_image_url ? (
@@ -442,7 +454,7 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
 
-        {/* HEADER ROW */}
+        {/* ── HEADER ROW ─────────────────────────────────────────────────── */}
         <View style={styles.headerRow}>
           <TouchableOpacity style={styles.avatarWrap} onPress={uploadAvatar}>
             {profile?.avatar_url ? (
@@ -466,7 +478,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* BIO */}
+        {/* ── BIO ────────────────────────────────────────────────────────── */}
         <View style={styles.bioSection}>
           <Text style={styles.displayName}>{profile?.username ?? 'FPV Pilot'}</Text>
           {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
@@ -500,32 +512,32 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* TAB BAR */}
+        {/* ── TAB BAR ────────────────────────────────────────────────────── */}
+        {/* icon + label always visible, side-by-side (flexDirection:'row')  */}
         <View style={styles.tabBar}>
-          {(['posts', 'media', 'feed', 'builds'] as const).map(tab => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Ionicons
-                name={
-                  tab === 'posts'  ? 'grid-outline' :
-                  tab === 'media'  ? 'film-outline' :
-                  tab === 'feed'   ? 'newspaper-outline' :
-                  'construct-outline'
-                }
-                size={18}
-                color={activeTab === tab ? '#00d4ff' : '#666'}
-              />
-              <Text style={[styles.tabLabel, activeTab === tab && styles.tabLabelActive]}>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {TABS.map(tab => {
+            const active = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                style={[styles.tabItem, active && styles.tabItemActive]}
+                onPress={() => setActiveTab(tab.key)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={tab.icon as any}
+                  size={17}
+                  color={active ? '#00d4ff' : '#555'}
+                />
+                <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* TAB CONTENT */}
+        {/* ── TAB CONTENT ────────────────────────────────────────────────── */}
         {dataLoading ? (
           <ActivityIndicator style={{ marginTop: 40 }} color="#00d4ff" />
         ) : (
@@ -575,7 +587,7 @@ export default function ProfileScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* POST DETAIL MODAL */}
+      {/* ── POST DETAIL MODAL ──────────────────────────────────────────────── */}
       <Modal visible={showPostDetail} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowPostDetail(false)}>
         <View style={styles.detailRoot}>
           <View style={styles.detailHeader}>
@@ -603,7 +615,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* SETTINGS MODAL */}
+      {/* ── SETTINGS MODAL ─────────────────────────────────────────────────── */}
       <Modal visible={showSettings} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowSettings(false)}>
         <View style={styles.modalRoot}>
           <View style={styles.modalHeader}>
@@ -665,7 +677,6 @@ export default function ProfileScreen() {
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Connected Accounts</Text>
 
-              {/* Social Links */}
               <TouchableOpacity
                 style={styles.settingsRow}
                 onPress={() => { setShowSettings(false); setTimeout(() => setShowSocialLinks(true), 350); }}
@@ -733,7 +744,7 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
-      {/* MULTIGP MODAL */}
+      {/* ── MULTIGP MODAL ──────────────────────────────────────────────────── */}
       <Modal visible={showMultiGP} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowMultiGP(false)}>
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
@@ -800,12 +811,10 @@ export default function ProfileScreen() {
                 <Text style={styles.mgpInstructions}>
                   Enter your MultiGP Timing System API key to link your chapter. Upcoming races will auto-sync to the map.
                 </Text>
-
                 <Text style={styles.mgpHint}>
                   Find your key at multigp.com → Chapter Dashboard → Settings → Timing System Key
                 </Text>
 
-                {/* Help link */}
                 <TouchableOpacity
                   style={styles.mgpHelpLink}
                   onPress={() => setShowMgpHelp(prev => !prev)}
@@ -816,38 +825,15 @@ export default function ProfileScreen() {
                   </Text>
                 </TouchableOpacity>
 
-                {/* Inline help guide */}
                 {showMgpHelp && (
                   <View style={styles.mgpHelpBox}>
                     <Text style={styles.mgpHelpTitle}>📡 How to Get Your MultiGP API Key</Text>
-
-                    <Text style={styles.mgpHelpStep}>
-                      <Text style={styles.mgpHelpNum}>1. </Text>
-                      Go to <Text style={styles.mgpHelpBold}>multigp.com</Text> and sign in as a Chapter Organizer
-                    </Text>
-                    <Text style={styles.mgpHelpStep}>
-                      <Text style={styles.mgpHelpNum}>2. </Text>
-                      Click your chapter name in the top navigation bar
-                    </Text>
-                    <Text style={styles.mgpHelpStep}>
-                      <Text style={styles.mgpHelpNum}>3. </Text>
-                      Select <Text style={styles.mgpHelpBold}>Chapter Dashboard</Text> from the dropdown
-                    </Text>
-                    <Text style={styles.mgpHelpStep}>
-                      <Text style={styles.mgpHelpNum}>4. </Text>
-                      Click <Text style={styles.mgpHelpBold}>Chapter Configuration</Text> or{' '}
-                      <Text style={styles.mgpHelpBold}>Settings</Text> in the left menu
-                    </Text>
-                    <Text style={styles.mgpHelpStep}>
-                      <Text style={styles.mgpHelpNum}>5. </Text>
-                      Look for <Text style={styles.mgpHelpBold}>Timing System Key</Text> — copy and paste it below
-                    </Text>
-
-                    <Text style={styles.mgpHelpNote}>
-                      ⚠️ Only Chapter Organizers can access this key. If you are a member but not an organizer,
-                      ask your chapter admin to link the chapter instead.
-                    </Text>
-
+                    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>1. </Text>Go to <Text style={styles.mgpHelpBold}>multigp.com</Text> and sign in as a Chapter Organizer</Text>
+                    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>2. </Text>Click your chapter name in the top navigation bar</Text>
+                    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>3. </Text>Select <Text style={styles.mgpHelpBold}>Chapter Dashboard</Text> from the dropdown</Text>
+                    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>4. </Text>Click <Text style={styles.mgpHelpBold}>Chapter Configuration</Text> or <Text style={styles.mgpHelpBold}>Settings</Text> in the left menu</Text>
+                    <Text style={styles.mgpHelpStep}><Text style={styles.mgpHelpNum}>5. </Text>Look for <Text style={styles.mgpHelpBold}>Timing System Key</Text> — copy and paste it below</Text>
+                    <Text style={styles.mgpHelpNote}>⚠️ Only Chapter Organizers can access this key. If you are a member but not an organizer, ask your chapter admin to link the chapter instead.</Text>
                     <TouchableOpacity style={styles.mgpHelpClose} onPress={() => setShowMgpHelp(false)}>
                       <Text style={styles.mgpHelpCloseText}>Got it ✓</Text>
                     </TouchableOpacity>
@@ -909,7 +895,7 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* EDIT PROFILE MODAL */}
+      {/* ── EDIT PROFILE MODAL ─────────────────────────────────────────────── */}
       <Modal visible={showEditProfile} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowEditProfile(false)}>
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
@@ -954,7 +940,7 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* SOCIAL LINKS MODAL */}
+      {/* ── SOCIAL LINKS MODAL ─────────────────────────────────────────────── */}
       <Modal visible={showSocialLinks} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowSocialLinks(false)}>
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
@@ -1002,7 +988,7 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* CREATE BUILD MODAL */}
+      {/* ── CREATE BUILD MODAL ─────────────────────────────────────────────── */}
       <Modal visible={showCreateBuild} animationType="slide" presentationStyle="overFullScreen" onRequestClose={() => setShowCreateBuild(false)}>
         <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View style={styles.modalHeader}>
@@ -1048,7 +1034,7 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* FOLLOW LIST MODAL */}
+      {/* ── FOLLOW LIST MODAL ──────────────────────────────────────────────── */}
       {user && (
         <FollowListModal
           visible={followModal !== null}
@@ -1059,7 +1045,7 @@ export default function ProfileScreen() {
         />
       )}
 
-      {/* MUTE LIST MODAL */}
+      {/* ── MUTE LIST MODAL ────────────────────────────────────────────────── */}
       <MuteListModal
         visible={showMuteList}
         onClose={() => setShowMuteList(false)}
@@ -1078,14 +1064,16 @@ const styles = StyleSheet.create({
   emptyState:    { alignItems: 'center', paddingTop: 60, paddingBottom: 40 },
   emptyText:     { color: '#444', fontSize: 14, marginTop: 12 },
 
-  bannerWrap:        { width: '100%', height: 160, overflow: 'hidden', backgroundColor: '#111' },
-  banner:            { width: '100%', height: 160 },
+  // ── Banner (200px tall so avatar overlap doesn't bury the image)
+  bannerWrap:        { width: '100%', height: 200, overflow: 'hidden', backgroundColor: '#111' },
+  banner:            { width: '100%', height: 200 },
   bannerPlaceholder: { justifyContent: 'center', alignItems: 'center' },
   bannerHint:        { color: '#444', fontSize: 12, marginTop: 6 },
 
-  headerRow:         { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: -36, marginBottom: 10 },
+  // ── Header row (reduced -20 overlap so banner stays visible)
+  headerRow:         { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: -20, marginBottom: 10 },
   avatarWrap:        { position: 'relative' },
-  avatar:            { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#0a0a1a' },
+  avatar:            { width: 84, height: 84, borderRadius: 42, borderWidth: 3, borderColor: '#0a0a1a' },
   avatarPlaceholder: { backgroundColor: '#1e1e3a', justifyContent: 'center', alignItems: 'center' },
   cameraBadge:       { position: 'absolute', bottom: 2, right: 2, backgroundColor: '#00d4ff', borderRadius: 10, width: 20, height: 20, justifyContent: 'center', alignItems: 'center' },
   headerActions:     { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 10 },
@@ -1105,24 +1093,55 @@ const styles = StyleSheet.create({
   socialRow:  { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 8 },
   socialChip: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1e1e3a', justifyContent: 'center', alignItems: 'center' },
 
-  tabBar:         { flexDirection: 'row', backgroundColor: '#0a0a1a', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#1e1e3a' },
-  tabItem:        { flex: 1, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
-  tabItemActive:  { borderBottomWidth: 2, borderBottomColor: '#00d4ff' },
-  tabLabel:       { color: '#666', fontSize: 10, fontWeight: '600', marginTop: 3 },
-  tabLabelActive: { color: '#00d4ff' },
+  // ── Tab bar — HORIZONTAL: icon beside label at all times ──────────────────
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#0d0d1f',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#1e1e3a',
+    height: 46,
+  },
+  tabItem: {
+    flex: 1,
+    flexDirection: 'row',        // ← horizontal: icon left, label right
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabItemActive: {
+    borderBottomColor: '#00d4ff',
+    backgroundColor: 'rgba(0,212,255,0.06)',
+  },
+  tabLabel: {
+    color: '#555',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  tabLabelActive: {
+    color: '#00d4ff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  // ─────────────────────────────────────────────────────────────────────────
 
   feedList: { paddingHorizontal: 12 },
 
+  // ── Grid
   gridRow:              { gap: 2 },
   gridCell:             { width: CELL, height: CELL, backgroundColor: '#1a1a2e', overflow: 'hidden', position: 'relative', margin: 1 },
   gridThumb:            { width: '100%', height: '100%' },
   gridThumbPlaceholder: { justifyContent: 'center', alignItems: 'center', backgroundColor: '#111' },
-  gridIgPlaceholder:    { justifyContent: 'center', alignItems: 'center', backgroundColor: '#C13584', gap: 4 },
+  gridIgPlaceholder:    { justifyContent: 'center', alignItems: 'center', backgroundColor: '#C13584', gap: 3 },
   gridIgText:           { color: '#fff', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
+  gridIgSub:            { color: 'rgba(255,255,255,0.75)', fontSize: 8, fontWeight: '500' },
   gridPlayBadge:        { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -11 }, { translateY: -11 }] },
   gridYtBadge:          { position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 4, padding: 3 },
   gridIgBadge:          { position: 'absolute', bottom: 4, right: 4, backgroundColor: 'rgba(193,53,132,0.85)', borderRadius: 4, padding: 3 },
 
+  // ── Builds
   buildCard:      { backgroundColor: '#1a1a2e', borderRadius: 12, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: '#2a2a4a' },
   buildHeader:    { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   buildName:      { color: '#fff', fontWeight: '700', fontSize: 15 },
@@ -1167,7 +1186,7 @@ const styles = StyleSheet.create({
   signOutBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: '#3a1e1e', backgroundColor: '#1a0a0a' },
   signOutText: { color: '#e74c3c', fontWeight: '600', fontSize: 14 },
 
-  // ── MultiGP ──
+  // ── MultiGP
   mgpConnectedCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a2e', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#ff4500' },
   mgpChapterName:   { color: '#fff', fontWeight: '700', fontSize: 16 },
   mgpChapterId:     { color: '#888', fontSize: 12, marginTop: 2 },
@@ -1178,7 +1197,7 @@ const styles = StyleSheet.create({
   mgpValidResult:   { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 10, borderRadius: 8, borderWidth: 1, marginTop: 8, backgroundColor: '#0f0f1a' },
   mgpValidText:     { fontSize: 13, fontWeight: '600', flex: 1 },
 
-  // ── MultiGP Help ──
+  // ── MultiGP Help
   mgpHelpLink:      { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 12, marginTop: 4 },
   mgpHelpLinkText:  { color: '#00d4ff', fontSize: 13, textDecorationLine: 'underline' },
   mgpHelpBox:       { backgroundColor: '#0f1a2e', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#1e3a5a' },
