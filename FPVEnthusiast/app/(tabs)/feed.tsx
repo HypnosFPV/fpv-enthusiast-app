@@ -9,6 +9,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useFeed, FeedPost } from '../../src/hooks/useFeed';
 import { useAuth } from '../../src/context/AuthContext';
 import { useProfile } from '../../src/hooks/useProfile';
@@ -22,7 +23,6 @@ const MentionTextInput = MentionTextInputComponent as any;
 
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
 
-// ── Mention helpers ──────────────────────────────────────────────────────────
 function parseMentions(text: string): string[] {
   const matches = text.match(/@([a-zA-Z0-9_]+)/g) ?? [];
   return [...new Set(matches.map(m => m.slice(1).toLowerCase()))];
@@ -35,15 +35,12 @@ async function sendMentionNotifications(
 ) {
   const usernames = parseMentions(caption);
   if (!usernames.length) return;
-
   const { data: mentioned } = await supabase
     .from('users')
     .select('id, username')
     .in('username', usernames)
     .neq('id', actorId);
-
   if (!mentioned?.length) return;
-
   await supabase.from('notifications').insert(
     mentioned.map((u: any) => ({
       user_id:  u.id,
@@ -82,7 +79,6 @@ export default function FeedScreen() {
     outputRange: ['#ff4500', '#ff8c00', '#ffcc00', '#ff6600', '#ff4500'],
   });
 
-  // ── Re-fetch once user auth loads so likes show correctly ────────────────
   useEffect(() => {
     if (user?.id) onRefresh();
   }, [user?.id]);
@@ -105,10 +101,9 @@ export default function FeedScreen() {
   const [socialUrl, setSocialUrl] = useState('');
   const [mediaUri, setMediaUri] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
-  // ── FIX: store base64 directly from ImagePicker so we don't rely on
-  //    FileSystem.readAsStringAsync (which silently returns empty data
-  //    on iOS for iCloud / HEIC photos → 0-byte Supabase uploads).
   const [mediaBase64, setMediaBase64] = useState<string | null>(null);
+  const [videoThumbFrames, setVideoThumbFrames] = useState<string[]>([]);
+  const [selectedThumb, setSelectedThumb] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const detectedPlatform = detectPlatform(socialUrl);
@@ -119,6 +114,8 @@ export default function FeedScreen() {
     setMediaUri(null);
     setMediaBase64(null);
     setMediaType('image');
+    setVideoThumbFrames([]);
+    setSelectedThumb(null);
   };
 
   const pickMedia = async () => {
@@ -130,7 +127,6 @@ export default function FeedScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
       quality: 0.8,
-      // ── FIX: request base64 for images so we can bypass FileSystem read ──
       base64: true,
       exif: false,
     });
@@ -139,8 +135,27 @@ export default function FeedScreen() {
       setMediaUri(asset.uri);
       const isVideo = asset.type === 'video';
       setMediaType(isVideo ? 'video' : 'image');
-      // Only store base64 for images (videos are too large)
       setMediaBase64(isVideo ? null : (asset.base64 ?? null));
+
+      // ── Generate thumbnail frames for video ──────────────────────────
+      if (isVideo) {
+        setVideoThumbFrames([]);
+        setSelectedThumb(null);
+        try {
+          const durationMs = (asset.duration ?? 5) * 1000;
+          const pcts = [0.05, 0.2, 0.4, 0.6, 0.8];
+          const frames: string[] = [];
+          for (const pct of pcts) {
+            const time = Math.max(0, Math.floor(durationMs * pct));
+            const { uri } = await VideoThumbnails.getThumbnailAsync(asset.uri, { time });
+            frames.push(uri);
+          }
+          setVideoThumbFrames(frames);
+          setSelectedThumb(frames[0] ?? null);
+        } catch (e) {
+          console.warn('[feed] thumbnail generation failed:', e);
+        }
+      }
     }
   };
 
@@ -165,8 +180,8 @@ export default function FeedScreen() {
           mediaUrl: mediaUri,
           mediaType,
           caption,
-          // ── FIX: pass picker base64 so useFeed never calls FileSystem ──
           mediaBase64,
+          thumbnailUrl: mediaType === 'video' ? selectedThumb : null,
         });
       }
 
@@ -185,7 +200,6 @@ export default function FeedScreen() {
     }
   };
 
-  // ── Like / Delete handlers ───────────────────────────────────────────────
   const handleLike = useCallback((postId: string) => {
     toggleLike(postId);
   }, [toggleLike]);
@@ -194,12 +208,10 @@ export default function FeedScreen() {
     deletePost(postId);
   }, [deletePost]);
 
-  // ── Filter out muted users' posts ────────────────────────────────────────
   const visiblePosts = mutedIds.length > 0
     ? posts.filter(p => !p.user_id || !mutedIds.includes(p.user_id))
     : posts;
 
-  // ── Render post ──────────────────────────────────────────────────────────
   const renderPost = useCallback(({ item }: { item: FeedPost }) => (
     <PostCard
       post={item}
@@ -211,7 +223,6 @@ export default function FeedScreen() {
     />
   ), [visiblePostId, autoplayEnabled, user?.id, handleLike, handleDelete]);
 
-  // ── Loading state ─────────────────────────────────────────────────────────
   if (loading && posts.length === 0) {
     return (
       <View style={[styles.container, styles.centered]}>
@@ -232,22 +243,14 @@ export default function FeedScreen() {
           FPV Feed
         </Animated.Text>
         <View style={styles.topBarIcons}>
-          <TouchableOpacity
-            style={styles.topBarIcon}
-            onPress={() => router.push('/(tabs)/search')}
-          >
+          <TouchableOpacity style={styles.topBarIcon} onPress={() => router.push('/(tabs)/search')}>
             <Ionicons name="search-outline" size={24} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.topBarIcon}
-            onPress={() => router.push('/(tabs)/notifications')}
-          >
+          <TouchableOpacity style={styles.topBarIcon} onPress={() => router.push('/(tabs)/notifications')}>
             <Ionicons name="notifications-outline" size={24} color="#fff" />
             {unreadCount > 0 && (
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </Text>
+                <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -310,32 +313,64 @@ export default function FeedScreen() {
                 onPress={() => setModalMode('media')}
               >
                 <Ionicons name="image-outline" size={16} color={modalMode === 'media' ? '#fff' : '#888'} />
-                <Text style={[styles.modeBtnText, modalMode === 'media' && styles.modeBtnTextActive]}>
-                  Media
-                </Text>
+                <Text style={[styles.modeBtnText, modalMode === 'media' && styles.modeBtnTextActive]}>Media</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modeBtn, modalMode === 'social' && styles.modeBtnActive]}
                 onPress={() => setModalMode('social')}
               >
                 <Ionicons name="link-outline" size={16} color={modalMode === 'social' ? '#fff' : '#888'} />
-                <Text style={[styles.modeBtnText, modalMode === 'social' && styles.modeBtnTextActive]}>
-                  Social Link
-                </Text>
+                <Text style={[styles.modeBtnText, modalMode === 'social' && styles.modeBtnTextActive]}>Social Link</Text>
               </TouchableOpacity>
             </View>
 
             {modalMode === 'media' ? (
-              <TouchableOpacity style={styles.mediaPicker} onPress={pickMedia}>
-                {mediaUri ? (
-                  <Image source={{ uri: mediaUri }} style={styles.mediaPreview} />
-                ) : (
-                  <View style={styles.mediaPlaceholder}>
-                    <Ionicons name="cloud-upload-outline" size={40} color="#666" />
-                    <Text style={styles.mediaPlaceholderText}>Tap to pick image or video</Text>
+              <>
+                <TouchableOpacity style={styles.mediaPicker} onPress={pickMedia}>
+                  {mediaUri ? (
+                    mediaType === 'video' ? (
+                      selectedThumb ? (
+                        <Image source={{ uri: selectedThumb }} style={styles.mediaPreview} />
+                      ) : (
+                        <View style={styles.mediaPlaceholder}>
+                          <Ionicons name="videocam" size={40} color="#ff4500" />
+                          <Text style={styles.mediaPlaceholderText}>Video selected</Text>
+                        </View>
+                      )
+                    ) : (
+                      <Image source={{ uri: mediaUri }} style={styles.mediaPreview} />
+                    )
+                  ) : (
+                    <View style={styles.mediaPlaceholder}>
+                      <Ionicons name="cloud-upload-outline" size={40} color="#666" />
+                      <Text style={styles.mediaPlaceholderText}>Tap to pick image or video</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                {/* Thumbnail frame picker — video only */}
+                {mediaType === 'video' && videoThumbFrames.length > 0 && (
+                  <View style={styles.thumbPickerWrap}>
+                    <Text style={styles.thumbPickerLabel}>Choose thumbnail frame:</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbPickerRow}>
+                      {videoThumbFrames.map((uri, i) => (
+                        <TouchableOpacity
+                          key={i}
+                          onPress={() => setSelectedThumb(uri)}
+                          style={[styles.thumbFrame, selectedThumb === uri && styles.thumbFrameSelected]}
+                        >
+                          <Image source={{ uri }} style={styles.thumbFrameImg} />
+                          {selectedThumb === uri && (
+                            <View style={styles.thumbCheckOverlay}>
+                              <Ionicons name="checkmark-circle" size={22} color="#ff4500" />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
                   </View>
                 )}
-              </TouchableOpacity>
+              </>
             ) : (
               <View>
                 <TextInput
@@ -352,9 +387,7 @@ export default function FeedScreen() {
                     styles.platformBadge,
                     detectedPlatform === 'youtube' ? styles.youtubeBadge : styles.instagramBadge,
                   ]}>
-                    <Text style={styles.platformBadgeText}>
-                      {detectedPlatform.toUpperCase()}
-                    </Text>
+                    <Text style={styles.platformBadgeText}>{detectedPlatform.toUpperCase()}</Text>
                   </View>
                 )}
               </View>
@@ -422,56 +455,34 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 8,
   },
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end',
-  },
-  modalContainer: {
-    backgroundColor: '#111', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%',
-  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
+  modalContainer: { backgroundColor: '#111', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%' },
   modalContent: { padding: 20, paddingBottom: 40 },
-  modalHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 16,
-  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   modalTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  modeToggle: {
-    flexDirection: 'row', backgroundColor: '#1a1a1a',
-    borderRadius: 10, marginBottom: 16, padding: 4,
-  },
-  modeBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', paddingVertical: 8, borderRadius: 8, gap: 6,
-  },
+  modeToggle: { flexDirection: 'row', backgroundColor: '#1a1a1a', borderRadius: 10, marginBottom: 16, padding: 4 },
+  modeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, borderRadius: 8, gap: 6 },
   modeBtnActive: { backgroundColor: '#ff4500' },
   modeBtnText: { color: '#888', fontSize: 14, fontWeight: '600' },
   modeBtnTextActive: { color: '#fff' },
-  mediaPicker: {
-    backgroundColor: '#1a1a1a', borderRadius: 12,
-    overflow: 'hidden', marginBottom: 12, height: 180,
-  },
+  mediaPicker: { backgroundColor: '#1a1a1a', borderRadius: 12, overflow: 'hidden', marginBottom: 12, height: 180 },
   mediaPreview: { width: '100%', height: '100%', resizeMode: 'cover' },
   mediaPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
   mediaPlaceholderText: { color: '#666', fontSize: 13 },
-  urlInput: {
-    backgroundColor: '#1a1a1a', borderRadius: 10,
-    padding: 12, color: '#fff', fontSize: 14, marginBottom: 8,
-  },
-  platformBadge: {
-    alignSelf: 'flex-start', paddingHorizontal: 10,
-    paddingVertical: 4, borderRadius: 6, marginBottom: 8,
-  },
+  thumbPickerWrap: { marginBottom: 12 },
+  thumbPickerLabel: { color: '#888', fontSize: 12, marginBottom: 6 },
+  thumbPickerRow: { paddingRight: 8, gap: 8 },
+  thumbFrame: { width: 80, height: 56, borderRadius: 8, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent' },
+  thumbFrameSelected: { borderColor: '#ff4500' },
+  thumbFrameImg: { width: '100%', height: '100%', resizeMode: 'cover' },
+  thumbCheckOverlay: { position: 'absolute', bottom: 2, right: 2, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 11 },
+  urlInput: { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 12, color: '#fff', fontSize: 14, marginBottom: 8 },
+  platformBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginBottom: 8 },
   youtubeBadge: { backgroundColor: '#ff0000' },
   instagramBadge: { backgroundColor: '#833ab4' },
   platformBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  captionInput: {
-    backgroundColor: '#1a1a1a', borderRadius: 10,
-    padding: 12, color: '#fff', fontSize: 14,
-    minHeight: 80, textAlignVertical: 'top', marginBottom: 12,
-  },
-  postBtn: {
-    backgroundColor: '#ff4500', borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center',
-  },
+  captionInput: { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 12, color: '#fff', fontSize: 14, minHeight: 80, textAlignVertical: 'top', marginBottom: 12 },
+  postBtn: { backgroundColor: '#ff4500', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   postBtnDisabled: { opacity: 0.5 },
   postBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

@@ -9,6 +9,7 @@ export interface FeedPost {
   user_id?: string | null;
   media_url?: string | null;
   media_type?: string | null;
+  thumbnail_url?: string | null;
   caption?: string | null;
   social_url?: string | null;
   platform?: string | null;
@@ -29,10 +30,8 @@ interface CreatePostParams {
   mediaUrl: string;
   mediaType: string;
   caption?: string;
-  // ── FIX: accept base64 directly from ImagePicker so we never rely on
-  //    FileSystem.readAsStringAsync for images (which returns empty on iOS
-  //    for iCloud / HEIC photos and produces 0-byte uploads).
   mediaBase64?: string | null;
+  thumbnailUrl?: string | null;
 }
 
 interface CreateSocialPostParams {
@@ -44,7 +43,7 @@ interface CreateSocialPostParams {
 const PAGE_SIZE = 10;
 
 const SELECT = `
-  id, user_id, media_url, media_type, caption,
+  id, user_id, media_url, media_type, thumbnail_url, caption,
   social_url, platform, created_at, likes_count, comments_count,
   users:user_id (id, username, avatar_url)
 `;
@@ -114,7 +113,6 @@ export function useFeed(currentUserId?: string) {
     }
   }, [loading, refreshing, page, fetchPosts]);
 
-  // ── FIX: also sync likes_count so PostCard display updates immediately ───
   const toggleLike = useCallback(async (postId: string) => {
     if (!currentUserId) return;
 
@@ -138,16 +136,10 @@ export function useFeed(currentUserId?: string) {
     );
 
     if (isCurrentlyLiked) {
-      await supabase
-        .from('likes')
-        .delete()
-        .eq('post_id', postId)
-        .eq('user_id', currentUserId);
+      await supabase.from('likes').delete()
+        .eq('post_id', postId).eq('user_id', currentUserId);
     } else {
-      await supabase
-        .from('likes')
-        .insert({ post_id: postId, user_id: currentUserId });
-
+      await supabase.from('likes').insert({ post_id: postId, user_id: currentUserId });
       if (targetPost.user_id && targetPost.user_id !== currentUserId) {
         void supabase.from('notifications').insert({
           user_id:  targetPost.user_id,
@@ -159,18 +151,17 @@ export function useFeed(currentUserId?: string) {
     }
   }, [currentUserId, posts]);
 
-  // ── FIX: upload file to Supabase Storage, store public URL in DB ─────────
   const createPost = useCallback(async ({
     mediaUrl,
     mediaType,
     caption,
     mediaBase64,
+    thumbnailUrl,
   }: CreatePostParams) => {
     if (!currentUserId) return null;
 
     let finalUrl = mediaUrl;
 
-    // Only upload if it's a local file (not already a remote URL)
     if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://')) {
       try {
         let base64String: string;
@@ -178,7 +169,6 @@ export function useFeed(currentUserId?: string) {
         let mime: string;
 
         if (mediaType === 'video') {
-          // Videos are too large for picker base64; use FileSystem
           ext  = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'mp4';
           mime = ext === 'mov' ? 'video/quicktime' : 'video/mp4';
           base64String = await FileSystem.readAsStringAsync(mediaUrl, {
@@ -186,15 +176,11 @@ export function useFeed(currentUserId?: string) {
           });
           console.log('[useFeed] video filesystem base64 chars:', base64String.length);
         } else if (mediaBase64) {
-          // ── PRIMARY PATH: base64 came directly from ImagePicker ──────────
-          // ImagePicker with quality:0.8 always transcodes to JPEG, so
-          // we can safely use image/jpeg and .jpg extension.
           base64String = mediaBase64;
           ext  = 'jpg';
           mime = 'image/jpeg';
           console.log('[useFeed] using picker base64, chars:', base64String.length);
         } else {
-          // ── FALLBACK PATH: no base64 from picker, read from filesystem ───
           ext  = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'jpg';
           mime = ext === 'png'  ? 'image/png'
                : ext === 'heic' ? 'image/heic'
@@ -215,7 +201,6 @@ export function useFeed(currentUserId?: string) {
         }
 
         const storagePath = `${currentUserId}/${Date.now()}.${ext}`;
-
         const { error: upErr } = await supabase.storage
           .from('posts')
           .upload(storagePath, arrayBuffer, { contentType: mime, upsert: false });
@@ -225,9 +210,7 @@ export function useFeed(currentUserId?: string) {
           return null;
         }
 
-        const { data: urlData } = supabase.storage
-          .from('posts')
-          .getPublicUrl(storagePath);
+        const { data: urlData } = supabase.storage.from('posts').getPublicUrl(storagePath);
         finalUrl = urlData.publicUrl;
         console.log('[useFeed] upload success, publicUrl:', finalUrl);
       } catch (e: any) {
@@ -236,13 +219,38 @@ export function useFeed(currentUserId?: string) {
       }
     }
 
+    // ── Upload thumbnail frame if provided ──────────────────────────────────
+    let finalThumbUrl: string | null = null;
+    if (thumbnailUrl && mediaType === 'video') {
+      try {
+        const thumbB64 = await FileSystem.readAsStringAsync(thumbnailUrl, {
+          encoding: 'base64' as any,
+        });
+        const thumbBuf = decode(thumbB64);
+        if (thumbBuf.byteLength > 0) {
+          const thumbPath = `${currentUserId}/${Date.now()}_thumb.jpg`;
+          const { error: tErr } = await supabase.storage
+            .from('posts')
+            .upload(thumbPath, thumbBuf, { contentType: 'image/jpeg', upsert: false });
+          if (!tErr) {
+            const { data: tUrlData } = supabase.storage.from('posts').getPublicUrl(thumbPath);
+            finalThumbUrl = tUrlData.publicUrl;
+            console.log('[useFeed] thumbnail uploaded:', finalThumbUrl);
+          }
+        }
+      } catch (e: any) {
+        console.warn('[useFeed] thumbnail upload failed:', e.message);
+      }
+    }
+
     const { data, error } = await supabase
       .from('posts')
       .insert({
-        user_id:    currentUserId,
-        media_url:  finalUrl,
-        media_type: mediaType,
+        user_id:       currentUserId,
+        media_url:     finalUrl,
+        media_type:    mediaType,
         caption,
+        thumbnail_url: finalThumbUrl,
       })
       .select(SELECT)
       .single();
@@ -290,7 +298,6 @@ export function useFeed(currentUserId?: string) {
     setPosts(prev => prev.filter(p => p.id !== postId));
   }, []);
 
-  // Initial fetch on mount
   useEffect(() => {
     onRefresh();
   }, []);

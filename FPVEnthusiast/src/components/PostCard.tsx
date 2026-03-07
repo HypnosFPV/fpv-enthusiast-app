@@ -7,6 +7,7 @@ import {
   Keyboard, PanResponder, ScrollView,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
@@ -93,9 +94,6 @@ function injectCmd(ref: React.RefObject<WebView | null>, cmd: string): void {
   );
 }
 
-// FIX: added like_count / comment_count (snake_case) so FeedPost fields
-// are typed correctly. PostCard previously only had camelCase likeCount which
-// is the legacy field name; useFeed stores the live value in like_count.
 interface PostData {
   id: string;
   user_id?: string | null;
@@ -108,10 +106,10 @@ interface PostData {
   caption?: string | null;
   created_at?: string | null;
   isLiked?: boolean;
-  like_count?: number;       // snake_case (used by useFeed / toggleLike)
-  comment_count?: number;    // snake_case (used by useFeed)
-  likeCount?: number;        // legacy camelCase kept for compatibility
-  commentCount?: number;     // legacy camelCase kept for compatibility
+  like_count?: number;
+  comment_count?: number;
+  likeCount?: number;
+  commentCount?: number;
   likes_count?: number;
   comments_count?: number;
   users?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
@@ -140,6 +138,128 @@ interface Props {
   onCaptionUpdate?: (postId: string, caption: string) => void;
   autoplay?: boolean;
 }
+
+// ── Inline video player (expo-av) ─────────────────────────────────────────────
+function NativeVideoPlayer({
+  uri,
+  thumbnailUri,
+}: {
+  uri: string;
+  thumbnailUri?: string | null;
+}) {
+  const videoRef = useRef<any>(null);
+  const [playing, setPlaying]     = useState(false);
+  const [muted, setMuted]         = useState(false);
+  const [ready, setReady]         = useState(false);
+  const [errored, setErrored]     = useState(false);
+  const [showPoster, setShowPoster] = useState(true);
+
+  const onStatus = useCallback((status: any) => {
+    if (status.isLoaded) {
+      setReady(true);
+      setPlaying(status.isPlaying);
+      if (status.isPlaying) setShowPoster(false);
+    }
+  }, []);
+
+  const togglePlay = useCallback(async () => {
+    if (!videoRef.current) return;
+    if (playing) {
+      await videoRef.current.pauseAsync();
+    } else {
+      await videoRef.current.playAsync();
+      setShowPoster(false);
+    }
+  }, [playing]);
+
+  if (errored) {
+    return (
+      <View style={nvStyles.wrap}>
+        <Ionicons name="alert-circle-outline" size={36} color="#555" />
+        <Text style={nvStyles.errorText}>Unable to play video</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={nvStyles.wrap}>
+      <Video
+        ref={videoRef}
+        source={{ uri }}
+        style={nvStyles.video}
+        resizeMode={ResizeMode.CONTAIN}
+        shouldPlay={false}
+        isLooping
+        isMuted={muted}
+        onPlaybackStatusUpdate={onStatus}
+        onError={() => { setReady(true); setErrored(true); }}
+      />
+      {/* Manual poster overlay — shown until first play */}
+      {showPoster && !!thumbnailUri && (
+        <Image
+          source={{ uri: thumbnailUri }}
+          style={nvStyles.poster}
+          resizeMode="cover"
+        />
+      )}
+      {/* Loading spinner */}
+      {!ready && (
+        <View style={nvStyles.overlay}>
+          <ActivityIndicator color="#ff4500" size="large" />
+        </View>
+      )}
+      {/* Controls */}
+      {ready && !errored && (
+        <>
+          <TouchableOpacity style={nvStyles.playOverlay} onPress={togglePlay} activeOpacity={0.85}>
+            {!playing && (
+              <View style={nvStyles.playBtn}>
+                <Ionicons name="play" size={38} color="#fff" />
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={nvStyles.muteBtn} onPress={() => setMuted(m => !m)}>
+            <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
+}
+
+const nvStyles = StyleSheet.create({
+  wrap: {
+    width,
+    height: width * 0.75,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  video:   { width: '100%', height: '100%' },
+  poster:  { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  overlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  playOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  playBtn: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  muteBtn: {
+    position: 'absolute', bottom: 10, right: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 14, padding: 5,
+  },
+  errorText: { color: '#666', fontSize: 13, marginTop: 8 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function PostCard(props: Props) {
   const { post, currentUserId, onLike, onDelete, onCaptionUpdate } = props;
@@ -238,7 +358,7 @@ export default function PostCard(props: Props) {
 
   const handleInstagramOpen = useCallback(function () {
     Alert.alert('Opening Instagram',
-      'Embedded playback is not supported. You\'ll be redirected to Instagram.\n\nCome back after viewing  this app is your one-stop FPV hub! ',
+      'Embedded playback is not supported. You\'ll be redirected to Instagram.\n\nCome back after viewing — this app is your one-stop FPV hub! ',
       [{ text: 'Cancel', style: 'cancel' },
       { text: 'Open', onPress: function () { const u = post.social_url || post.media_url; if (u) Linking.openURL(u); } }]
     );
@@ -268,8 +388,11 @@ export default function PostCard(props: Props) {
       setComments(data);
       await fetchCommentLikes(data);
       setTimeout(function () { flatListRef.current?.scrollToEnd({ animated: false }); }, 150);
-    } catch (err: any) { console.error('[PostCard] fetchComments:', err.message); }
-    finally { setCommentsLoading(false); }
+    } catch (err: any) {
+      console.error('[PostCard] fetchComments:', err.message);
+    } finally {
+      setCommentsLoading(false);
+    }
   }, [post.id, fetchCommentLikes]);
 
   const handleOpenComments = useCallback(function () {
@@ -415,27 +538,18 @@ export default function PostCard(props: Props) {
     }
     if (post.media_url) {
       if (post.media_type === 'video') {
-        return (
-          <TouchableOpacity style={styles.thumbContainer} onPress={function () { if (post.media_url) Linking.openURL(post.media_url); }} activeOpacity={0.9}>
-            <View style={[styles.thumb, styles.thumbDark]}><Ionicons name="videocam" size={48} color="#fff" /><Text style={styles.ytOpenText}>Tap to play</Text></View>
-          </TouchableOpacity>
-        );
+        return <NativeVideoPlayer uri={post.media_url} thumbnailUri={post.thumbnail_url} />;
       }
-      // ── FIX: wrap image in TouchableOpacity so tapping opens pinch-zoom modal ──
       return (
         <TouchableOpacity activeOpacity={0.92} onPress={function () { setZoomUri(post.media_url!); }}>
-          <Image
-            source={{ uri: post.media_url }}
-            style={styles.postImage}
-            resizeMode="cover"
-          />
+          <Image source={{ uri: post.media_url }} style={styles.postImage} resizeMode="cover" />
         </TouchableOpacity>
       );
     }
     return null;
   }
 
-  // ── Comment row ──────────────────────────────────────────────────────────────
+  // ── Comment row ─────────────────────────────────────────────────────────────
   function renderComment(info: { item: Comment }) {
     const c = info.item;
     const isMine = !!currentUserId && currentUserId === c.user_id;
@@ -496,7 +610,7 @@ export default function PostCard(props: Props) {
     );
   }
 
-  // ── Comment input ─────────────────────────────────────────────────────────
+  // ── Comment input ───────────────────────────────────────────────────────────
   function renderCommentInput() {
     if (!currentUserId) return null;
     const hasText = newComment.trim().length > 0;
@@ -530,7 +644,7 @@ export default function PostCard(props: Props) {
     );
   }
 
-  // ── Main render ───────────────────────────────────────────────────────────
+  // ── Main render ─────────────────────────────────────────────────────────────
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -562,8 +676,6 @@ export default function PostCard(props: Props) {
       <View style={styles.actions}>
         <TouchableOpacity style={styles.actionBtn} onPress={function () { if (onLike) onLike(post.id, post.isLiked || false); }}>
           <Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={22} color={post.isLiked ? '#e74c3c' : '#666'} />
-          {/* FIX: prefer like_count (updated by toggleLike) then fall back to
-              likes_count (DB column) then legacy camelCase likeCount */}
           <Text style={styles.actionCount}>{post.like_count ?? post.likes_count ?? post.likeCount ?? 0}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionBtn} onPress={handleOpenComments}>
@@ -660,18 +772,17 @@ export default function PostCard(props: Props) {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* ── FIX: Pinch-Zoom Modal ── */}
+      {/* Pinch-Zoom Modal */}
       <ImageZoomModal
         visible={!!zoomUri}
         uri={zoomUri}
         onClose={function () { setZoomUri(null); }}
       />
-
     </View>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   card: { backgroundColor: '#13132a', marginBottom: 10, borderRadius: 14, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
