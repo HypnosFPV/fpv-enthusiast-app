@@ -1,106 +1,123 @@
 // app/profile/[username].tsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, Image, StyleSheet, FlatList, TouchableOpacity,
-  Dimensions, ActivityIndicator, ScrollView, Modal,
+  View, Text, Image, FlatList, TouchableOpacity,
+  StyleSheet, Dimensions, ActivityIndicator,
+  Modal, SafeAreaView, ScrollView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../../src/services/supabase';
+import { useFollow } from '../../src/hooks/useFollow';
 import { useAuth } from '../../src/context/AuthContext';
 import PostCard from '../../src/components/PostCard';
-import { useFollow } from '../../src/hooks/useFollow';
-import type { FeedPost } from '../../src/hooks/useFeed';
 
-const { width: W } = Dimensions.get('window');
-const CELL = (W - 4) / 3;
+const { width: SCREEN_W } = Dimensions.get('window');
+const CELL = SCREEN_W / 3;
 
-// ─── interfaces ──────────────────────────────────────────────────────────────
-
-interface Profile {
-  id: string;
-  username: string;
-  bio?: string;
-  avatar_url?: string;
-  header_image_url?: string;
-  followers_count?: number;
-  following_count?: number;
-}
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Post {
   id: string;
   user_id: string;
-  caption?: string;
-  media_url?: string;
-  media_type?: string;
-  platform?: string;
+  caption: string | null;
+  media_url: string | null;
+  media_type: string | null;
+  platform: string | null;
   created_at: string;
+  likes_count: number | null;
+  comments_count: number | null;
+}
+
+interface Profile {
+  id: string;
+  username: string;
+  avatar_url: string | null;
+  bio: string | null;
+  followers_count: number;
+  following_count: number;
+  posts_count: number;
+}
+
+// PostData shape expected by PostCard
+interface PostData {
+  id: string;
+  user_id?: string | null;
+  media_url?: string | null;
+  social_url?: string | null;
+  embed_url?: string | null;
+  media_type?: string | null;
+  platform?: string | null;
+  thumbnail_url?: string | null;
+  caption?: string | null;
+  created_at?: string | null;
+  isLiked?: boolean;
+  likeCount?: number;
+  commentCount?: number;
   likes_count?: number;
   comments_count?: number;
+  users?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
 }
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getYoutubeVideoId(url: string): string | null {
-  const patterns = [
-    /youtu\.be\/([^?&]+)/,
-    /youtube\.com\/watch\?v=([^?&]+)/,
-    /youtube\.com\/embed\/([^?&]+)/,
-    /youtube-nocookie\.com\/embed\/([^?&]+)/,
-    /youtube\.com\/shorts\/([^?&]+)/,
-  ];
-  for (const p of patterns) {
-    const m = url.match(p);
-    if (m) return m[1];
-  }
-  return null;
+function getYoutubeVideoId(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = url.match(
+    /(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/
+  );
+  return m ? m[1] : null;
 }
 
-function isInstagramUrl(url: string): boolean {
-  return /instagram\.com/i.test(url);
+function isInstagramUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return url.toLowerCase().includes('instagram');
 }
 
 function thumbnailUri(post: Post): string | null {
-  // ✅ Broadened guard — catches file:// (Android) and file:/ (iOS single-slash)
-  if (!post.media_url || post.media_url.startsWith('file:')) return null;
-
-  // YouTube → mqdefault thumbnail
-  const vid = getYoutubeVideoId(post.media_url);
-  if (vid) return `https://img.youtube.com/vi/${vid}/mqdefault.jpg`;
-
-  // Direct image file
-  if (/\.(jpg|jpeg|png|gif|webp)/i.test(post.media_url)) return post.media_url;
-
-  // Instagram — handled as gradient in renderGridCell
+  const url = post.media_url;
+  if (!url || url.startsWith('file:')) return null;
+  if (isInstagramUrl(url)) return null;
+  const ytId = getYoutubeVideoId(url);
+  if (ytId) return `https://img.youtube.com/vi/${ytId}/mqdefault.jpg`;
+  if (/\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(url)) return url;
   return null;
 }
 
-function toFeedPost(p: Post, profile: Profile): FeedPost {
+/**
+ * Convert raw DB Post row → PostData shape for PostCard.
+ * When media_type === 'social_embed', move media_url → social_url
+ * so PostCard's resolvedPlatform detection works correctly.
+ */
+function toPostData(p: Post, profile: Profile): PostData {
   const isSocialEmbed = p.media_type === 'social_embed';
   return {
-    id:            p.id,
-    user_id:       p.user_id,
-    caption:       p.caption      ?? '',
-    media_url:     isSocialEmbed  ? null                  : (p.media_url ?? null),
-    media_type:    p.media_type   ?? null,
-    platform:      p.platform     ?? null,
-    social_url:    isSocialEmbed  ? (p.media_url ?? null) : null,
-    created_at:    p.created_at,
-    like_count:    p.likes_count    ?? 0,
-    comment_count: p.comments_count ?? 0,
-    isLiked:       false,
+    id: p.id,
+    user_id: p.user_id,
+    caption: p.caption ?? '',
+    media_url: isSocialEmbed ? null : (p.media_url ?? null),
+    social_url: isSocialEmbed ? (p.media_url ?? null) : null,
+    embed_url: null,
+    media_type: p.media_type ?? null,
+    platform: p.platform ?? null,
+    thumbnail_url: null,
+    created_at: p.created_at,
+    likes_count: p.likes_count ?? 0,
+    comments_count: p.comments_count ?? 0,
+    isLiked: false,
     users: {
-      id:         profile.id,
-      username:   profile.username,
+      id: profile.id,
+      username: profile.username,
       avatar_url: profile.avatar_url ?? null,
     },
-  } as FeedPost;
+  };
 }
 
-// ─── stat box ─────────────────────────────────────────────────────────────────
+// ─── StatBox ──────────────────────────────────────────────────────────────────
 
-function StatBox({ label, value }: { label: string; value: number | string }) {
+function StatBox({ value, label }: { value: number; label: string }) {
   return (
     <View style={styles.statBox}>
       <Text style={styles.statValue}>{value}</Text>
@@ -109,311 +126,334 @@ function StatBox({ label, value }: { label: string; value: number | string }) {
   );
 }
 
-// ─── main screen ─────────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function UserProfileScreen() {
   const { username } = useLocalSearchParams<{ username: string }>();
   const router = useRouter();
   const { user: currentUser } = useAuth();
 
-  const [profile,      setProfile]      = useState<Profile | null>(null);
-  const [posts,        setPosts]        = useState<Post[]>([]);
-  const [loading,      setLoading]      = useState(true);
-  const [notFound,     setNotFound]     = useState(false);
-  const [activeTab,    setActiveTab]    = useState<'grid' | 'feed'>('grid');
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'grid' | 'feed'>('grid');
+  const [selectedPost, setSelectedPost] = useState<PostData | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
+  // useFollow(profileUserId, currentUserId) — matches the real hook signature
   const {
-    isFollowing, followersCount, followingCount,
-    toggling, checkingFollow, toggleFollow,
+    isFollowing,
+    followersCount,
+    toggleFollow,
   } = useFollow(profile?.id ?? '', currentUser?.id);
 
+  // ── Fetch profile + posts ──────────────────────────────────────────────────
   useEffect(() => {
     if (!username) return;
-    (async () => {
+    const fetchData = async () => {
       setLoading(true);
-      const { data: prof, error } = await supabase
-        .from('users')
-        .select('id, username, bio, avatar_url, header_image_url, followers_count, following_count')
-        .eq('username', username)
-        .single();
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('users')
+          .select('id, username, avatar_url, bio, followers_count, following_count, posts_count')
+          .eq('username', username)
+          .single();
 
-      if (error || !prof) { setNotFound(true); setLoading(false); return; }
-      setProfile(prof);
+        if (profileError || !profileData) {
+          console.error('[Profile] fetch error:', profileError);
+          return;
+        }
+        setProfile(profileData as Profile);
 
-      const { data: postData } = await supabase
-        .from('posts')
-        .select('id, user_id, caption, media_url, media_type, platform, created_at, likes_count, comments_count')
-        .eq('user_id', prof.id)
-        .order('created_at', { ascending: false });
+        const { data: postsData, error: postsError } = await supabase
+          .from('posts')
+          .select('id, user_id, caption, media_url, media_type, platform, created_at, likes_count, comments_count')
+          .eq('user_id', profileData.id)
+          .order('created_at', { ascending: false });
 
-      setPosts(postData ?? []);
-      setLoading(false);
-    })();
+        if (postsError) {
+          console.error('[Profile] posts fetch error:', postsError);
+        } else {
+          setPosts((postsData ?? []) as Post[]);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
   }, [username]);
 
-  // ── grid cell ─────────────────────────────────────────────────────────────
-  const renderGridCell = useCallback(({ item }: { item: Post }) => {
-    const thumb = thumbnailUri(item);
-    const isYT  = !!item.media_url && !!getYoutubeVideoId(item.media_url);
-    const isIG  = !!item.media_url && isInstagramUrl(item.media_url);
-    const isVid = item.media_type === 'video';
+  // ── Grid cell renderer ─────────────────────────────────────────────────────
+  const renderGridCell = useCallback(
+    ({ item }: { item: Post }) => {
+      const thumb = thumbnailUri(item);
+      const ytId = getYoutubeVideoId(item.media_url);
+      // Read from raw Post.media_url — NOT from toPostData output
+      // (toPostData moves it to social_url, which doesn't exist on Post)
+      const isIG = isInstagramUrl(item.media_url);
 
-    return (
-      <TouchableOpacity style={styles.cell} onPress={() => setSelectedPost(item)} activeOpacity={0.8}>
+      console.log(`[Grid] id=${item.id} media_url=${item.media_url} isIG=${isIG} ytId=${ytId} thumb=${thumb}`);
 
-        {/* ── thumbnail / placeholder ─────────────────────────────── */}
-        {thumb ? (
-          <Image source={{ uri: thumb }} style={styles.cellImg} />
-        ) : isIG ? (
-          // ✅ Instagram gradient — uses expo-linear-gradient (run: npx expo install expo-linear-gradient)
-          <LinearGradient
-            colors={['#405de6', '#5851db', '#833ab4', '#c13584', '#e1306c', '#fd1d1d']}
-            start={{ x: 0, y: 1 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.cellImg}
-          >
-            <View style={styles.igInner}>
-              <Ionicons name="logo-instagram" size={30} color="#fff" />
-              <Text style={styles.igLabel}>Instagram</Text>
+      const handlePress = () => {
+        if (!profile) return;
+        setSelectedPost(toPostData(item, profile));
+        setModalVisible(true);
+      };
+
+      return (
+        <TouchableOpacity style={styles.gridCell} onPress={handlePress} activeOpacity={0.85}>
+
+          {/* Instagram gradient placeholder */}
+          {isIG && !thumb && (
+            <LinearGradient
+              colors={['#405de6', '#5851db', '#833ab4', '#c13584', '#e1306c', '#fd1d1d']}
+              start={{ x: 0, y: 1 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.igPlaceholder}
+            >
+              <FontAwesome5 name="instagram" size={28} color="#fff" />
+              <Text style={styles.igPlaceholderLabel}>Instagram</Text>
+            </LinearGradient>
+          )}
+
+          {/* YouTube / image thumbnail */}
+          {thumb && (
+            <Image source={{ uri: thumb }} style={styles.gridThumb} resizeMode="cover" />
+          )}
+
+          {/* Generic placeholder for local video / unknown */}
+          {!isIG && !thumb && (
+            <View style={styles.gridPlaceholder}>
+              <Ionicons name="camera-outline" size={28} color="#555" />
             </View>
-          </LinearGradient>
-        ) : (
-          <View style={[styles.cellImg, styles.cellPlaceholder]}>
-            <Ionicons name="videocam-outline" size={24} color="#555" />
-          </View>
-        )}
+          )}
 
-        {/* ── badges ──────────────────────────────────────────────── */}
-        {isYT && (
-          <View style={styles.ytBadge}>
-            <Ionicons name="logo-youtube" size={12} color="#fff" />
-          </View>
-        )}
-        {isIG && (
-          <View style={styles.igBadge}>
-            <Ionicons name="logo-instagram" size={12} color="#fff" />
-          </View>
-        )}
-        {isVid && !isYT && !isIG && (
-          <View style={styles.playBadge}>
-            <Ionicons name="play" size={12} color="#fff" />
-          </View>
-        )}
+          {/* YouTube badge */}
+          {ytId && (
+            <View style={[styles.badge, styles.ytBadge]}>
+              <FontAwesome5 name="youtube" size={10} color="#fff" />
+            </View>
+          )}
 
-      </TouchableOpacity>
+          {/* Instagram badge */}
+          {isIG && (
+            <View style={[styles.badge, styles.igBadge]}>
+              <FontAwesome5 name="instagram" size={10} color="#fff" />
+            </View>
+          )}
+
+          {/* Generic video badge */}
+          {!ytId && !isIG && item.media_type === 'video' && (
+            <View style={[styles.badge, styles.videoBadge]}>
+              <Ionicons name="play" size={10} color="#fff" />
+            </View>
+          )}
+        </TouchableOpacity>
+      );
+    },
+    [profile]
+  );
+
+  // ── Feed item renderer ─────────────────────────────────────────────────────
+  const renderFeedItem = useCallback(
+    ({ item }: { item: Post }) => {
+      if (!profile) return null;
+      return (
+        <PostCard
+          post={toPostData(item, profile)}
+          currentUserId={currentUser?.id ?? undefined}
+        />
+      );
+    },
+    [profile, currentUser]
+  );
+
+  // ── Loading / not found states ─────────────────────────────────────────────
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#ff4500" />
+      </View>
     );
-  }, []);
+  }
 
-  // ── guard states ──────────────────────────────────────────────────────────
-  if (loading) return (
-    <View style={styles.loadingScreen}>
-      <ActivityIndicator color="#7c3aed" size="large" />
-    </View>
-  );
-
-  if (notFound || !profile) return (
-    <View style={styles.loadingScreen}>
-      <Ionicons name="person-outline" size={48} color="#555" />
-      <Text style={{ color: '#888', marginTop: 12 }}>User not found</Text>
-      <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
-        <Text style={{ color: '#7c3aed' }}>Go back</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  if (!profile) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>User not found</Text>
+      </View>
+    );
+  }
 
   const isOwnProfile = currentUser?.id === profile.id;
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <View style={styles.root}>
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle} numberOfLines={1}>@{profile.username}</Text>
-        <View style={{ width: 36 }} />
-      </View>
-
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-
-        <View style={styles.bannerWrap}>
-          {profile.header_image_url
-            ? <Image source={{ uri: profile.header_image_url }} style={styles.banner} resizeMode="cover" />
-            : <View style={[styles.banner, styles.bannerPlaceholder]} />}
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>@{profile.username}</Text>
+          <View style={{ width: 40 }} />
         </View>
 
-        <View style={styles.avatarRow}>
-          {profile.avatar_url
-            ? <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
-            : <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                <Ionicons name="person" size={36} color="#555" />
-              </View>}
-
-          {!isOwnProfile && !checkingFollow && (
-            <TouchableOpacity
-              style={[styles.followBtn, isFollowing && styles.followingBtn]}
-              onPress={toggleFollow}
-              disabled={toggling}
-              activeOpacity={0.8}
-            >
-              {toggling
-                ? <ActivityIndicator color="#fff" size="small" />
-                : <Text style={[styles.followBtnText, isFollowing && styles.followingBtnText]}>
-                    {isFollowing ? 'Following' : 'Follow'}
-                  </Text>}
-            </TouchableOpacity>
-          )}
-        </View>
-
+        {/* Avatar + Bio */}
         <View style={styles.bioSection}>
+          {profile.avatar_url ? (
+            <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, styles.avatarFallback]}>
+              <Ionicons name="person" size={40} color="#aaa" />
+            </View>
+          )}
           <Text style={styles.usernameText}>@{profile.username}</Text>
-          {!!profile.bio && <Text style={styles.bioText}>{profile.bio}</Text>}
+          {profile.bio ? <Text style={styles.bioText}>{profile.bio}</Text> : null}
         </View>
 
+        {/* Stats */}
         <View style={styles.statsRow}>
-          <StatBox label="Posts"     value={posts.length} />
-          <StatBox label="Followers" value={followersCount} />
-          <StatBox label="Following" value={followingCount} />
+          <StatBox value={profile.posts_count ?? 0} label="Posts" />
+          <StatBox value={followersCount} label="Followers" />
+          <StatBox value={profile.following_count ?? 0} label="Following" />
         </View>
 
+        {/* Follow button — hide on own profile */}
+        {!isOwnProfile && (
+          <TouchableOpacity
+            style={[styles.followBtn, isFollowing && styles.followingBtn]}
+            onPress={toggleFollow}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.followBtnText}>{isFollowing ? 'Following' : 'Follow'}</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Tab bar */}
         <View style={styles.tabBar}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'grid' && styles.tabActive]}
+            style={[styles.tab, activeTab === 'grid' && styles.activeTab]}
             onPress={() => setActiveTab('grid')}
           >
-            <Ionicons name="grid-outline" size={20} color={activeTab === 'grid' ? '#7c3aed' : '#666'} />
+            <Ionicons name="grid-outline" size={20} color={activeTab === 'grid' ? '#ff4500' : '#888'} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'feed' && styles.tabActive]}
+            style={[styles.tab, activeTab === 'feed' && styles.activeTab]}
             onPress={() => setActiveTab('feed')}
           >
-            <Ionicons name="list-outline" size={20} color={activeTab === 'feed' ? '#7c3aed' : '#666'} />
+            <Ionicons name="list-outline" size={20} color={activeTab === 'feed' ? '#ff4500' : '#888'} />
           </TouchableOpacity>
         </View>
 
+        {/* Content */}
         {activeTab === 'grid' ? (
           <FlatList
             data={posts}
-            keyExtractor={p => p.id}
+            keyExtractor={(p) => p.id}
             numColumns={3}
             renderItem={renderGridCell}
             scrollEnabled={false}
-            ListEmptyComponent={
-              <View style={styles.empty}>
-                <Text style={{ color: '#555' }}>No posts yet</Text>
-              </View>
-            }
           />
         ) : (
-          posts.map(p => (
-            <PostCard
-              key={p.id}
-              post={toFeedPost(p, profile)}
-              isVisible={false}
-              shouldAutoplay={false}
-              currentUserId={currentUser?.id ?? undefined}
-              onLike={() => {}}
-              onDelete={() => {}}
-            />
-          ))
+          <FlatList
+            data={posts}
+            keyExtractor={(p) => p.id}
+            renderItem={renderFeedItem}
+            scrollEnabled={false}
+          />
         )}
-
-        <View style={{ height: 40 }} />
       </ScrollView>
 
+      {/* Post detail modal */}
       <Modal
-        visible={!!selectedPost}
+        visible={modalVisible}
         animationType="slide"
-        transparent={false}
-        onRequestClose={() => setSelectedPost(null)}
+        onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.overlayRoot}>
-          <TouchableOpacity style={styles.overlayBack} onPress={() => setSelectedPost(null)}>
-            <Ionicons name="arrow-back" size={22} color="#fff" />
-            <Text style={{ color: '#fff', marginLeft: 8 }}>Back</Text>
+        <SafeAreaView style={styles.modalContainer}>
+          <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)}>
+            <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
           {selectedPost && (
-            <ScrollView>
-              <PostCard
-                post={toFeedPost(selectedPost, profile)}
-                isVisible={true}
-                shouldAutoplay={false}
-                currentUserId={currentUser?.id ?? undefined}
-                onLike={() => {}}
-                onDelete={() => setSelectedPost(null)}
-              />
-            </ScrollView>
+            <PostCard
+              post={selectedPost}
+              isVisible
+              currentUserId={currentUser?.id ?? undefined}
+            />
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
-// ─── styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root:              { flex: 1, backgroundColor: '#0f0f23' },
-  scroll:            { flex: 1 },
-  loadingScreen:     { flex: 1, backgroundColor: '#0f0f23', alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  scrollContent: { paddingBottom: 40 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0a0a0a' },
+  errorText: { color: '#fff', fontSize: 16 },
 
-  topBar:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                       paddingHorizontal: 14, paddingTop: 52, paddingBottom: 10,
-                       backgroundColor: '#0f0f23', zIndex: 10 },
-  backBtn:           { padding: 4 },
-  topBarTitle:       { color: '#fff', fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center' },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8,
+  },
+  backBtn: { padding: 4 },
+  headerTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
-  bannerWrap:        { width: '100%', height: 160, overflow: 'hidden' },
-  banner:            { width: '100%', height: 160 },
-  bannerPlaceholder: { backgroundColor: '#1a1a2e' },
+  bioSection: { alignItems: 'center', paddingHorizontal: 16, marginTop: 10 },
+  avatar: { width: 88, height: 88, borderRadius: 44, backgroundColor: '#333' },
+  avatarFallback: { alignItems: 'center', justifyContent: 'center' },
+  usernameText: { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 10 },
+  bioText: { color: '#aaa', fontSize: 14, marginTop: 4, textAlign: 'center', lineHeight: 18 },
 
-  avatarRow:         { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
-                       paddingHorizontal: 16, marginTop: -44 },
-  avatar:            { width: 88, height: 88, borderRadius: 44,
-                       borderWidth: 3, borderColor: '#0f0f23' },
-  avatarPlaceholder: { backgroundColor: '#1e1e3a', alignItems: 'center', justifyContent: 'center' },
+  statsRow: {
+    flexDirection: 'row', justifyContent: 'space-around',
+    paddingVertical: 14, paddingHorizontal: 16,
+    borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#2a2a2a', marginTop: 14,
+  },
+  statBox: { alignItems: 'center', flex: 1 },
+  statValue: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  statLabel: { color: '#aaa', fontSize: 11, marginTop: 2 },
 
-  followBtn:         { backgroundColor: '#7c3aed', borderRadius: 20,
-                       paddingHorizontal: 22, paddingVertical: 9, marginBottom: 4 },
-  followingBtn:      { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#7c3aed' },
-  followBtnText:     { color: '#fff', fontSize: 14, fontWeight: '700' },
-  followingBtnText:  { color: '#7c3aed' },
+  followBtn: {
+    marginHorizontal: 16, marginTop: 14, paddingVertical: 10,
+    borderRadius: 8, backgroundColor: '#ff4500', alignItems: 'center',
+  },
+  followingBtn: { backgroundColor: '#333' },
+  followBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
-  bioSection:        { paddingHorizontal: 16, marginTop: 10 },
-  usernameText:      { color: '#fff', fontSize: 16, fontWeight: '700' },
-  bioText:           { color: '#aaa', fontSize: 13, marginTop: 4, lineHeight: 18 },
+  tabBar: {
+    flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: '#2a2a2a', marginTop: 14,
+  },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 10 },
+  activeTab: { borderBottomWidth: 2, borderBottomColor: '#ff4500' },
 
-  statsRow:          { flexDirection: 'row', justifyContent: 'space-around',
-                       paddingVertical: 14, marginTop: 10,
-                       borderTopWidth: StyleSheet.hairlineWidth,    borderTopColor: '#1e1e3a',
-                       borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#1e1e3a' },
-  statBox:           { alignItems: 'center', flex: 1 },
-  statValue:         { color: '#fff', fontSize: 17, fontWeight: '700' },
-  statLabel:         { color: '#888', fontSize: 11, marginTop: 2 },
+  gridCell: { width: CELL, height: CELL, backgroundColor: '#1a1a1a', position: 'relative' },
+  gridThumb: { width: '100%', height: '100%' },
+  gridPlaceholder: {
+    width: '100%', height: '100%',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1a1a',
+  },
 
-  tabBar:            { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth,
-                       borderBottomColor: '#1e1e3a', marginTop: 4 },
-  tab:               { flex: 1, alignItems: 'center', paddingVertical: 10 },
-  tabActive:         { borderBottomWidth: 2, borderBottomColor: '#7c3aed' },
+  igPlaceholder: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
+  igPlaceholderLabel: { color: '#fff', fontSize: 11, fontWeight: '600', marginTop: 6 },
 
-  cell:              { width: CELL, height: CELL, margin: 1, backgroundColor: '#1a1a2e' },
-  cellImg:           { width: '100%', height: '100%' },
-  cellPlaceholder:   { alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a1a2e' },
+  badge: {
+    position: 'absolute', bottom: 5, right: 5,
+    borderRadius: 4, paddingHorizontal: 4, paddingVertical: 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  ytBadge: { backgroundColor: '#FF0000' },
+  igBadge: { backgroundColor: '#C13584', right: undefined, left: 5 },
+  videoBadge: { backgroundColor: 'rgba(0,0,0,0.65)' },
 
-  igInner:           { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  igLabel:           { color: '#fff', fontSize: 9, fontWeight: '600',
-                       marginTop: 4, letterSpacing: 0.5 },
-
-  ytBadge:           { position: 'absolute', bottom: 4, left: 4,
-                       backgroundColor: '#ff0000', borderRadius: 4, padding: 2 },
-  igBadge:           { position: 'absolute', bottom: 4, left: 4,
-                       backgroundColor: '#833ab4', borderRadius: 4, padding: 2 },
-  playBadge:         { position: 'absolute', bottom: 4, right: 4,
-                       backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: 2 },
-  empty:             { alignItems: 'center', paddingVertical: 60 },
-
-  overlayRoot:       { flex: 1, backgroundColor: '#0f0f23' },
-  overlayBack:       { flexDirection: 'row', alignItems: 'center',
-                       paddingTop: 52, paddingBottom: 10, paddingHorizontal: 14 },
+  modalContainer: { flex: 1, backgroundColor: '#0a0a0a' },
+  modalClose: { padding: 12, alignSelf: 'flex-end' },
 });
