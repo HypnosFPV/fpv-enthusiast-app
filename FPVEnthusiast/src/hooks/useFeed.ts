@@ -1,7 +1,6 @@
 // src/hooks/useFeed.ts
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 
 export interface FeedPost {
@@ -164,36 +163,36 @@ export function useFeed(currentUserId?: string) {
 
     if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://')) {
       try {
-        let base64String: string;
+        let arrayBuffer: ArrayBuffer;
         let ext: string;
         let mime: string;
 
         if (mediaType === 'video') {
+          // ── Video: read via fetch (no deprecated FileSystem API) ──────
           ext  = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'mp4';
           mime = ext === 'mov' ? 'video/quicktime' : 'video/mp4';
-          base64String = await FileSystem.readAsStringAsync(mediaUrl, {
-            encoding: 'base64' as any,
-          });
-          console.log('[useFeed] video filesystem base64 chars:', base64String.length);
+          const resp = await fetch(mediaUrl);
+          arrayBuffer = await resp.arrayBuffer();
+          console.log('[useFeed] video fetch byteLength:', arrayBuffer.byteLength);
+
         } else if (mediaBase64) {
-          base64String = mediaBase64;
+          // ── Image: use base64 from ImagePicker directly ───────────────
+          arrayBuffer = decode(mediaBase64);
           ext  = 'jpg';
           mime = 'image/jpeg';
-          console.log('[useFeed] using picker base64, chars:', base64String.length);
+          console.log('[useFeed] using picker base64, byteLength:', arrayBuffer.byteLength);
+
         } else {
+          // ── Image fallback: read via fetch ────────────────────────────
           ext  = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'jpg';
           mime = ext === 'png'  ? 'image/png'
                : ext === 'heic' ? 'image/heic'
                : ext === 'webp' ? 'image/webp'
                : 'image/jpeg';
-          base64String = await FileSystem.readAsStringAsync(mediaUrl, {
-            encoding: 'base64' as any,
-          });
-          console.log('[useFeed] filesystem fallback base64 chars:', base64String.length);
+          const resp = await fetch(mediaUrl);
+          arrayBuffer = await resp.arrayBuffer();
+          console.log('[useFeed] image fetch byteLength:', arrayBuffer.byteLength);
         }
-
-        const arrayBuffer = decode(base64String);
-        console.log('[useFeed] arrayBuffer byteLength:', arrayBuffer.byteLength);
 
         if (arrayBuffer.byteLength === 0) {
           console.error('[useFeed] empty buffer — aborting upload');
@@ -213,29 +212,32 @@ export function useFeed(currentUserId?: string) {
         const { data: urlData } = supabase.storage.from('posts').getPublicUrl(storagePath);
         finalUrl = urlData.publicUrl;
         console.log('[useFeed] upload success, publicUrl:', finalUrl);
+
       } catch (e: any) {
         console.error('[useFeed] upload exception:', e.message);
         return null;
       }
     }
 
-    // ── Upload thumbnail frame if provided ──────────────────────────────────
+    // ── Upload thumbnail frame if provided ──────────────────────────────
     let finalThumbUrl: string | null = null;
     if (thumbnailUrl && mediaType === 'video') {
       try {
-        const thumbB64 = await FileSystem.readAsStringAsync(thumbnailUrl, {
-          encoding: 'base64' as any,
-        });
-        const thumbBuf = decode(thumbB64);
+        const thumbResp = await fetch(thumbnailUrl);
+        const thumbBuf  = await thumbResp.arrayBuffer();
+
         if (thumbBuf.byteLength > 0) {
           const thumbPath = `${currentUserId}/${Date.now()}_thumb.jpg`;
           const { error: tErr } = await supabase.storage
             .from('posts')
             .upload(thumbPath, thumbBuf, { contentType: 'image/jpeg', upsert: false });
+
           if (!tErr) {
             const { data: tUrlData } = supabase.storage.from('posts').getPublicUrl(thumbPath);
             finalThumbUrl = tUrlData.publicUrl;
             console.log('[useFeed] thumbnail uploaded:', finalThumbUrl);
+          } else {
+            console.warn('[useFeed] thumbnail upload error:', tErr.message);
           }
         }
       } catch (e: any) {
@@ -255,7 +257,10 @@ export function useFeed(currentUserId?: string) {
       .select(SELECT)
       .single();
 
-    if (error) { console.error('[useFeed] createPost error:', JSON.stringify(error)); return null; }
+    if (error) {
+      console.error('[useFeed] createPost error:', JSON.stringify(error));
+      return null;
+    }
     if (!data) return null;
 
     const newPost: FeedPost = {
@@ -275,13 +280,19 @@ export function useFeed(currentUserId?: string) {
     caption,
   }: CreateSocialPostParams) => {
     if (!currentUserId) return null;
+
     const { data, error } = await supabase
       .from('posts')
       .insert({ user_id: currentUserId, social_url: socialUrl, platform, caption })
       .select(SELECT)
       .single();
-    if (error) { console.error('[useFeed] createSocialPost error:', JSON.stringify(error)); return null; }
+
+    if (error) {
+      console.error('[useFeed] createSocialPost error:', JSON.stringify(error));
+      return null;
+    }
     if (!data) return null;
+
     const newPost: FeedPost = {
       ...data,
       like_count:    data.likes_count    ?? 0,
