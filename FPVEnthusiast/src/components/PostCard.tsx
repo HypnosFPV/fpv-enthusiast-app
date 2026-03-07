@@ -7,7 +7,7 @@ import {
   Keyboard, PanResponder, ScrollView,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { Video, ResizeMode } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../services/supabase';
@@ -139,7 +139,7 @@ interface Props {
   autoplay?: boolean;
 }
 
-// ── Inline video player (expo-av) ─────────────────────────────────────────────
+// ── Inline video player (expo-video) ─────────────────────────────────────────
 function NativeVideoPlayer({
   uri,
   thumbnailUri,
@@ -147,30 +147,43 @@ function NativeVideoPlayer({
   uri: string;
   thumbnailUri?: string | null;
 }) {
-  const videoRef = useRef<any>(null);
-  const [playing, setPlaying]     = useState(false);
-  const [muted, setMuted]         = useState(false);
-  const [ready, setReady]         = useState(false);
-  const [errored, setErrored]     = useState(false);
+  const [playing, setPlaying]       = useState(false);
+  const [muted, setMuted]           = useState(false);
+  const [ready, setReady]           = useState(false);
+  const [errored, setErrored]       = useState(false);
   const [showPoster, setShowPoster] = useState(true);
 
-  const onStatus = useCallback((status: any) => {
-    if (status.isLoaded) {
-      setReady(true);
-      setPlaying(status.isPlaying);
-      if (status.isPlaying) setShowPoster(false);
-    }
-  }, []);
+  const player = useVideoPlayer({ uri }, p => {
+    p.loop  = true;
+    p.muted = false;
+  });
 
-  const togglePlay = useCallback(async () => {
-    if (!videoRef.current) return;
-    if (playing) {
-      await videoRef.current.pauseAsync();
-    } else {
-      await videoRef.current.playAsync();
-      setShowPoster(false);
-    }
-  }, [playing]);
+  useEffect(() => {
+    const sub = player.addListener('statusChange', ({ status }: { status: string }) => {
+      if (status === 'readyToPlay') setReady(true);
+      if (status === 'error')       { setErrored(true); setReady(true); }
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  useEffect(() => {
+    const sub = player.addListener('playingChange', ({ isPlaying }: { isPlaying: boolean }) => {
+      setPlaying(isPlaying);
+      if (isPlaying) setShowPoster(false);
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  const togglePlay = useCallback(() => {
+    if (playing) { player.pause(); }
+    else         { player.play(); setShowPoster(false); }
+  }, [playing, player]);
+
+  const toggleMute = useCallback(() => {
+    const next = !muted;
+    player.muted = next;
+    setMuted(next);
+  }, [muted, player]);
 
   if (errored) {
     return (
@@ -183,32 +196,20 @@ function NativeVideoPlayer({
 
   return (
     <View style={nvStyles.wrap}>
-      <Video
-        ref={videoRef}
-        source={{ uri }}
+      <VideoView
+        player={player}
         style={nvStyles.video}
-        resizeMode={ResizeMode.CONTAIN}
-        shouldPlay={false}
-        isLooping
-        isMuted={muted}
-        onPlaybackStatusUpdate={onStatus}
-        onError={() => { setReady(true); setErrored(true); }}
+        contentFit="contain"
+        nativeControls={false}
       />
-      {/* Manual poster overlay — shown until first play */}
       {showPoster && !!thumbnailUri && (
-        <Image
-          source={{ uri: thumbnailUri }}
-          style={nvStyles.poster}
-          resizeMode="cover"
-        />
+        <Image source={{ uri: thumbnailUri }} style={nvStyles.poster} resizeMode="cover" />
       )}
-      {/* Loading spinner */}
       {!ready && (
         <View style={nvStyles.overlay}>
           <ActivityIndicator color="#ff4500" size="large" />
         </View>
       )}
-      {/* Controls */}
       {ready && !errored && (
         <>
           <TouchableOpacity style={nvStyles.playOverlay} onPress={togglePlay} activeOpacity={0.85}>
@@ -218,7 +219,7 @@ function NativeVideoPlayer({
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity style={nvStyles.muteBtn} onPress={() => setMuted(m => !m)}>
+          <TouchableOpacity style={nvStyles.muteBtn} onPress={toggleMute}>
             <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
           </TouchableOpacity>
         </>
@@ -258,7 +259,6 @@ const nvStyles = StyleSheet.create({
   },
   errorText: { color: '#666', fontSize: 13, marginTop: 8 },
 });
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function PostCard(props: Props) {
@@ -358,7 +358,7 @@ export default function PostCard(props: Props) {
 
   const handleInstagramOpen = useCallback(function () {
     Alert.alert('Opening Instagram',
-      'Embedded playback is not supported. You\'ll be redirected to Instagram.\n\nCome back after viewing — this app is your one-stop FPV hub! ',
+      'Embedded playback is not supported. You\'ll be redirected to Instagram.\n\nCome back after viewing — this app is your one-stop FPV hub! 🚁',
       [{ text: 'Cancel', style: 'cancel' },
       { text: 'Open', onPress: function () { const u = post.social_url || post.media_url; if (u) Linking.openURL(u); } }]
     );
