@@ -32,9 +32,10 @@ interface Post {
   user_id: string;
   caption?: string;
   media_url?: string;
-  media_type?: string;
+  media_type?: string;   // 'video' | 'image' | 'social_embed' | null
   platform?: string;
-  social_url?: string; // ✅ FIX 1 — was link_url (interface already correct, kept clean)
+  // ✅ FIX A — removed social_url / link_url: neither column exists in DB.
+  //            Social embed URLs are stored directly in media_url.
   created_at: string;
   likes_count?: number;
   comments_count?: number;
@@ -47,6 +48,7 @@ function getYoutubeVideoId(url: string): string | null {
     /youtu\.be\/([^?&]+)/,
     /youtube\.com\/watch\?v=([^?&]+)/,
     /youtube\.com\/embed\/([^?&]+)/,
+    /youtube-nocookie\.com\/embed\/([^?&]+)/,  // ✅ FIX B — your DB stores nocookie embed URLs
     /youtube\.com\/shorts\/([^?&]+)/,
   ];
   for (const p of patterns) {
@@ -57,32 +59,37 @@ function getYoutubeVideoId(url: string): string | null {
 }
 
 function thumbnailUri(post: Post): string | null {
-  // ✅ FIX 2 — was post.link_url
-  if (post.social_url) {
-    const vid = getYoutubeVideoId(post.social_url);
+  if (post.media_url) {
+    // ✅ FIX C — check media_url for YouTube ID (social embed URLs live here, not social_url)
+    const vid = getYoutubeVideoId(post.media_url);
     if (vid) return `https://img.youtube.com/vi/${vid}/mqdefault.jpg`;
   }
+  // Fall through to image media_url
   if (post.media_url && /\.(jpg|jpeg|png|gif|webp)/i.test(post.media_url))
     return post.media_url;
   return null;
 }
 
 function toFeedPost(p: Post, profile: Profile): FeedPost {
+  // ✅ FIX D — when media_type is 'social_embed', the embed URL lives in media_url.
+  //            PostCard expects social_url for embed URLs and media_url for raw files.
+  //            Split them here so PostCard renders the right component.
+  const isSocialEmbed = p.media_type === 'social_embed';
   return {
     id: p.id,
     user_id: p.user_id,
     caption: p.caption ?? '',
-    media_url: p.media_url ?? null,
+    media_url:  isSocialEmbed ? null            : (p.media_url ?? null),
     media_type: p.media_type ?? null,
-    platform: p.platform ?? null,
-    social_url: p.social_url ?? null, // ✅ FIX 3 — was link_url: p.link_url
+    platform:   p.platform   ?? null,
+    social_url: isSocialEmbed ? (p.media_url ?? null) : null,
     created_at: p.created_at,
-    like_count: p.likes_count ?? 0,
+    like_count:    p.likes_count    ?? 0,
     comment_count: p.comments_count ?? 0,
     isLiked: false,
     users: {
-      id: profile.id,
-      username: profile.username,
+      id:         profile.id,
+      username:   profile.username,
       avatar_url: profile.avatar_url ?? null,
     },
   } as FeedPost;
@@ -139,8 +146,8 @@ export default function UserProfileScreen() {
 
       const { data: postData } = await supabase
         .from('posts')
-        // ✅ FIX 4 — was link_url in the SELECT string
-        .select('id, user_id, caption, media_url, media_type, platform, social_url, created_at, likes_count, comments_count')
+        // ✅ FIX E — removed social_url / link_url from SELECT (column doesn't exist in DB)
+        .select('id, user_id, caption, media_url, media_type, platform, created_at, likes_count, comments_count')
         .eq('user_id', prof.id)
         .order('created_at', { ascending: false });
 
@@ -152,8 +159,8 @@ export default function UserProfileScreen() {
   // ── grid cell ─────────────────────────────────────────────────────────────
   const renderGridCell = useCallback(({ item }: { item: Post }) => {
     const thumb = thumbnailUri(item);
-    // ✅ FIX 5 — was item.link_url (both occurrences)
-    const isYT  = !!item.social_url && !!getYoutubeVideoId(item.social_url ?? '');
+    // ✅ FIX F — check media_url for YouTube ID (not link_url / social_url)
+    const isYT  = !!item.media_url && !!getYoutubeVideoId(item.media_url);
     const isVid = item.media_type === 'video';
     return (
       <TouchableOpacity style={styles.cell} onPress={() => setSelectedPost(item)} activeOpacity={0.8}>
@@ -216,7 +223,7 @@ export default function UserProfileScreen() {
           )}
         </View>
 
-        {/* ── AVATAR ROW — avatar overlaps banner, follow button on right ── */}
+        {/* ── AVATAR ROW ── */}
         <View style={styles.avatarRow}>
           {profile.avatar_url ? (
             <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
@@ -226,7 +233,6 @@ export default function UserProfileScreen() {
             </View>
           )}
 
-          {/* follow button — only shown when viewing another user */}
           {!isOwnProfile && !checkingFollow && (
             <TouchableOpacity
               style={[styles.followBtn, isFollowing && styles.followingBtn]}
@@ -251,7 +257,7 @@ export default function UserProfileScreen() {
           {!!profile.bio && <Text style={styles.bioText}>{profile.bio}</Text>}
         </View>
 
-        {/* ── STATS — counts reflect live follow hook values ── */}
+        {/* ── STATS ── */}
         <View style={styles.statsRow}>
           <StatBox label="Posts"     value={posts.length} />
           <StatBox label="Followers" value={followersCount} />
@@ -352,17 +358,14 @@ const styles = StyleSheet.create({
   banner:            { width: '100%', height: 160 },
   bannerPlaceholder: { backgroundColor: '#1a1a2e' },
 
-  // avatar row: negative margin pulls avatar over banner bottom ONLY
   avatarRow:         { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
                        paddingHorizontal: 16, marginTop: -44 },
   avatar:            { width: 88, height: 88, borderRadius: 44,
                        borderWidth: 3, borderColor: '#0f0f23' },
   avatarPlaceholder: { backgroundColor: '#1e1e3a', alignItems: 'center', justifyContent: 'center' },
 
-  // follow button — sits right-aligned in the same row as the avatar
   followBtn:         { backgroundColor: '#7c3aed', borderRadius: 20,
-                       paddingHorizontal: 22, paddingVertical: 9,
-                       marginBottom: 4 /* aligns with avatar baseline */ },
+                       paddingHorizontal: 22, paddingVertical: 9, marginBottom: 4 },
   followingBtn:      { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#7c3aed' },
   followBtnText:     { color: '#fff', fontSize: 14, fontWeight: '700' },
   followingBtnText:  { color: '#7c3aed' },
