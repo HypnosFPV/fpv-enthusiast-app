@@ -1,6 +1,6 @@
 // app/(tabs)/profile.tsx
 import React, {
-  useState, useEffect, useCallback, useMemo,
+  useState, useEffect, useCallback, useMemo, useRef,
 } from 'react';
 import {
   View, Text, Image, StyleSheet, ScrollView, TouchableOpacity,
@@ -47,12 +47,21 @@ interface Build {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// ✅ FIX: only allow remote http(s) URLs through to PostCard — never local file:// paths
+function isRemoteUrl(url?: string | null): url is string {
+  return typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'));
+}
+
 function toFeedPost(p: Post): FeedPost {
   return {
     ...p,
     like_count:    p.like_count    ?? p.likes_count    ?? 0,
     comment_count: p.comment_count ?? p.comments_count ?? 0,
     isLiked: false,
+    // ✅ FIX: strip local file:// URIs — PostCard calls Linking.openURL which crashes on them
+    media_url:   isRemoteUrl(p.media_url)   ? p.media_url   : null,
+    social_url:  isRemoteUrl(p.social_url)  ? p.social_url  : null,
+    embed_url:   isRemoteUrl(p.embed_url)   ? p.embed_url   : null,
     users: p.users
       ? { id: p.users.id ?? null, username: p.users.username ?? null, avatar_url: p.users.avatar_url ?? null }
       : null,
@@ -60,15 +69,19 @@ function toFeedPost(p: Post): FeedPost {
 }
 
 function thumbnailUri(post: Post): string | null {
-  if (post.thumbnail_url) return post.thumbnail_url;
+  if (post.thumbnail_url && isRemoteUrl(post.thumbnail_url)) return post.thumbnail_url;
   const candidates = [post.media_url, post.social_url, post.embed_url];
   for (const url of candidates) {
-    if (!url) continue;
+    if (!url || !isRemoteUrl(url)) continue; // ✅ FIX: skip file:// candidates
     const m = url.match(/(?:youtube(?:-nocookie)?\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
     if (m?.[1]) return `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg`;
   }
-  if (post.media_url && !post.media_url.match(/\.(mp4|mov|webm)(\?|$)/i) && !post.media_url.match(/youtu/i))
-    return post.media_url;
+  // ✅ FIX: only return media_url if it's a remote image URL (not video, not local)
+  if (
+    isRemoteUrl(post.media_url) &&
+    !post.media_url.match(/\.(mp4|mov|webm)(\?|$)/i) &&
+    !post.media_url.match(/youtu/i)
+  ) return post.media_url;
   return null;
 }
 
@@ -144,6 +157,9 @@ export default function ProfileScreen() {
   const [builds,      setBuilds]      = useState<Build[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
+
+  // ✅ FIX: cache loaded tabs so switching tabs doesn't re-fetch and show spinner
+  const loadedTabsRef = useRef<Set<TabKey>>(new Set());
 
   // ── Modal visibility ──────────────────────────────────────────────────────
   const [showSettings,    setShowSettings]    = useState(false);
@@ -222,28 +238,53 @@ export default function ProfileScreen() {
     setBuilds((data as Build[]) ?? []);
   }, [user?.id]);
 
-  const loadTabData = useCallback(async (tab: TabKey) => {
+  // ✅ FIX: loadTabData now caches results — no spinner on tab revisit
+  const loadTabData = useCallback(async (tab: TabKey, force = false) => {
+    if (!force && loadedTabsRef.current.has(tab)) return;
     setDataLoading(true);
     try {
-      if (tab === 'posts' || tab === 'media') await loadMyPosts();
-      else if (tab === 'feed')   await loadFeed();
-      else if (tab === 'builds') await loadBuilds();
+      if (tab === 'posts' || tab === 'media') {
+        await loadMyPosts();
+        // posts and media share the same underlying data
+        loadedTabsRef.current.add('posts');
+        loadedTabsRef.current.add('media');
+      } else if (tab === 'feed') {
+        await loadFeed();
+        loadedTabsRef.current.add('feed');
+      } else if (tab === 'builds') {
+        await loadBuilds();
+        loadedTabsRef.current.add('builds');
+      }
     } finally { setDataLoading(false); }
   }, [loadMyPosts, loadFeed, loadBuilds]);
 
   useEffect(() => { loadTabData(activeTab); }, [activeTab]);
-  useEffect(() => { if (activeTab === 'feed') loadFeed(); }, [mutedIds]);
 
+  // ✅ When muted list changes, re-fetch feed (bypass cache intentionally)
+  useEffect(() => {
+    if (activeTab === 'feed') {
+      loadFeed().then(() => {
+        loadedTabsRef.current.add('feed');
+      });
+    }
+  }, [mutedIds]);
+
+  // ✅ FIX: onRefresh clears cache so all tabs reload fresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchProfile(), loadTabData(activeTab), fetchMutedUsers()]);
+    loadedTabsRef.current.clear();
+    await Promise.all([fetchProfile(), loadTabData(activeTab, true), fetchMutedUsers()]);
     setRefreshing(false);
   }, [fetchProfile, loadTabData, activeTab, fetchMutedUsers]);
 
+  // ✅ FIX: also filter out file:// URIs from media tab
   const mediaPosts = useMemo(
-    () => myPosts.filter(p =>
-      p.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(p.media_url ?? '')
-    ),
+    () => myPosts.filter(p => {
+      const url = p.media_url ?? '';
+      const isVideo = p.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(url);
+      const isRemote = isRemoteUrl(p.media_url);
+      return isVideo && isRemote;
+    }),
     [myPosts],
   );
 
@@ -278,7 +319,9 @@ export default function ProfileScreen() {
     setBuildName(''); setBuildFrame(''); setBuildMotors('');
     setBuildFC(''); setBuildVTX(''); setBuildCamera(''); setBuildNotes('');
     setShowCreateBuild(false);
+    loadedTabsRef.current.delete('builds'); // ✅ invalidate cache for builds
     await loadBuilds();
+    loadedTabsRef.current.add('builds');
   }, [user?.id, buildName, buildFrame, buildMotors, buildFC, buildVTX, buildCamera, buildNotes, loadBuilds]);
 
   const deleteBuild = useCallback((id: string) => {
@@ -403,17 +446,6 @@ export default function ProfileScreen() {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
 
-      {/*
-       * LAYOUT STRUCTURE (fixes vertical stacking of tabs):
-       *   ┌─────────────────────────────┐
-       *   │  ScrollView (header only)   │  ← banner + avatar + bio scroll freely
-       *   ├─────────────────────────────┤
-       *   │  Tab Bar  (fixed, row)      │  ← always horizontal, never inside sticky
-       *   ├─────────────────────────────┤
-       *   │  ScrollView (tab content)   │  ← posts/media/feed/builds
-       *   └─────────────────────────────┘
-       */}
-
       {/* ── HEADER SCROLL AREA ──────────────────────────────────────────── */}
       <ScrollView
         style={styles.headerScroll}
@@ -502,15 +534,18 @@ export default function ProfileScreen() {
         ) : (
           <>
             {activeTab === 'posts' && (
-              myPosts.length === 0 ? <EmptyState icon="camera-outline" text="No posts yet" />
+              myPosts.length === 0
+                ? <EmptyState icon="camera-outline" text="No posts yet" />
                 : <FlatList data={myPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />
             )}
             {activeTab === 'media' && (
-              mediaPosts.length === 0 ? <EmptyState icon="videocam-outline" text="No videos yet" />
+              mediaPosts.length === 0
+                ? <EmptyState icon="videocam-outline" text="No videos yet" />
                 : <FlatList data={mediaPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />
             )}
             {activeTab === 'feed' && (
-              feedPosts.length === 0 ? <EmptyState icon="newspaper-outline" text="Nothing in the feed yet" />
+              feedPosts.length === 0
+                ? <EmptyState icon="newspaper-outline" text="Nothing in the feed yet" />
                 : <View style={styles.feedList}>{feedPosts.map(p => (
                     <PostCard key={p.id} post={toFeedPost(p)} isVisible={false} shouldAutoplay={false}
                       currentUserId={user?.id ?? undefined} onLike={() => {}}
@@ -519,7 +554,8 @@ export default function ProfileScreen() {
             )}
             {activeTab === 'builds' && (
               <View>
-                {builds.length === 0 ? <EmptyState icon="construct-outline" text="No builds logged yet" />
+                {builds.length === 0
+                  ? <EmptyState icon="construct-outline" text="No builds logged yet" />
                   : <FlatList data={builds} keyExtractor={i => i.id} renderItem={renderBuild} scrollEnabled={false} contentContainerStyle={{ padding: 12 }} />
                 }
                 <TouchableOpacity style={styles.fab} onPress={() => setShowCreateBuild(true)}>
@@ -740,11 +776,11 @@ export default function ProfileScreen() {
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {([
-              { label: 'YouTube', icon: 'logo-youtube', val: editYoutube, set: setEditYoutube },
-              { label: 'Instagram', icon: 'logo-instagram', val: editInstagram, set: setEditInstagram },
-              { label: 'Twitter/X', icon: 'logo-twitter', val: editTwitter, set: setEditTwitter },
-              { label: 'TikTok', icon: 'logo-tiktok', val: editTiktok, set: setEditTiktok },
-              { label: 'Website', icon: 'globe-outline', val: editWebsite, set: setEditWebsite },
+              { label: 'YouTube',    icon: 'logo-youtube',   val: editYoutube,   set: setEditYoutube   },
+              { label: 'Instagram',  icon: 'logo-instagram', val: editInstagram, set: setEditInstagram },
+              { label: 'Twitter/X',  icon: 'logo-twitter',   val: editTwitter,   set: setEditTwitter   },
+              { label: 'TikTok',     icon: 'logo-tiktok',    val: editTiktok,    set: setEditTiktok    },
+              { label: 'Website',    icon: 'globe-outline',  val: editWebsite,   set: setEditWebsite   },
             ] as { label: string; icon: string; val: string; set: (v: string) => void }[]).map(({ label, icon, val, set }) => (
               <View key={label}>
                 <Text style={styles.inputLabel}>{label}</Text>
@@ -770,12 +806,12 @@ export default function ProfileScreen() {
           </View>
           <ScrollView contentContainerStyle={styles.modalBody}>
             {([
-              { label: 'Build Name *', val: buildName, set: setBuildName, ph: 'e.g. Race Day 5"' },
-              { label: 'Frame', val: buildFrame, set: setBuildFrame, ph: 'e.g. ImpulseRC Apex' },
-              { label: 'Motors', val: buildMotors, set: setBuildMotors, ph: 'e.g. iFlight 2306 2450kv' },
-              { label: 'FC', val: buildFC, set: setBuildFC, ph: 'e.g. Betaflight F7' },
-              { label: 'VTX', val: buildVTX, set: setBuildVTX, ph: 'e.g. Rush Tank Ultimate' },
-              { label: 'Camera', val: buildCamera, set: setBuildCamera, ph: 'e.g. Caddx Ratel 2' },
+              { label: 'Build Name *', val: buildName,   set: setBuildName,   ph: 'e.g. Race Day 5"'        },
+              { label: 'Frame',        val: buildFrame,  set: setBuildFrame,  ph: 'e.g. ImpulseRC Apex'     },
+              { label: 'Motors',       val: buildMotors, set: setBuildMotors, ph: 'e.g. iFlight 2306 2450kv' },
+              { label: 'FC',           val: buildFC,     set: setBuildFC,     ph: 'e.g. Betaflight F7'       },
+              { label: 'VTX',          val: buildVTX,    set: setBuildVTX,    ph: 'e.g. Rush Tank Ultimate'  },
+              { label: 'Camera',       val: buildCamera, set: setBuildCamera, ph: 'e.g. Caddx Ratel 2'       },
             ] as { label: string; val: string; set: (v: string) => void; ph: string }[]).map(({ label, val, set, ph }) => (
               <View key={label}>
                 <Text style={styles.inputLabel}>{label}</Text>
@@ -803,17 +839,14 @@ const styles = StyleSheet.create({
   emptyState:    { alignItems: 'center', paddingTop: 60, paddingBottom: 40 },
   emptyText:     { color: '#444', fontSize: 14, marginTop: 12 },
 
-  // Two-section scroll layout
-  headerScroll:  { flexGrow: 0, flexShrink: 0 },   // shrinks to content height
-  contentScroll: { flex: 1 },                        // fills remaining space
+  headerScroll:  { flexGrow: 0, flexShrink: 0 },
+  contentScroll: { flex: 1 },
 
-  // Banner
   bannerWrap:        { width: '100%', height: 200, overflow: 'hidden', backgroundColor: '#111' },
   banner:            { width: '100%', height: 200 },
   bannerPlaceholder: { justifyContent: 'center', alignItems: 'center' },
   bannerHint:        { color: '#444', fontSize: 12, marginTop: 6 },
 
-  // Header row
   headerRow:         { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: -20, marginBottom: 10 },
   avatarWrap:        { position: 'relative' },
   avatar:            { width: 84, height: 84, borderRadius: 42, borderWidth: 3, borderColor: '#0a0a1a' },
@@ -836,9 +869,8 @@ const styles = StyleSheet.create({
   socialRow:  { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 8 },
   socialChip: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1e1e3a', justifyContent: 'center', alignItems: 'center' },
 
-  // ── Tab bar — lives OUTSIDE ScrollView, always a proper horizontal row ────
   tabBar: {
-    flexDirection: 'row',       // ← THE fix: this View is never inside sticky
+    flexDirection: 'row',
     width: W,
     height: TAB_BAR_H,
     backgroundColor: '#0d0d1f',
@@ -848,7 +880,7 @@ const styles = StyleSheet.create({
   },
   tabItem: {
     flex: 1,
-    flexDirection: 'row',       // icon + label side-by-side
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
@@ -859,17 +891,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#00d4ff',
     backgroundColor: 'rgba(0,212,255,0.06)',
   },
-  tabLabel: {
-    color: '#555',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  tabLabelActive: {
-    color: '#00d4ff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  // ─────────────────────────────────────────────────────────────────────────
+  tabLabel:       { color: '#555', fontSize: 11, fontWeight: '600' },
+  tabLabelActive: { color: '#00d4ff', fontSize: 11, fontWeight: '700' },
 
   feedList: { paddingHorizontal: 12 },
 
@@ -928,7 +951,6 @@ const styles = StyleSheet.create({
   signOutBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: '#3a1e1e', backgroundColor: '#1a0a0a' },
   signOutText: { color: '#e74c3c', fontWeight: '600', fontSize: 14 },
 
-  // MultiGP
   mgpConnectedCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a2e', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: '#ff4500' },
   mgpChapterName:   { color: '#fff', fontWeight: '700', fontSize: 16 },
   mgpChapterId:     { color: '#888', fontSize: 12, marginTop: 2 },
