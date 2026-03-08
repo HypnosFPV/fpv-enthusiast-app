@@ -143,18 +143,25 @@ interface Props {
 }
 
 // ── Inline video player (expo-video) ──────────────────────────────────────────
+// onDoubleTap: called when user double-taps the video area (for like overlay)
 function NativeVideoPlayer({
   uri,
   thumbnailUri,
+  onDoubleTap,
 }: {
   uri: string;
   thumbnailUri?: string | null;
+  onDoubleTap?: () => void;
 }) {
   const [playing, setPlaying]       = useState(false);
   const [muted, setMuted]           = useState(false);
   const [ready, setReady]           = useState(false);
   const [errored, setErrored]       = useState(false);
   const [showPoster, setShowPoster] = useState(true);
+
+  // Double-tap detection inside the video player
+  const lastTapNV = useRef<number>(0);
+  const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const player = useVideoPlayer({ uri }, p => {
     p.loop  = true;
@@ -188,6 +195,27 @@ function NativeVideoPlayer({
     setMuted(next);
   }, [muted, player]);
 
+  // Timer-based tap: single tap → play/pause, double tap → like overlay
+  const handleVideoTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapNV.current < DOUBLE_TAP_DELAY) {
+      // Double tap detected
+      if (singleTapTimer.current) {
+        clearTimeout(singleTapTimer.current);
+        singleTapTimer.current = null;
+      }
+      onDoubleTap?.();
+      lastTapNV.current = 0;
+    } else {
+      // First tap — wait to see if double tap follows
+      lastTapNV.current = now;
+      singleTapTimer.current = setTimeout(() => {
+        togglePlay();
+        singleTapTimer.current = null;
+      }, DOUBLE_TAP_DELAY + 30);
+    }
+  }, [togglePlay, onDoubleTap]);
+
   if (errored) {
     return (
       <View style={nvStyles.wrap}>
@@ -215,7 +243,8 @@ function NativeVideoPlayer({
       )}
       {ready && !errored && (
         <>
-          <TouchableOpacity style={nvStyles.playOverlay} onPress={togglePlay} activeOpacity={0.85}>
+          {/* Full-area tap zone handles single (play/pause) and double (like) */}
+          <TouchableOpacity style={nvStyles.playOverlay} onPress={handleVideoTap} activeOpacity={0.85}>
             {!playing && (
               <View style={nvStyles.playBtn}>
                 <Ionicons name="play" size={38} color="#fff" />
@@ -292,93 +321,99 @@ export default function PostCard(props: Props) {
   const [editCaptionText, setEditCaptionText] = useState(post.caption || '');
   const [commentLikes, setCommentLikes] = useState<Record<string, CommentLikeState>>({});
   const [zoomUri, setZoomUri] = useState<string | null>(null);
-  // ── delete in-flight ──────────────────────────────────────────────────────
   const [deleting, setDeleting] = useState(false);
 
   // ── like animation state ─────────────────────────────────────────────────
-  // Optimistic local state so the heart fills instantly
   const [localLiked, setLocalLiked] = useState(post.isLiked ?? false);
   const [localLikeCount, setLocalLikeCount] = useState(
     post.like_count ?? post.likes_count ?? post.likeCount ?? 0
   );
-  // Sync when parent updates the post prop
-  useEffect(() => {
-    setLocalLiked(post.isLiked ?? false);
-  }, [post.isLiked]);
+  useEffect(() => { setLocalLiked(post.isLiked ?? false); }, [post.isLiked]);
   useEffect(() => {
     setLocalLikeCount(post.like_count ?? post.likes_count ?? post.likeCount ?? 0);
   }, [post.like_count, post.likes_count, post.likeCount]);
 
   // Animated values
-  const likeScaleAnim  = useRef(new Animated.Value(1)).current;   // heart button bounce
-  const overlayOpacity = useRef(new Animated.Value(0)).current;   // big overlay heart opacity
-  const overlayScale   = useRef(new Animated.Value(0.3)).current; // big overlay heart scale
-  const lastTapRef     = useRef<number>(0);                       // double-tap tracker
+  const likeScaleAnim  = useRef(new Animated.Value(1)).current;
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const overlayScale   = useRef(new Animated.Value(0.3)).current;
 
-  // ── fire the heart bounce (used on button tap + double-tap) ─────────────
+  // ── double-tap timing ────────────────────────────────────────────────────
+  // lastTapRef: timestamp of last tap on media area
+  // singleTapTimerRef: fires the "single tap" action if no second tap follows
+  const lastTapRef        = useRef<number>(0);
+  const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── heart bounce (button tap + double-tap) ───────────────────────────────
   const runHeartBounce = useCallback(() => {
     likeScaleAnim.setValue(0.7);
     Animated.spring(likeScaleAnim, {
-      toValue: 1,
-      friction: 3,
-      tension: 200,
-      useNativeDriver: true,
+      toValue: 1, friction: 3, tension: 200, useNativeDriver: true,
     }).start();
   }, [likeScaleAnim]);
 
-  // ── fire the big overlay heart (double-tap) ──────────────────────────────
+  // ── big overlay heart (double-tap) ───────────────────────────────────────
   const runOverlayHeart = useCallback(() => {
     overlayOpacity.setValue(1);
     overlayScale.setValue(0.3);
     Animated.parallel([
       Animated.spring(overlayScale, {
-        toValue: 1,
-        friction: 4,
-        tension: 180,
-        useNativeDriver: true,
+        toValue: 1, friction: 4, tension: 180, useNativeDriver: true,
       }),
       Animated.sequence([
         Animated.delay(600),
         Animated.timing(overlayOpacity, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
+          toValue: 0, duration: 400, useNativeDriver: true,
         }),
       ]),
     ]).start();
   }, [overlayOpacity, overlayScale]);
 
+  // ── core double-tap like action ──────────────────────────────────────────
+  const fireLikeFromDoubleTap = useCallback(() => {
+    if (!localLiked && onLike) {
+      setLocalLiked(true);
+      setLocalLikeCount(prev => prev + 1);
+      onLike(post.id, false);
+    }
+    runOverlayHeart();
+    runHeartBounce();
+  }, [localLiked, onLike, post.id, runOverlayHeart, runHeartBounce]);
+
+  // ── timer-based tap handler ───────────────────────────────────────────────
+  // onSingleTap: action to fire after DOUBLE_TAP_DELAY if no second tap follows
+  // (e.g. open zoom for images, open Instagram for IG cards)
+  const handleMediaTap = useCallback((onSingleTap?: () => void) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
+      // ── Double tap ──
+      if (singleTapTimerRef.current) {
+        clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+      fireLikeFromDoubleTap();
+      lastTapRef.current = 0; // reset so third tap doesn't re-trigger
+    } else {
+      // ── First tap — start timer ──
+      lastTapRef.current = now;
+      if (onSingleTap) {
+        singleTapTimerRef.current = setTimeout(() => {
+          singleTapTimerRef.current = null;
+          onSingleTap();
+        }, DOUBLE_TAP_DELAY + 30);
+      }
+    }
+  }, [fireLikeFromDoubleTap]);
+
   // ── like button press ────────────────────────────────────────────────────
   const handleLikePress = useCallback(() => {
     if (!onLike) return;
     const nowLiked = !localLiked;
-    // Optimistic update
     setLocalLiked(nowLiked);
     setLocalLikeCount(prev => nowLiked ? prev + 1 : Math.max(0, prev - 1));
-    // Animate the heart
     runHeartBounce();
-    // Call parent
     onLike(post.id, localLiked);
   }, [onLike, localLiked, post.id, runHeartBounce]);
-
-  // ── double-tap on media to like ──────────────────────────────────────────
-  const handleMediaDoubleTap = useCallback(() => {
-    const now = Date.now();
-    if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
-      // Double tap detected!
-      if (!localLiked && onLike) {
-        // Only like if not already liked (Instagram behaviour)
-        setLocalLiked(true);
-        setLocalLikeCount(prev => prev + 1);
-        onLike(post.id, false);
-      }
-      runOverlayHeart();
-      runHeartBounce();
-      lastTapRef.current = 0; // reset so a third tap doesn't re-trigger
-    } else {
-      lastTapRef.current = now;
-    }
-  }, [localLiked, onLike, post.id, runOverlayHeart, runHeartBounce]);
 
   const isOwner = !!currentUserId && currentUserId === post.user_id;
   const insets = useSafeAreaInsets();
@@ -387,9 +422,7 @@ export default function PostCard(props: Props) {
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, g) => g.dy > 5,
-      onPanResponderRelease: (_, g) => {
-        if (g.dy > 50) setShowComments(false);
-      },
+      onPanResponderRelease: (_, g) => { if (g.dy > 50) setShowComments(false); },
     })
   ).current;
 
@@ -410,12 +443,8 @@ export default function PostCard(props: Props) {
 
   useFocusEffect(useCallback(function () {
     const canPlay = props.shouldAutoplay ?? props.autoplay ?? true;
-    if (resolvedPlatform === 'youtube' && isYtReady && !ytError && canPlay) {
-      inject('playVideo');
-    }
-    return function () {
-      if (resolvedPlatform === 'youtube') inject('pauseVideo');
-    };
+    if (resolvedPlatform === 'youtube' && isYtReady && !ytError && canPlay) inject('playVideo');
+    return function () { if (resolvedPlatform === 'youtube') inject('pauseVideo'); };
   }, [resolvedPlatform, isYtReady, ytError, inject, props.shouldAutoplay, props.autoplay]));
 
   const shouldAutoplayRef = useRef(props.shouldAutoplay ?? props.autoplay ?? true);
@@ -480,9 +509,7 @@ export default function PostCard(props: Props) {
       setTimeout(function () { flatListRef.current?.scrollToEnd({ animated: false }); }, 150);
     } catch (err: any) {
       console.error('[PostCard] fetchComments:', err.message);
-    } finally {
-      setCommentsLoading(false);
-    }
+    } finally { setCommentsLoading(false); }
   }, [post.id, fetchCommentLikes]);
 
   const handleOpenComments = useCallback(function () {
@@ -554,7 +581,6 @@ export default function PostCard(props: Props) {
     } catch (_) { setCommentLikes(function (p) { return { ...p, [id]: cur }; }); }
   }, [currentUserId, commentLikes]);
 
-  // ── delete post ───────────────────────────────────────────────────────────
   const handleDeletePost = useCallback(function () {
     Alert.alert('Delete Post', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
@@ -564,14 +590,10 @@ export default function PostCard(props: Props) {
           setDeleting(true);
           try {
             const result = onDelete ? await onDelete(post.id) : undefined;
-            if (result === false) {
-              Alert.alert('Error', 'Could not delete post. Please try again.');
-            }
+            if (result === false) Alert.alert('Error', 'Could not delete post. Please try again.');
           } catch (e: any) {
             Alert.alert('Error', e?.message ?? 'Could not delete post.');
-          } finally {
-            setDeleting(false);
-          }
+          } finally { setDeleting(false); }
         }
       },
     ]);
@@ -585,17 +607,22 @@ export default function PostCard(props: Props) {
   }, [editCaptionText, post.id, currentUserId, onCaptionUpdate]);
 
   // ── Media renderer ────────────────────────────────────────────────────────
-  // Wraps tappable media in a double-tap detector.
-  // The overlay heart lives here too so it shows on top of any media type.
-  function wrapWithDoubleTap(child: React.ReactNode) {
+  //
+  // KEY FIX: wrapWithDoubleTap now takes an optional onSingleTap callback.
+  // There is NO inner TouchableOpacity competing for the touch — the outer
+  // wrapper is the ONLY touch handler. Single-tap fires after DOUBLE_TAP_DELAY
+  // if no second tap follows; double-tap fires the like overlay immediately.
+  //
+  function wrapWithDoubleTap(child: React.ReactNode, onSingleTap?: () => void) {
     return (
       <TouchableOpacity
         activeOpacity={1}
-        onPress={handleMediaDoubleTap}
-        style={{ position: 'relative' }}
+        onPress={function () { handleMediaTap(onSingleTap); }}
+        style={styles.mediaTapWrapper}
       >
         {child}
-        {/* Big overlay heart shown on double-tap */}
+        {/* Big overlay heart — absolutely positioned, pointerEvents none so it
+            never interferes with taps */}
         <Animated.View
           pointerEvents="none"
           style={[
@@ -610,21 +637,46 @@ export default function PostCard(props: Props) {
   }
 
   function renderMedia() {
+    // ── YouTube embed (WebView) ──
+    // WebView captures ALL native touches — we cannot intercept them from RN.
+    // Double-tap is not supported on the live player; it IS supported on the
+    // error-fallback thumbnail below.
     if (resolvedPlatform === 'youtube' && videoId) {
       if (ytError) {
+        // Error thumbnail — full double-tap support, single tap opens YouTube
         return wrapWithDoubleTap(
-          <TouchableOpacity style={styles.thumbContainer} onPress={function () { openYouTubeApp(videoId); }} activeOpacity={0.9}>
-            {thumbnail ? <Image source={{ uri: thumbnail }} style={styles.thumb} resizeMode="cover" /> : <View style={[styles.thumb, styles.thumbDark]} />}
-            <View style={styles.ytErrorOverlay}><Ionicons name="logo-youtube" size={40} color="#FF0000" /><Text style={styles.ytOpenText}>Open in YouTube</Text></View>
-          </TouchableOpacity>
+          <View style={styles.thumbContainer}>
+            {thumbnail
+              ? <Image source={{ uri: thumbnail }} style={styles.thumb} resizeMode="cover" />
+              : <View style={[styles.thumb, styles.thumbDark]} />}
+            <View style={styles.ytErrorOverlay}>
+              <Ionicons name="logo-youtube" size={40} color="#FF0000" />
+              <Text style={styles.ytOpenText}>Open in YouTube</Text>
+            </View>
+          </View>,
+          function () { openYouTubeApp(videoId); }
         );
       }
-      return wrapWithDoubleTap(
+      // Live player — WebView eats touches; we just render it normally
+      return (
         <View style={styles.videoContainer}>
-          <WebView ref={webViewRef} source={{ html: buildYouTubeHtml(videoId), baseUrl: 'https://www.youtube-nocookie.com' }}
-            style={styles.webView} onMessage={handleMessage} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false}
-            userAgent={MOBILE_UA} javaScriptEnabled domStorageEnabled allowsFullscreenVideo={false} scrollEnabled={false} />
-          <TouchableOpacity style={styles.muteBtn} onPress={function () { inject(isMuted ? 'unMute' : 'mute'); setIsMuted(function (p) { return !p; }); }}>
+          <WebView
+            ref={webViewRef}
+            source={{ html: buildYouTubeHtml(videoId), baseUrl: 'https://www.youtube-nocookie.com' }}
+            style={styles.webView}
+            onMessage={handleMessage}
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            userAgent={MOBILE_UA}
+            javaScriptEnabled
+            domStorageEnabled
+            allowsFullscreenVideo={false}
+            scrollEnabled={false}
+          />
+          <TouchableOpacity
+            style={styles.muteBtn}
+            onPress={function () { inject(isMuted ? 'unMute' : 'mute'); setIsMuted(function (p) { return !p; }); }}
+          >
             <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={18} color="#fff" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.openYtBtn} onPress={function () { openYouTubeApp(videoId); }}>
@@ -633,49 +685,95 @@ export default function PostCard(props: Props) {
         </View>
       );
     }
+
+    // ── YouTube link only (no video ID) ──
     if (resolvedPlatform === 'youtube') {
       return wrapWithDoubleTap(
-        <TouchableOpacity style={styles.thumbContainer} onPress={function () { if (post.media_url) Linking.openURL(post.media_url); }} activeOpacity={0.9}>
-          <View style={[styles.thumb, styles.thumbDark]}><Ionicons name="logo-youtube" size={48} color="#FF0000" /><Text style={styles.ytOpenText}>YouTube Video</Text></View>
-        </TouchableOpacity>
+        <View style={[styles.thumbContainer, styles.thumbDark]}>
+          <Ionicons name="logo-youtube" size={48} color="#FF0000" />
+          <Text style={styles.ytOpenText}>YouTube Video</Text>
+        </View>,
+        function () { if (post.media_url) Linking.openURL(post.media_url); }
       );
     }
+
+    // ── Instagram ──
+    // Inner content is a plain View (no inner TouchableOpacity) so the
+    // outer wrapWithDoubleTap is the sole touch handler.
     if (resolvedPlatform === 'instagram') {
       return wrapWithDoubleTap(
-        <TouchableOpacity style={styles.igContainer} onPress={handleInstagramOpen} activeOpacity={0.85}>
-          <View style={styles.igInner}><Ionicons name="logo-instagram" size={48} color="#fff" /><Text style={styles.igLabel}>Instagram Post</Text><Text style={styles.igSub}>Tap to open</Text></View>
-          <View style={styles.platformBadge}><Ionicons name="logo-instagram" size={16} color="#fff" /></View>
-        </TouchableOpacity>
+        <View style={styles.igContainer}>
+          <View style={styles.igInner}>
+            <Ionicons name="logo-instagram" size={48} color="#fff" />
+            <Text style={styles.igLabel}>Instagram Post</Text>
+            <Text style={styles.igSub}>Tap to open</Text>
+          </View>
+          <View style={styles.platformBadge}>
+            <Ionicons name="logo-instagram" size={16} color="#fff" />
+          </View>
+        </View>,
+        handleInstagramOpen
       );
     }
+
+    // ── TikTok / Facebook / Twitter ──
     if (['tiktok', 'facebook', 'twitter'].includes(resolvedPlatform)) {
       const icon: any = resolvedPlatform === 'tiktok' ? 'musical-notes' : resolvedPlatform === 'facebook' ? 'logo-facebook' : 'logo-twitter';
       const label = resolvedPlatform === 'tiktok' ? 'TikTok Video' : resolvedPlatform === 'facebook' ? 'Facebook Post' : 'Twitter/X Post';
       return wrapWithDoubleTap(
-        <TouchableOpacity style={styles.socialContainer} onPress={function () { const u = post.social_url || post.media_url; if (u) Linking.openURL(u); }} activeOpacity={0.85}>
-          <Ionicons name={icon} size={40} color="#fff" /><Text style={styles.socialLabel}>{label}</Text><Text style={styles.socialSub}>Tap to open</Text>
-        </TouchableOpacity>
+        <View style={styles.socialContainer}>
+          <Ionicons name={icon} size={40} color="#fff" />
+          <Text style={styles.socialLabel}>{label}</Text>
+          <Text style={styles.socialSub}>Tap to open</Text>
+        </View>,
+        function () { const u = post.social_url || post.media_url; if (u) Linking.openURL(u); }
       );
     }
+
+    // ── Generic social embed ──
     if (post.media_type === 'social_embed') {
       const u = post.media_url || post.embed_url;
       return wrapWithDoubleTap(
-        <TouchableOpacity style={styles.socialContainer} onPress={function () { if (u) Linking.openURL(u); }} activeOpacity={0.85}>
-          <Ionicons name="link-outline" size={40} color="#fff" /><Text style={styles.socialLabel}>External Link</Text>
+        <View style={styles.socialContainer}>
+          <Ionicons name="link-outline" size={40} color="#fff" />
+          <Text style={styles.socialLabel}>External Link</Text>
           {u ? <Text style={styles.socialSub} numberOfLines={1}>{u}</Text> : null}
-        </TouchableOpacity>
+        </View>,
+        function () { if (u) Linking.openURL(u); }
       );
     }
+
+    // ── Uploaded media ──
     if (post.media_url) {
       if (post.media_type === 'video') {
-        return wrapWithDoubleTap(<NativeVideoPlayer uri={post.media_url} thumbnailUri={post.thumbnail_url} />);
+        // NativeVideoPlayer handles double-tap internally and calls fireLikeFromDoubleTap
+        return (
+          <View style={{ position: 'relative' }}>
+            <NativeVideoPlayer
+              uri={post.media_url}
+              thumbnailUri={post.thumbnail_url}
+              onDoubleTap={fireLikeFromDoubleTap}
+            />
+            {/* Overlay heart is rendered here too so it shows over the video */}
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.overlayHeartContainer,
+                { opacity: overlayOpacity, transform: [{ scale: overlayScale }] },
+              ]}
+            >
+              <Ionicons name="heart" size={100} color="rgba(255,255,255,0.9)" />
+            </Animated.View>
+          </View>
+        );
       }
+      // Plain image — NO inner TouchableOpacity; single tap opens zoom after delay
       return wrapWithDoubleTap(
-        <TouchableOpacity activeOpacity={0.92} onPress={function () { setZoomUri(post.media_url!); }}>
-          <Image source={{ uri: post.media_url }} style={styles.postImage} resizeMode="cover" />
-        </TouchableOpacity>
+        <Image source={{ uri: post.media_url }} style={styles.postImage} resizeMode="cover" />,
+        function () { setZoomUri(post.media_url!); }
       );
     }
+
     return null;
   }
 
@@ -760,7 +858,7 @@ export default function PostCard(props: Props) {
             suggestionsAbove={true}
           />
           <TouchableOpacity
-            onPress={function () { if (!submittingComment && newComment.trim()) { handleSubmitComment(); } }}
+            onPress={function () { if (!submittingComment && newComment.trim()) handleSubmitComment(); }}
             activeOpacity={0.7}
             style={[styles.commentSendBtn, hasText ? styles.commentSendBtnActive : styles.commentSendBtnInactive]}
           >
@@ -803,9 +901,8 @@ export default function PostCard(props: Props) {
         ? <View style={styles.captionWrap}><MentionText text={post.caption ?? ''} style={styles.caption} /></View>
         : null}
 
-      {/* ── Action bar ─────────────────────────────────────────────────────── */}
+      {/* ── Action bar ──────────────────────────────────────────────────── */}
       <View style={styles.actions}>
-        {/* ── Animated like button ──────────────────────────────────────── */}
         <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
           <Animated.View style={{ transform: [{ scale: likeScaleAnim }] }}>
             <Ionicons
@@ -967,13 +1064,12 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#252540' },
   actionBtn: { flexDirection: 'row', alignItems: 'center', marginRight: 20 },
   actionCount: { color: '#888', fontSize: 13, marginLeft: 5, fontWeight: '500' },
-  // ── like animation styles ──────────────────────────────────────────────────
   actionCountLiked: { color: '#e74c3c' },
+  // ── double-tap wrapper & overlay ──────────────────────────────────────────
+  mediaTapWrapper: { position: 'relative' },
   overlayHeartContainer: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center',
     pointerEvents: 'none',
   } as any,
   // ─────────────────────────────────────────────────────────────────────────
