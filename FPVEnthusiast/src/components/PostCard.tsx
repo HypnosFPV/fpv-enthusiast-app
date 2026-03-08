@@ -4,7 +4,7 @@ import {
   View, Text, Image, TouchableOpacity, StyleSheet,
   AppState, Modal, Alert, ActivityIndicator, TextInput,
   Dimensions, Linking, Platform, FlatList, KeyboardAvoidingView,
-  Keyboard, PanResponder, ScrollView,
+  Keyboard, PanResponder, ScrollView, Animated,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -23,6 +23,9 @@ const MOBILE_UA =
   'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1';
 
 const { width } = Dimensions.get('window');
+
+// ── double-tap threshold ──────────────────────────────────────────────────────
+const DOUBLE_TAP_DELAY = 300; // ms
 
 function getYoutubeVideoId(url?: string | null): string | null {
   if (!url) return null;
@@ -289,8 +292,93 @@ export default function PostCard(props: Props) {
   const [editCaptionText, setEditCaptionText] = useState(post.caption || '');
   const [commentLikes, setCommentLikes] = useState<Record<string, CommentLikeState>>({});
   const [zoomUri, setZoomUri] = useState<string | null>(null);
-  // ── NEW: tracks in-flight delete so we can show spinner & block double-tap ──
+  // ── delete in-flight ──────────────────────────────────────────────────────
   const [deleting, setDeleting] = useState(false);
+
+  // ── like animation state ─────────────────────────────────────────────────
+  // Optimistic local state so the heart fills instantly
+  const [localLiked, setLocalLiked] = useState(post.isLiked ?? false);
+  const [localLikeCount, setLocalLikeCount] = useState(
+    post.like_count ?? post.likes_count ?? post.likeCount ?? 0
+  );
+  // Sync when parent updates the post prop
+  useEffect(() => {
+    setLocalLiked(post.isLiked ?? false);
+  }, [post.isLiked]);
+  useEffect(() => {
+    setLocalLikeCount(post.like_count ?? post.likes_count ?? post.likeCount ?? 0);
+  }, [post.like_count, post.likes_count, post.likeCount]);
+
+  // Animated values
+  const likeScaleAnim  = useRef(new Animated.Value(1)).current;   // heart button bounce
+  const overlayOpacity = useRef(new Animated.Value(0)).current;   // big overlay heart opacity
+  const overlayScale   = useRef(new Animated.Value(0.3)).current; // big overlay heart scale
+  const lastTapRef     = useRef<number>(0);                       // double-tap tracker
+
+  // ── fire the heart bounce (used on button tap + double-tap) ─────────────
+  const runHeartBounce = useCallback(() => {
+    likeScaleAnim.setValue(0.7);
+    Animated.spring(likeScaleAnim, {
+      toValue: 1,
+      friction: 3,
+      tension: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [likeScaleAnim]);
+
+  // ── fire the big overlay heart (double-tap) ──────────────────────────────
+  const runOverlayHeart = useCallback(() => {
+    overlayOpacity.setValue(1);
+    overlayScale.setValue(0.3);
+    Animated.parallel([
+      Animated.spring(overlayScale, {
+        toValue: 1,
+        friction: 4,
+        tension: 180,
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.delay(600),
+        Animated.timing(overlayOpacity, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, [overlayOpacity, overlayScale]);
+
+  // ── like button press ────────────────────────────────────────────────────
+  const handleLikePress = useCallback(() => {
+    if (!onLike) return;
+    const nowLiked = !localLiked;
+    // Optimistic update
+    setLocalLiked(nowLiked);
+    setLocalLikeCount(prev => nowLiked ? prev + 1 : Math.max(0, prev - 1));
+    // Animate the heart
+    runHeartBounce();
+    // Call parent
+    onLike(post.id, localLiked);
+  }, [onLike, localLiked, post.id, runHeartBounce]);
+
+  // ── double-tap on media to like ──────────────────────────────────────────
+  const handleMediaDoubleTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
+      // Double tap detected!
+      if (!localLiked && onLike) {
+        // Only like if not already liked (Instagram behaviour)
+        setLocalLiked(true);
+        setLocalLikeCount(prev => prev + 1);
+        onLike(post.id, false);
+      }
+      runOverlayHeart();
+      runHeartBounce();
+      lastTapRef.current = 0; // reset so a third tap doesn't re-trigger
+    } else {
+      lastTapRef.current = now;
+    }
+  }, [localLiked, onLike, post.id, runOverlayHeart, runHeartBounce]);
 
   const isOwner = !!currentUserId && currentUserId === post.user_id;
   const insets = useSafeAreaInsets();
@@ -466,7 +554,7 @@ export default function PostCard(props: Props) {
     } catch (_) { setCommentLikes(function (p) { return { ...p, [id]: cur }; }); }
   }, [currentUserId, commentLikes]);
 
-  // ── FIXED handleDeletePost: awaits onDelete, shows spinner, handles errors ──
+  // ── delete post ───────────────────────────────────────────────────────────
   const handleDeletePost = useCallback(function () {
     Alert.alert('Delete Post', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
@@ -497,17 +585,41 @@ export default function PostCard(props: Props) {
   }, [editCaptionText, post.id, currentUserId, onCaptionUpdate]);
 
   // ── Media renderer ────────────────────────────────────────────────────────
+  // Wraps tappable media in a double-tap detector.
+  // The overlay heart lives here too so it shows on top of any media type.
+  function wrapWithDoubleTap(child: React.ReactNode) {
+    return (
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={handleMediaDoubleTap}
+        style={{ position: 'relative' }}
+      >
+        {child}
+        {/* Big overlay heart shown on double-tap */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.overlayHeartContainer,
+            { opacity: overlayOpacity, transform: [{ scale: overlayScale }] },
+          ]}
+        >
+          <Ionicons name="heart" size={100} color="rgba(255,255,255,0.9)" />
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  }
+
   function renderMedia() {
     if (resolvedPlatform === 'youtube' && videoId) {
       if (ytError) {
-        return (
+        return wrapWithDoubleTap(
           <TouchableOpacity style={styles.thumbContainer} onPress={function () { openYouTubeApp(videoId); }} activeOpacity={0.9}>
             {thumbnail ? <Image source={{ uri: thumbnail }} style={styles.thumb} resizeMode="cover" /> : <View style={[styles.thumb, styles.thumbDark]} />}
             <View style={styles.ytErrorOverlay}><Ionicons name="logo-youtube" size={40} color="#FF0000" /><Text style={styles.ytOpenText}>Open in YouTube</Text></View>
           </TouchableOpacity>
         );
       }
-      return (
+      return wrapWithDoubleTap(
         <View style={styles.videoContainer}>
           <WebView ref={webViewRef} source={{ html: buildYouTubeHtml(videoId), baseUrl: 'https://www.youtube-nocookie.com' }}
             style={styles.webView} onMessage={handleMessage} allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false}
@@ -522,14 +634,14 @@ export default function PostCard(props: Props) {
       );
     }
     if (resolvedPlatform === 'youtube') {
-      return (
+      return wrapWithDoubleTap(
         <TouchableOpacity style={styles.thumbContainer} onPress={function () { if (post.media_url) Linking.openURL(post.media_url); }} activeOpacity={0.9}>
           <View style={[styles.thumb, styles.thumbDark]}><Ionicons name="logo-youtube" size={48} color="#FF0000" /><Text style={styles.ytOpenText}>YouTube Video</Text></View>
         </TouchableOpacity>
       );
     }
     if (resolvedPlatform === 'instagram') {
-      return (
+      return wrapWithDoubleTap(
         <TouchableOpacity style={styles.igContainer} onPress={handleInstagramOpen} activeOpacity={0.85}>
           <View style={styles.igInner}><Ionicons name="logo-instagram" size={48} color="#fff" /><Text style={styles.igLabel}>Instagram Post</Text><Text style={styles.igSub}>Tap to open</Text></View>
           <View style={styles.platformBadge}><Ionicons name="logo-instagram" size={16} color="#fff" /></View>
@@ -539,7 +651,7 @@ export default function PostCard(props: Props) {
     if (['tiktok', 'facebook', 'twitter'].includes(resolvedPlatform)) {
       const icon: any = resolvedPlatform === 'tiktok' ? 'musical-notes' : resolvedPlatform === 'facebook' ? 'logo-facebook' : 'logo-twitter';
       const label = resolvedPlatform === 'tiktok' ? 'TikTok Video' : resolvedPlatform === 'facebook' ? 'Facebook Post' : 'Twitter/X Post';
-      return (
+      return wrapWithDoubleTap(
         <TouchableOpacity style={styles.socialContainer} onPress={function () { const u = post.social_url || post.media_url; if (u) Linking.openURL(u); }} activeOpacity={0.85}>
           <Ionicons name={icon} size={40} color="#fff" /><Text style={styles.socialLabel}>{label}</Text><Text style={styles.socialSub}>Tap to open</Text>
         </TouchableOpacity>
@@ -547,7 +659,7 @@ export default function PostCard(props: Props) {
     }
     if (post.media_type === 'social_embed') {
       const u = post.media_url || post.embed_url;
-      return (
+      return wrapWithDoubleTap(
         <TouchableOpacity style={styles.socialContainer} onPress={function () { if (u) Linking.openURL(u); }} activeOpacity={0.85}>
           <Ionicons name="link-outline" size={40} color="#fff" /><Text style={styles.socialLabel}>External Link</Text>
           {u ? <Text style={styles.socialSub} numberOfLines={1}>{u}</Text> : null}
@@ -556,9 +668,9 @@ export default function PostCard(props: Props) {
     }
     if (post.media_url) {
       if (post.media_type === 'video') {
-        return <NativeVideoPlayer uri={post.media_url} thumbnailUri={post.thumbnail_url} />;
+        return wrapWithDoubleTap(<NativeVideoPlayer uri={post.media_url} thumbnailUri={post.thumbnail_url} />);
       }
-      return (
+      return wrapWithDoubleTap(
         <TouchableOpacity activeOpacity={0.92} onPress={function () { setZoomUri(post.media_url!); }}>
           <Image source={{ uri: post.media_url }} style={styles.postImage} resizeMode="cover" />
         </TouchableOpacity>
@@ -691,11 +803,22 @@ export default function PostCard(props: Props) {
         ? <View style={styles.captionWrap}><MentionText text={post.caption ?? ''} style={styles.caption} /></View>
         : null}
 
+      {/* ── Action bar ─────────────────────────────────────────────────────── */}
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={function () { if (onLike) onLike(post.id, post.isLiked || false); }}>
-          <Ionicons name={post.isLiked ? 'heart' : 'heart-outline'} size={22} color={post.isLiked ? '#e74c3c' : '#666'} />
-          <Text style={styles.actionCount}>{post.like_count ?? post.likes_count ?? post.likeCount ?? 0}</Text>
+        {/* ── Animated like button ──────────────────────────────────────── */}
+        <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
+          <Animated.View style={{ transform: [{ scale: likeScaleAnim }] }}>
+            <Ionicons
+              name={localLiked ? 'heart' : 'heart-outline'}
+              size={22}
+              color={localLiked ? '#e74c3c' : '#666'}
+            />
+          </Animated.View>
+          <Text style={[styles.actionCount, localLiked && styles.actionCountLiked]}>
+            {localLikeCount}
+          </Text>
         </TouchableOpacity>
+
         <TouchableOpacity style={styles.actionBtn} onPress={handleOpenComments}>
           <Ionicons name="chatbubble-outline" size={20} color="#666" />
           <Text style={styles.actionCount}>{localCommentCount}</Text>
@@ -751,7 +874,6 @@ export default function PostCard(props: Props) {
               <Ionicons name="create-outline" size={20} color="#ccc" />
               <Text style={styles.menuItemText}>Edit Caption</Text>
             </TouchableOpacity>
-            {/* ── FIXED Delete button: spinner while deleting, disabled when in-flight ── */}
             <TouchableOpacity
               style={[styles.menuItem, { borderBottomWidth: 0 }]}
               onPress={deleting ? undefined : handleDeletePost}
@@ -845,6 +967,16 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#252540' },
   actionBtn: { flexDirection: 'row', alignItems: 'center', marginRight: 20 },
   actionCount: { color: '#888', fontSize: 13, marginLeft: 5, fontWeight: '500' },
+  // ── like animation styles ──────────────────────────────────────────────────
+  actionCountLiked: { color: '#e74c3c' },
+  overlayHeartContainer: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    pointerEvents: 'none',
+  } as any,
+  // ─────────────────────────────────────────────────────────────────────────
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
   commentsSheet: { flex: 1, maxHeight: '85%', backgroundColor: '#0f0f23', borderTopLeftRadius: 22, borderTopRightRadius: 22 },
   dragHandleContainer: { width: '100%', alignItems: 'center', paddingVertical: 10 },
