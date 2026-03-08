@@ -305,10 +305,23 @@ export function useFeed(currentUserId?: string) {
     return newPost;
   }, [currentUserId]);
 
-  const deletePost = useCallback(async (postId: string) => {
-    await supabase.from('posts').delete().eq('id', postId);
-    setPosts(prev => prev.filter(p => p.id !== postId));
-  }, []);
+ const deletePost = useCallback(async (postId: string): Promise<boolean> => {
+  console.log('[useFeed] deleting post:', postId);
+  const { error } = await supabase
+    .from('posts')
+    .delete()
+    .eq('id', postId);
+
+  if (error) {
+    console.error('[useFeed] deletePost error:', JSON.stringify(error));
+    return false;
+  }
+
+  setPosts(prev => prev.filter(p => p.id !== postId));
+  console.log('[useFeed] post deleted successfully');
+  return true;
+}, []);
+
 
   useEffect(() => {
     onRefresh();
