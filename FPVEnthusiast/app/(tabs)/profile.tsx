@@ -641,7 +641,20 @@ export default function ProfileScreen() {
             {selectedPost && (
               <PostCard post={toFeedPost(selectedPost)} isVisible={true} shouldAutoplay={false}
                 currentUserId={user?.id ?? undefined} onLike={() => {}}
-                onDelete={(id: string) => { setMyPosts(prev => prev.filter(p => p.id !== id)); setShowPostDetail(false); }} />
+                onDelete={async (id: string) => {
+  const { error } = await supabase
+    .from('posts')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', user?.id ?? '');
+  if (error) {
+    Alert.alert('Error', 'Could not delete post. Please try again.');
+    return false;
+  }
+  setMyPosts(prev => prev.filter(p => p.id !== id));
+  setShowPostDetail(false);
+  return true;
+}} />
             )}
           </ScrollView>
         </View>

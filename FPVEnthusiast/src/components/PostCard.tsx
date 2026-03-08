@@ -134,12 +134,12 @@ interface Props {
   shouldAutoplay?: boolean;
   currentUserId?: string | null;
   onLike?: (postId: string, currentlyLiked: boolean) => void;
-  onDelete?: (postId: string) => void;
+  onDelete?: (postId: string) => void | Promise<boolean | void>;
   onCaptionUpdate?: (postId: string, caption: string) => void;
   autoplay?: boolean;
 }
 
-// ── Inline video player (expo-video) ─────────────────────────────────────────
+// ── Inline video player (expo-video) ──────────────────────────────────────────
 function NativeVideoPlayer({
   uri,
   thumbnailUri,
@@ -289,6 +289,8 @@ export default function PostCard(props: Props) {
   const [editCaptionText, setEditCaptionText] = useState(post.caption || '');
   const [commentLikes, setCommentLikes] = useState<Record<string, CommentLikeState>>({});
   const [zoomUri, setZoomUri] = useState<string | null>(null);
+  // ── NEW: tracks in-flight delete so we can show spinner & block double-tap ──
+  const [deleting, setDeleting] = useState(false);
 
   const isOwner = !!currentUserId && currentUserId === post.user_id;
   const insets = useSafeAreaInsets();
@@ -358,7 +360,7 @@ export default function PostCard(props: Props) {
 
   const handleInstagramOpen = useCallback(function () {
     Alert.alert('Opening Instagram',
-      'Embedded playback is not supported. You\'ll be redirected to Instagram.\n\nCome back after viewing — this app is your one-stop FPV hub! 🚁',
+      'Embedded playback is not supported. You\'ll be redirected to Instagram.\n\nCome back after viewing  this app is your one-stop FPV hub! ',
       [{ text: 'Cancel', style: 'cancel' },
       { text: 'Open', onPress: function () { const u = post.social_url || post.media_url; if (u) Linking.openURL(u); } }]
     );
@@ -464,10 +466,26 @@ export default function PostCard(props: Props) {
     } catch (_) { setCommentLikes(function (p) { return { ...p, [id]: cur }; }); }
   }, [currentUserId, commentLikes]);
 
+  // ── FIXED handleDeletePost: awaits onDelete, shows spinner, handles errors ──
   const handleDeletePost = useCallback(function () {
     Alert.alert('Delete Post', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: function () { setShowOwnerMenu(false); if (onDelete) onDelete(post.id); } },
+      {
+        text: 'Delete', style: 'destructive', onPress: async function () {
+          setShowOwnerMenu(false);
+          setDeleting(true);
+          try {
+            const result = onDelete ? await onDelete(post.id) : undefined;
+            if (result === false) {
+              Alert.alert('Error', 'Could not delete post. Please try again.');
+            }
+          } catch (e: any) {
+            Alert.alert('Error', e?.message ?? 'Could not delete post.');
+          } finally {
+            setDeleting(false);
+          }
+        }
+      },
     ]);
   }, [post.id, onDelete]);
 
@@ -478,7 +496,7 @@ export default function PostCard(props: Props) {
     if (onCaptionUpdate) onCaptionUpdate(post.id, editCaptionText);
   }, [editCaptionText, post.id, currentUserId, onCaptionUpdate]);
 
-  // ── Media renderer ──────────────────────────────────────────────────────────
+  // ── Media renderer ────────────────────────────────────────────────────────
   function renderMedia() {
     if (resolvedPlatform === 'youtube' && videoId) {
       if (ytError) {
@@ -549,7 +567,7 @@ export default function PostCard(props: Props) {
     return null;
   }
 
-  // ── Comment row ─────────────────────────────────────────────────────────────
+  // ── Comment row ───────────────────────────────────────────────────────────
   function renderComment(info: { item: Comment }) {
     const c = info.item;
     const isMine = !!currentUserId && currentUserId === c.user_id;
@@ -610,7 +628,7 @@ export default function PostCard(props: Props) {
     );
   }
 
-  // ── Comment input ───────────────────────────────────────────────────────────
+  // ── Comment input ─────────────────────────────────────────────────────────
   function renderCommentInput() {
     if (!currentUserId) return null;
     const hasText = newComment.trim().length > 0;
@@ -644,7 +662,7 @@ export default function PostCard(props: Props) {
     );
   }
 
-  // ── Main render ─────────────────────────────────────────────────────────────
+  // ── Main render ───────────────────────────────────────────────────────────
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -726,18 +744,28 @@ export default function PostCard(props: Props) {
 
       {/* Owner Menu Modal */}
       <Modal visible={showOwnerMenu} transparent animationType="fade" onRequestClose={function () { setShowOwnerMenu(false); }}>
-        <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={function () { setShowOwnerMenu(false); }}>
+        <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={function () { if (!deleting) setShowOwnerMenu(false); }}>
           <View style={styles.menuSheet}>
             <View style={styles.dragHandle} />
             <TouchableOpacity style={styles.menuItem} onPress={function () { setShowOwnerMenu(false); setEditCaptionText(post.caption || ''); setShowEditCaption(true); }}>
               <Ionicons name="create-outline" size={20} color="#ccc" />
               <Text style={styles.menuItemText}>Edit Caption</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]} onPress={handleDeletePost}>
-              <Ionicons name="trash-outline" size={20} color="#e74c3c" />
-              <Text style={[styles.menuItemText, { color: '#e74c3c' }]}>Delete Post</Text>
+            {/* ── FIXED Delete button: spinner while deleting, disabled when in-flight ── */}
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomWidth: 0 }]}
+              onPress={deleting ? undefined : handleDeletePost}
+              disabled={deleting}
+            >
+              {deleting
+                ? <ActivityIndicator size="small" color="#e74c3c" />
+                : <Ionicons name="trash-outline" size={20} color="#e74c3c" />
+              }
+              <Text style={[styles.menuItemText, { color: '#e74c3c' }]}>
+                {deleting ? 'Deleting…' : 'Delete Post'}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.menuCancel} onPress={function () { setShowOwnerMenu(false); }}>
+            <TouchableOpacity style={styles.menuCancel} onPress={function () { if (!deleting) setShowOwnerMenu(false); }}>
               <Text style={styles.menuCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -782,7 +810,7 @@ export default function PostCard(props: Props) {
   );
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   card: { backgroundColor: '#13132a', marginBottom: 10, borderRadius: 14, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
@@ -839,35 +867,35 @@ const styles = StyleSheet.create({
   commentUsername: { color: '#e0e0ff', fontWeight: '700', fontSize: 13, flex: 1 },
   commentOwnerIcons: { flexDirection: 'row', alignItems: 'center', gap: 10, marginLeft: 8 } as any,
   commentText: { color: '#c8c8e0', fontSize: 14, lineHeight: 20 },
-  commentMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 6, flexWrap: 'wrap', gap: 6 } as any,
+  commentMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   commentTime: { color: '#555', fontSize: 11 },
-  commentEdited: { color: '#444', fontSize: 11, fontStyle: 'italic' },
-  commentLikeBtn: { flexDirection: 'row', alignItems: 'center', gap: 3 } as any,
+  commentEdited: { color: '#444', fontSize: 11 },
+  commentLikeBtn: { flexDirection: 'row', alignItems: 'center', marginLeft: 10, gap: 3 } as any,
   commentLikeCount: { color: '#666', fontSize: 11 },
-  editCommentInput: { flex: 1, backgroundColor: '#1e1e3a', color: '#fff', borderRadius: 8, padding: 10, fontSize: 14 },
-  editCommentActions: { flexDirection: 'row', marginTop: 8 },
-  editCommentBtn: { backgroundColor: '#4fc3f7', borderRadius: 6, paddingHorizontal: 14, paddingVertical: 6, marginRight: 8 },
-  cancelEditBtn: { backgroundColor: '#2a2a4e' },
+  commentInputRow: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#1e1e3a', backgroundColor: '#0f0f23', paddingTop: 8, paddingHorizontal: 12 },
+  commentInputInner: { flexDirection: 'row', alignItems: 'flex-end' },
+  commentInputWrap: { flex: 1, marginRight: 8 },
+  commentInput: { color: '#e0e0ff', fontSize: 14, maxHeight: 100, paddingVertical: 8 },
+  commentSendBtn: { width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center', marginBottom: 2 },
+  commentSendBtnActive: { backgroundColor: '#ff4500' },
+  commentSendBtnInactive: { backgroundColor: '#1e1e3a' },
+  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  menuSheet: { backgroundColor: '#1a1a2e', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 8, paddingBottom: 34 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#252540', gap: 14 } as any,
+  menuItemText: { color: '#ccc', fontSize: 16 },
+  menuCancel: { marginTop: 8, marginHorizontal: 16, backgroundColor: '#252540', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  menuCancelText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  editCaptionSheet: { backgroundColor: '#1a1a2e', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 34 },
+  editCaptionTitle: { color: '#fff', fontSize: 17, fontWeight: '700', marginBottom: 14 },
+  editCaptionInput: { color: '#e0e0ff', fontSize: 15, minHeight: 80, textAlignVertical: 'top', backgroundColor: '#0f0f23', borderRadius: 10, padding: 12 },
+  editCaptionActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 14, gap: 12 } as any,
+  editCaptionCancel: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 8, backgroundColor: '#252540' },
+  editCaptionCancelText: { color: '#aaa', fontSize: 15 },
+  editCaptionSave: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 8, backgroundColor: '#ff4500' },
+  editCaptionSaveText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  editCommentInput: { color: '#e0e0ff', fontSize: 14, backgroundColor: '#0f0f23', borderRadius: 8, padding: 8, marginBottom: 6, minHeight: 50 },
+  editCommentActions: { flexDirection: 'row', gap: 8 } as any,
+  editCommentBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: '#ff4500' },
+  cancelEditBtn: { backgroundColor: '#252540' },
   editCommentBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  commentInputRow: { paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#1e1e3a', backgroundColor: '#0f0f23' },
-  commentInputInner: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  commentInputWrap: { flex: 1, minWidth: 0 },
-  commentInput: { backgroundColor: '#1a1a35', color: '#ffffff', borderRadius: 18, paddingTop: 10, paddingBottom: 10, paddingLeft: 14, paddingRight: 14, fontSize: 15, lineHeight: 20, borderWidth: 1, borderColor: '#252545', minHeight: 42, maxHeight: 120 },
-  commentSendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginBottom: 1 },
-  commentSendBtnActive: { backgroundColor: '#4fc3f7' },
-  commentSendBtnInactive: { backgroundColor: '#2a2a48' },
-  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  menuSheet: { backgroundColor: '#0f0f23', borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingBottom: 34 },
-  menuItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#1e1e3a' },
-  menuItemText: { color: '#e0e0e0', fontSize: 16, marginLeft: 14 },
-  menuCancel: { paddingVertical: 16, alignItems: 'center' },
-  menuCancelText: { color: '#666', fontSize: 16 },
-  editCaptionSheet: { backgroundColor: '#0f0f23', borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, paddingBottom: 34 },
-  editCaptionTitle: { color: '#fff', fontWeight: '700', fontSize: 18, marginBottom: 16 },
-  editCaptionInput: { backgroundColor: '#1a1a35', color: '#fff', borderRadius: 10, padding: 14, fontSize: 15, minHeight: 80, textAlignVertical: 'top', borderWidth: 1, borderColor: '#252545' },
-  editCaptionActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 16 },
-  editCaptionCancel: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1a1a35' },
-  editCaptionCancelText: { color: '#888', fontSize: 15 },
-  editCaptionSave: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, backgroundColor: '#4fc3f7', marginLeft: 12 },
-  editCaptionSaveText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

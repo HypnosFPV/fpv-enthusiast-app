@@ -149,16 +149,13 @@ export default function FeedScreen() {
           const COUNT = 12;
           const frames: string[] = [];
           for (let i = 0; i < COUNT; i++) {
-            // Spread from 2% → 98% so first/last frames are never black
             const pct  = 0.02 + (0.96 * i) / (COUNT - 1);
             const time = Math.max(0, Math.floor(durationMs * pct));
             try {
-              const { uri } = await VideoThumbnails.getThumbnailAsync(
-                asset.uri, { time }
-              );
+              const { uri } = await VideoThumbnails.getThumbnailAsync(asset.uri, { time });
               frames.push(uri);
             } catch {
-              // skip any single frame that fails — keep generating the rest
+              // skip failed frame, keep generating
             }
           }
           setVideoThumbFrames(frames);
@@ -217,8 +214,13 @@ export default function FeedScreen() {
     toggleLike(postId);
   }, [toggleLike]);
 
-  const handleDelete = useCallback((postId: string) => {
-    deletePost(postId);
+  // ── FIXED: async, awaits deletePost, alerts on failure ───────────────────
+  const handleDelete = useCallback(async (postId: string): Promise<boolean> => {
+    const success = await deletePost(postId);
+    if (!success) {
+      Alert.alert('Error', 'Could not delete post. Please try again.');
+    }
+    return success;
   }, [deletePost]);
 
   const visiblePosts = mutedIds.length > 0
@@ -339,7 +341,6 @@ export default function FeedScreen() {
 
             {modalMode === 'media' ? (
               <>
-                {/* Media preview / picker */}
                 <TouchableOpacity style={styles.mediaPicker} onPress={pickMedia}>
                   {mediaUri ? (
                     mediaType === 'video' ? (
@@ -364,7 +365,6 @@ export default function FeedScreen() {
                   )}
                 </TouchableOpacity>
 
-                {/* Thumbnail frame picker — video only */}
                 {mediaType === 'video' && (
                   <View style={styles.thumbPickerWrap}>
                     <Text style={styles.thumbPickerLabel}>Choose thumbnail frame:</Text>
@@ -374,19 +374,12 @@ export default function FeedScreen() {
                         <Text style={styles.thumbLoadingText}>Generating 12 frames…</Text>
                       </View>
                     ) : videoThumbFrames.length > 0 ? (
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.thumbPickerRow}
-                      >
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbPickerRow}>
                         {videoThumbFrames.map((uri, i) => (
                           <TouchableOpacity
                             key={i}
                             onPress={() => setSelectedThumb(uri)}
-                            style={[
-                              styles.thumbFrame,
-                              selectedThumb === uri && styles.thumbFrameSelected,
-                            ]}
+                            style={[styles.thumbFrame, selectedThumb === uri && styles.thumbFrameSelected]}
                           >
                             <Image source={{ uri }} style={styles.thumbFrameImg} />
                             {selectedThumb === uri && (
@@ -445,7 +438,6 @@ export default function FeedScreen() {
                 : <Text style={styles.postBtnText}>Post</Text>
               }
             </TouchableOpacity>
-
           </ScrollView>
         </View>
       </Modal>
