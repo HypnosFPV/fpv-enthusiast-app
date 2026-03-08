@@ -168,22 +168,23 @@ export function useFeed(currentUserId?: string) {
         let mime: string;
 
         if (mediaType === 'video') {
-          // ── Video: read via fetch (no deprecated FileSystem API) ──────
+          // Video: read via fetch
           ext  = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'mp4';
           mime = ext === 'mov' ? 'video/quicktime' : 'video/mp4';
+          console.log('[useFeed] fetching video (no compression)...');
           const resp = await fetch(mediaUrl);
           arrayBuffer = await resp.arrayBuffer();
           console.log('[useFeed] video fetch byteLength:', arrayBuffer.byteLength);
 
         } else if (mediaBase64) {
-          // ── Image: use base64 from ImagePicker directly ───────────────
+          // Image: use base64 from ImagePicker directly
           arrayBuffer = decode(mediaBase64);
           ext  = 'jpg';
           mime = 'image/jpeg';
           console.log('[useFeed] using picker base64, byteLength:', arrayBuffer.byteLength);
 
         } else {
-          // ── Image fallback: read via fetch ────────────────────────────
+          // Image fallback: read via fetch
           ext  = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'jpg';
           mime = ext === 'png'  ? 'image/png'
                : ext === 'heic' ? 'image/heic'
@@ -219,7 +220,7 @@ export function useFeed(currentUserId?: string) {
       }
     }
 
-    // ── Upload thumbnail frame if provided ──────────────────────────────
+    // Upload thumbnail frame if provided
     let finalThumbUrl: string | null = null;
     if (thumbnailUrl && mediaType === 'video') {
       try {
