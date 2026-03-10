@@ -380,30 +380,34 @@ export default function PostCard(props: Props) {
     runHeartBounce();
   }, [localLiked, onLike, post.id, runOverlayHeart, runHeartBounce]);
 
-  // ── timer-based tap handler ───────────────────────────────────────────────
-  // onSingleTap: action to fire after DOUBLE_TAP_DELAY if no second tap follows
-  // (e.g. open zoom for images, open Instagram for IG cards)
+  // ── timer-based tap handler ─────────────────────────────────────────────
+  // onSingleTap fires IMMEDIATELY on first tap (so zoom/link-open feels instant).
+  // If a second tap arrives within DOUBLE_TAP_DELAY we close any zoom that just
+  // opened and fire the like overlay instead.
   const handleMediaTap = useCallback((onSingleTap?: () => void) => {
     const now = Date.now();
     if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
       // ── Double tap ──
+      // Cancel any pending zoom / link-open action
       if (singleTapTimerRef.current) {
         clearTimeout(singleTapTimerRef.current);
         singleTapTimerRef.current = null;
       }
+      // Close zoom modal if it was just opened by the first tap
+      setZoomUri(null);
       fireLikeFromDoubleTap();
       lastTapRef.current = 0; // reset so third tap doesn't re-trigger
     } else {
-      // ── First tap — start timer ──
+      // ── First tap — fire action immediately (no delay) ──
+      // Zoom / link-open feels instant this way; if a second tap follows
+      // quickly we cancel it above.
       lastTapRef.current = now;
       if (onSingleTap) {
-        singleTapTimerRef.current = setTimeout(() => {
-          singleTapTimerRef.current = null;
-          onSingleTap();
-        }, DOUBLE_TAP_DELAY + 30);
+        onSingleTap();
       }
     }
-  }, [fireLikeFromDoubleTap]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fireLikeFromDoubleTap]); // setZoomUri is stable (useState setter)
 
   // ── like button press ────────────────────────────────────────────────────
   const handleLikePress = useCallback(() => {
