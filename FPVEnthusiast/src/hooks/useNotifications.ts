@@ -70,6 +70,24 @@ export function useNotifications(userId?: string) {
     setUnreadCount(prev => Math.max(0, prev - 1));
   }, []);
 
+  // ── Delete single notification ─────────────────────────────────────────────
+  const deleteNotification = useCallback(async (id: string) => {
+    await supabase.from('notifications').delete().eq('id', id);
+    setNotifications(prev => {
+      const next = prev.filter(n => n.id !== id);
+      setUnreadCount(next.filter(n => !n.read).length);
+      return next;
+    });
+  }, []);
+
+  // ── Clear all notifications ────────────────────────────────────────────────
+  const clearAll = useCallback(async () => {
+    if (!userId) return;
+    await supabase.from('notifications').delete().eq('user_id', userId);
+    setNotifications([]);
+    setUnreadCount(0);
+  }, [userId]);
+
   // ── Send a notification (used by useFollow, PostCard, etc.) ───────────────
   const sendNotification = useCallback(async (params: {
     recipientId: string;
@@ -144,6 +162,24 @@ export function useNotifications(userId?: string) {
           });
         }
       )
+      // ── Notification deleted ──────────────────────────────────────────────
+      .on(
+        'postgres_changes',
+        {
+          event:  'DELETE',
+          schema: 'public',
+          table:  'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const deleted = payload.old as { id: string };
+          setNotifications(prev => {
+            const next = prev.filter(n => n.id !== deleted.id);
+            setUnreadCount(next.filter(n => !n.read).length);
+            return next;
+          });
+        }
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -156,6 +192,8 @@ export function useNotifications(userId?: string) {
     fetchNotifications,
     markAllRead,
     markRead,
+    deleteNotification,
+    clearAll,
     sendNotification,
   };
 }
