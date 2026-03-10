@@ -13,7 +13,7 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useFeed, FeedPost } from '../../src/hooks/useFeed';
 import { useAuth } from '../../src/context/AuthContext';
 import { useProfile } from '../../src/hooks/useProfile';
-import { useNotifications } from '../../src/hooks/useNotifications';
+import { useNotificationsContext } from '../../src/context/NotificationsContext';
 import { useMute } from '../../src/hooks/useMute';
 import { detectPlatform } from '../../src/utils/socialMedia';
 import { supabase } from '../../src/services/supabase';
@@ -61,7 +61,7 @@ export default function FeedScreen() {
     toggleLike,
     createPost, createSocialPost, deletePost,
   } = useFeed(user?.id);
-  const { unreadCount } = useNotifications(user?.id);
+  const { unreadCount } = useNotificationsContext();
   const { mutedIds } = useMute(user?.id);
 
   // ── Animated title ───────────────────────────────────────────────────────
