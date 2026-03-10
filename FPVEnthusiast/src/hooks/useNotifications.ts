@@ -71,8 +71,15 @@ export function useNotifications(userId?: string) {
   }, []);
 
   // ── Delete single notification ─────────────────────────────────────────────
+  // Try hard-delete first; if RLS blocks it, fall back to marking as read so
+  // the badge still clears and the row is hidden on next fetch.
   const deleteNotification = useCallback(async (id: string) => {
-    await supabase.from('notifications').delete().eq('id', id);
+    const { error } = await supabase.from('notifications').delete().eq('id', id);
+    if (error) {
+      console.warn('[useNotifications] delete blocked, marking read instead:', error.message);
+      await supabase.from('notifications').update({ read: true }).eq('id', id);
+    }
+    // Always update local state regardless of DB outcome
     setNotifications(prev => {
       const next = prev.filter(n => n.id !== id);
       setUnreadCount(next.filter(n => !n.read).length);
@@ -81,9 +88,23 @@ export function useNotifications(userId?: string) {
   }, []);
 
   // ── Clear all notifications ────────────────────────────────────────────────
+  // Try hard-delete; if RLS blocks it, mark all as read so badge clears.
   const clearAll = useCallback(async () => {
     if (!userId) return;
-    await supabase.from('notifications').delete().eq('user_id', userId);
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', userId);
+    if (error) {
+      console.warn('[useNotifications] clearAll delete blocked, marking all read:', error.message);
+      // Fallback: mark all read — badge goes to 0 even if rows stay
+      await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('user_id', userId)
+        .eq('read', false);
+    }
+    // Always clear local state
     setNotifications([]);
     setUnreadCount(0);
   }, [userId]);
