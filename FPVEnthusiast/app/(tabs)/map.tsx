@@ -15,6 +15,8 @@ import {
   useMap, FlySpot, RaceEvent, SpotComment,
   NewSpotData, NewEventData,
 } from '../../src/hooks/useMap';
+import { SPOT_PIN_MAP, EVENT_PIN_MAP } from '../../src/components/FPVMapPins';
+import { useMultiGP } from '../../src/hooks/useMultiGP';
 
 // Try to import notifications / AsyncStorage gracefully
 let Notifications: any = null;
@@ -86,27 +88,7 @@ function daysUntil(iso: string): string {
   return `in ${diff}d`;
 }
 
-// ─── Pin Marker ───────────────────────────────────────────────────────────────
-function PinMarker({ color, icon, isMultiGP }: { color: string; icon: string; isMultiGP?: boolean }) {
-  return (
-    <View style={{ alignItems: 'center' }}>
-      <View style={[pStyles.circle, { backgroundColor: color }]}>
-        <Ionicons name={icon as any} size={13} color="#fff" />
-      </View>
-      {isMultiGP && (
-        <View style={pStyles.badge}><Text style={pStyles.badgeText}>M</Text></View>
-      )}
-      <View style={[pStyles.tail, { borderTopColor: color }]} />
-    </View>
-  );
-}
-
-const pStyles = StyleSheet.create({
-  circle:    { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: '#fff', justifyContent: 'center', alignItems: 'center' },
-  tail:      { width: 0, height: 0, borderLeftWidth: 5, borderRightWidth: 5, borderTopWidth: 7, borderLeftColor: 'transparent', borderRightColor: 'transparent' },
-  badge:     { position: 'absolute', top: -5, right: -8, backgroundColor: '#FF6D00', borderRadius: 7, width: 14, height: 14, justifyContent: 'center', alignItems: 'center' },
-  badgeText: { color: '#fff', fontSize: 7, fontWeight: '900' },
-});
+// PinMarker replaced by SVG FPVMapPins.tsx components
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function MapScreen() {
@@ -121,6 +103,26 @@ export default function MapScreen() {
     deleteSpot, deleteEvent,
     fetchNewNearbyEvents,
   } = useMap(user?.id);
+
+  // MultiGP chapter connection (for Sync button shown to chapter owners)
+  const { connection: mgpConnection, syncing: mgpSyncing2, triggerSync: triggerMgpSync } = useMultiGP(user?.id);
+  const [showMgpSyncToast, setShowMgpSyncToast] = React.useState(false);
+  const [mgpSyncToastMsg, setMgpSyncToastMsg] = React.useState('');
+
+  const handleMapMgpSync = React.useCallback(async () => {
+    if (!userLocation) return;
+    // Trigger edge function sync
+    const result = await triggerMgpSync();
+    if (!result.error) {
+      // Refresh map events after sync
+      fetchEvents(userLocation.latitude, userLocation.longitude, radiusMiles, [...ALL_EVENT_TYPES]);
+      setMgpSyncToastMsg(\`🏁 \${result.synced} race\${result.synced !== 1 ? 's' : ''} synced to map\`);
+    } else {
+      setMgpSyncToastMsg('⚠️ Sync failed — check your API key in Settings');
+    }
+    setShowMgpSyncToast(true);
+    setTimeout(() => setShowMgpSyncToast(false), 4000);
+  }, [triggerMgpSync, fetchEvents, userLocation, radiusMiles]);
 
   const mapRef = useRef<MapView>(null);
 
@@ -453,16 +455,22 @@ export default function MapScreen() {
             strokeWidth={3}
           />
         )}
-        {visibleSpots.map(spot => (
-          <Marker key={spot.id} coordinate={{ latitude: spot.latitude, longitude: spot.longitude }} onPress={() => openSpot(spot)}>
-            <PinMarker color={SPOT_CONFIG[spot.spot_type]?.color ?? '#888'} icon={SPOT_CONFIG[spot.spot_type]?.icon ?? 'location'} />
-          </Marker>
-        ))}
-        {visibleEvents.map(evt => (
-          <Marker key={evt.id} coordinate={{ latitude: evt.latitude, longitude: evt.longitude }} onPress={() => setSelectedEvent(evt)}>
-            <PinMarker color={EVENT_CONFIG[evt.event_type]?.color ?? '#ff4500'} icon={EVENT_CONFIG[evt.event_type]?.icon ?? 'calendar'} isMultiGP={evt.event_source === 'multigp'} />
-          </Marker>
-        ))}
+        {visibleSpots.map(spot => {
+          const SpotPin = SPOT_PIN_MAP[spot.spot_type] ?? SPOT_PIN_MAP['freestyle'];
+          return (
+            <Marker key={spot.id} coordinate={{ latitude: spot.latitude, longitude: spot.longitude }} onPress={() => openSpot(spot)} tracksViewChanges={false}>
+              <SpotPin size={44} />
+            </Marker>
+          );
+        })}
+        {visibleEvents.map(evt => {
+          const EvtPin = EVENT_PIN_MAP[evt.event_type] ?? EVENT_PIN_MAP['race'];
+          return (
+            <Marker key={evt.id} coordinate={{ latitude: evt.latitude, longitude: evt.longitude }} onPress={() => setSelectedEvent(evt)} tracksViewChanges={false}>
+              <EvtPin size={44} isMultiGP={evt.event_source === 'multigp'} />
+            </Marker>
+          );
+        })}
         {spotPin && <Marker coordinate={spotPin}><Ionicons name="add-circle" size={36} color="#ff4500" /></Marker>}
         {evtPin  && <Marker coordinate={evtPin}><Ionicons name="calendar" size={36} color="#FFD700" /></Marker>}
       </MapView>
@@ -492,6 +500,11 @@ export default function MapScreen() {
           <Text style={styles.mgpToastText}>🏁 {mgpSyncCount} MultiGP race{mgpSyncCount !== 1 ? 's' : ''} synced nearby</Text>
         </View>
       )}
+      {showMgpSyncToast && (
+        <View style={[styles.mgpToast, { bottom: 145, backgroundColor: 'rgba(41,121,255,0.95)' }]} pointerEvents="none">
+          <Text style={styles.mgpToastText}>{mgpSyncToastMsg}</Text>
+        </View>
+      )}
 
       {/* ─── Header ──────────────────────────────────────────────────────── */}
       <SafeAreaView style={styles.headerSafe} pointerEvents="box-none">
@@ -503,6 +516,19 @@ export default function MapScreen() {
             {loading && <ActivityIndicator size="small" color="#ff4500" style={{ marginLeft: 8 }} />}
           </View>
           <View style={styles.headerRight}>
+            {/* MultiGP sync button — only visible to chapter owners */}
+            {mgpConnection?.is_active && (
+              <TouchableOpacity
+                style={[styles.iconBtn, styles.iconBtnMgp]}
+                onPress={handleMapMgpSync}
+                disabled={mgpSyncing2}
+              >
+                {mgpSyncing2
+                  ? <ActivityIndicator size="small" color="#2979FF" />
+                  : <Ionicons name="sync-outline" size={18} color="#2979FF" />
+                }
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={[styles.iconBtn, isSatellite && styles.iconBtnSatellite]} onPress={() => setIsSatellite(v => !v)}>
               <Ionicons name="layers-outline" size={20} color={isSatellite ? '#FFD700' : '#fff'} />
             </TouchableOpacity>
@@ -959,6 +985,7 @@ const styles = StyleSheet.create({
   headerRight:   { flexDirection: 'row', gap: 6 },
   iconBtn:          { backgroundColor: 'rgba(0,0,0,0.65)', padding: 8, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
   iconBtnSatellite: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
+  iconBtnMgp:       { borderColor: '#2979FF', backgroundColor: 'rgba(41,121,255,0.12)' },
 
   // Quick filter row (replaces old legend)
   quickFilterRow: { flexDirection: 'row', paddingHorizontal: 12, paddingBottom: 6, gap: 8 },
