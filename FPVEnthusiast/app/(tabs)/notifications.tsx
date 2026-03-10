@@ -9,7 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../src/context/AuthContext';
-import { useNotifications, AppNotification } from '../../src/hooks/useNotifications';
+import { AppNotification } from '../../src/hooks/useNotifications';
+import { useNotificationsContext } from '../../src/context/NotificationsContext';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function timeAgo(iso: string): string {
@@ -127,7 +128,7 @@ export default function NotificationsScreen() {
     markRead,
     deleteNotification,
     clearAll,
-  } = useNotifications(user?.id);
+  } = useNotificationsContext();
 
   // ── FIX: fetch fresh data then mark all read whenever screen is focused ────
   useFocusEffect(
