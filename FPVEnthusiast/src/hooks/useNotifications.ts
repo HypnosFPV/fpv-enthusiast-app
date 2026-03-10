@@ -7,7 +7,7 @@ export interface AppNotification {
   id:         string;
   user_id:    string;
   actor_id:   string | null;
-  type:       'like' | 'comment' | 'follow' | 'mention';
+  type:       'like' | 'comment' | 'follow' | 'mention' | 'reply';
   post_id:    string | null;
   comment_id: string | null;
   message:    string | null;
@@ -71,8 +71,6 @@ export function useNotifications(userId?: string) {
   }, []);
 
   // ── Delete single notification ─────────────────────────────────────────────
-  // Try hard-delete first; if RLS blocks it, fall back to marking as read so
-  // the badge still clears and the row is hidden on next fetch.
   const deleteNotification = useCallback(async (id: string) => {
     const { error } = await supabase.from('notifications').delete().eq('id', id);
     if (error) {
@@ -88,7 +86,6 @@ export function useNotifications(userId?: string) {
   }, []);
 
   // ── Clear all notifications ────────────────────────────────────────────────
-  // Try hard-delete; if RLS blocks it, mark all as read so badge clears.
   const clearAll = useCallback(async () => {
     if (!userId) return;
     const { error } = await supabase
@@ -97,7 +94,6 @@ export function useNotifications(userId?: string) {
       .eq('user_id', userId);
     if (error) {
       console.warn('[useNotifications] clearAll delete blocked, marking all read:', error.message);
-      // Fallback: mark all read — badge goes to 0 even if rows stay
       await supabase
         .from('notifications')
         .update({ read: true })
