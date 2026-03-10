@@ -213,6 +213,35 @@ export function useMap(userId?: string) {
     }
   }, []);
 
+  // ── Fetch new nearby events (for push notifications) ──────────────────────
+  // Returns events created after `since` that are within radiusMiles of lat/lng
+  const fetchNewNearbyEvents = useCallback(async (
+    lat: number,
+    lng: number,
+    radiusMiles: number,
+    since: string,
+  ): Promise<RaceEvent[]> => {
+    try {
+      const { minLat, maxLat, minLng, maxLng } = boundingBox(lat, lng, radiusMiles);
+      const { data, error } = await supabase
+        .from('race_events')
+        .select('*')
+        .gte('latitude',  minLat).lte('latitude',  maxLat)
+        .gte('longitude', minLng).lte('longitude', maxLng)
+        .gte('created_at', since)
+        .eq('is_cancelled', false)
+        .gte('start_time', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (error) return [];
+      return (data ?? []).filter((e: RaceEvent) =>
+        haversineDistance(lat, lng, e.latitude, e.longitude) <= radiusMiles
+      );
+    } catch {
+      return [];
+    }
+  }, []);
+
   // ── Fetch comments ─────────────────────────────────────────────────────────
   const fetchComments = useCallback(async (spotId: string) => {
     const { data, error } = await supabase
@@ -238,6 +267,20 @@ export function useMap(userId?: string) {
       setSpots(prev => [...prev, { ...data, creator_username: creatorUsername }]);
     }
     return { data: data ?? null, error };
+  }, [userId]);
+
+  // ── Delete spot ────────────────────────────────────────────────────────────
+  const deleteSpot = useCallback(async (spotId: string): Promise<any> => {
+    if (!userId) return 'Not logged in';
+    const { error } = await supabase
+      .from('fly_spots')
+      .delete()
+      .eq('id', spotId)
+      .eq('created_by', userId);   // RLS double-check: only own spots
+    if (!error) {
+      setSpots(prev => prev.filter(s => s.id !== spotId));
+    }
+    return error ?? null;
   }, [userId]);
 
   // ── Vote on spot ───────────────────────────────────────────────────────────
@@ -310,6 +353,20 @@ export function useMap(userId?: string) {
     return { data: data ?? null, error };
   }, [userId]);
 
+  // ── Delete event ───────────────────────────────────────────────────────────
+  const deleteEvent = useCallback(async (eventId: string): Promise<any> => {
+    if (!userId) return 'Not logged in';
+    const { error } = await supabase
+      .from('race_events')
+      .delete()
+      .eq('id', eventId)
+      .eq('organizer_id', userId);   // RLS double-check: only own events
+    if (!error) {
+      setEvents(prev => prev.filter(e => e.id !== eventId));
+    }
+    return error ?? null;
+  }, [userId]);
+
   // ── Toggle RSVP ────────────────────────────────────────────────────────────
   const toggleRsvp = useCallback(async (eventId: string) => {
     if (!userId) return;
@@ -342,5 +399,7 @@ export function useMap(userId?: string) {
     syncMultiGPEvents,
     addSpot, voteSpot, addComment,
     addEvent, toggleRsvp,
+    deleteSpot, deleteEvent,
+    fetchNewNearbyEvents,
   };
 }
