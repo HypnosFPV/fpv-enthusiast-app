@@ -2,13 +2,12 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet } from 'react-native';
-import { useNotifications } from '../../src/hooks/useNotifications';
-import { useAuth } from '../../src/context/AuthContext';
+import { useNotificationsContext } from '../../src/context/NotificationsContext';
 import DroneIcon from '../../src/components/icons/DroneIcon';
 
 export default function TabLayout() {
-  const { user } = useAuth();
-  const { unreadCount } = useNotifications(user?.id);
+  // ── FIX: use shared context instead of a separate hook instance ──────────
+  const { unreadCount } = useNotificationsContext();
 
   return (
     <Tabs
