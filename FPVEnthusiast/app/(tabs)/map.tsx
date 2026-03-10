@@ -340,19 +340,21 @@ export default function MapScreen() {
 
   const handleDropSpotAtAddr = () => {
     if (!addrFound) return;
+    const coords = addrFound;          // capture before clearing
     setAddrFound(null);
     setShowAddrSearch(false);
     setAddrQuery('');
-    setSpotPin(addrFound);
+    setSpotPin(coords);
     setShowAddSpot(true);
   };
 
   const handleDropEventAtAddr = () => {
     if (!addrFound) return;
+    const coords = addrFound;          // capture before clearing
     setAddrFound(null);
     setShowAddrSearch(false);
     setAddrQuery('');
-    setEvtPin(addrFound);
+    setEvtPin(coords);
     setShowAddEvent(true);
   };
 
@@ -717,7 +719,6 @@ export default function MapScreen() {
       {showEventsPanel && (
         <Animated.View
           style={[styles.eventsPanel, { transform: [{ translateY: panelSlide }] }]}
-          pointerEvents="box-none"
         >
           {/* Panel header */}
           <View style={styles.panelHeader}>
@@ -749,7 +750,7 @@ export default function MapScreen() {
               {/* Schedule Event button inside panel */}
               <TouchableOpacity
                 style={styles.scheduleBtn}
-                onPress={() => { closePanel(); setTimeout(() => { setEvtPinMode(true); }, 300); }}
+                onPress={() => { closePanel(); setTimeout(() => setEvtPinMode(true), 350); }}
               >
                 <Ionicons name="add" size={15} color="#fff" />
                 <Text style={styles.scheduleBtnText}>Schedule</Text>
@@ -778,6 +779,7 @@ export default function MapScreen() {
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: 24 }}
             keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled={true}
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
                 <Ionicons name="calendar-outline" size={44} color="#333" />
