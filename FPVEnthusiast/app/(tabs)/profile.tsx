@@ -106,11 +106,12 @@ function thumbnailUri(post: Post): string | null {
 
 // ─── Small components ─────────────────────────────────────────────────────────
 
-const StatBox = ({ value, label, icon }: { value: number | string; label: string; icon?: string }) => (
+const StatBox = ({ value, label, icon, tappable }: { value: number | string; label: string; icon?: string; tappable?: boolean }) => (
   <View style={styles.statBox}>
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
       {icon && <Ionicons name={icon as any} size={16} color="#ff4500" />}
-      <Text style={styles.statValue}>{value}</Text>
+      <Text style={[styles.statValue, tappable && styles.statValueTappable]}>{value}</Text>
+      {tappable && <Ionicons name="chevron-down" size={10} color="#ff4500" style={{ marginLeft: 2 }} />}
     </View>
     <Text style={styles.statLabel}>{label}</Text>
   </View>
@@ -561,10 +562,10 @@ export default function ProfileScreen() {
           <View style={styles.statsRow}>
             <StatBox value={myPosts.length} label="Posts" />
             <TouchableOpacity onPress={() => setFollowModal('followers')} activeOpacity={0.7}>
-              <StatBox value={followersCount} label="Followers" />
+              <StatBox value={followersCount} label="Followers" tappable />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setFollowModal('following')} activeOpacity={0.7}>
-              <StatBox value={followingCount} label="Following" />
+              <StatBox value={followingCount} label="Following" tappable />
             </TouchableOpacity>
             <StatBox value={profile?.total_props ?? 0} label="Props" icon="trophy" />
           </View>
@@ -988,7 +989,8 @@ const styles = StyleSheet.create({
 
   statsRow:  { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 12 },
   statBox:   { alignItems: 'center' },
-  statValue: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  statValue:         { color: '#fff', fontSize: 18, fontWeight: '800' },
+  statValueTappable:  { color: '#ff4500', textDecorationLine: 'underline' },
   statLabel: { color: '#888', fontSize: 11, marginTop: 2 },
 
   socialRow:      { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 8 },
