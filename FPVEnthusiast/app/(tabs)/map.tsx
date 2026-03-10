@@ -116,7 +116,7 @@ export default function MapScreen() {
     if (!result.error) {
       // Refresh map events after sync
       fetchEvents(userLocation.latitude, userLocation.longitude, radiusMiles, [...ALL_EVENT_TYPES]);
-      setMgpSyncToastMsg(\`🏁 \${result.synced} race\${result.synced !== 1 ? 's' : ''} synced to map\`);
+      setMgpSyncToastMsg(`🏁 ${result.synced} race${result.synced !== 1 ? 's' : ''} synced to map`);
     } else {
       setMgpSyncToastMsg('⚠️ Sync failed — check your API key in Settings');
     }
