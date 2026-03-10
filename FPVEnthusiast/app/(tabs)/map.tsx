@@ -100,6 +100,94 @@ function safeIso(raw: string): string {
 
 // PinMarker replaced by SVG FPVMapPins.tsx components
 
+// ─── DateTime Picker ─────────────────────────────────────────────────────────
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const HOURS  = Array.from({ length: 24 }, (_, i) => i);
+const MINS   = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+
+interface DateTimePickerProps {
+  year: number; month: number; day: number; hour: number; minute: number;
+  onChangeYear: (v: number) => void; onChangeMonth: (v: number) => void;
+  onChangeDay: (v: number) => void; onChangeHour: (v: number) => void;
+  onChangeMinute: (v: number) => void;
+}
+
+function DateTimePicker({ year, month, day, hour, minute,
+  onChangeYear, onChangeMonth, onChangeDay, onChangeHour, onChangeMinute
+}: DateTimePickerProps) {
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const clampedDay = Math.min(day, daysInMonth);
+  return (
+    <View style={dtStyles.container}>
+      <View style={dtStyles.col}>
+        <Text style={dtStyles.colLabel}>Month</Text>
+        <ScrollView style={dtStyles.scroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          {MONTHS.map((m, idx) => (
+            <TouchableOpacity key={m} style={[dtStyles.item, month === idx+1 && dtStyles.itemActive]}
+              onPress={() => { onChangeMonth(idx+1); onChangeDay(Math.min(clampedDay, new Date(year, idx+1, 0).getDate())); }}>
+              <Text style={[dtStyles.itemText, month === idx+1 && dtStyles.itemTextActive]}>{m}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+      <View style={dtStyles.col}>
+        <Text style={dtStyles.colLabel}>Day</Text>
+        <ScrollView style={dtStyles.scroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          {days.map(d => (
+            <TouchableOpacity key={d} style={[dtStyles.item, clampedDay === d && dtStyles.itemActive]} onPress={() => onChangeDay(d)}>
+              <Text style={[dtStyles.itemText, clampedDay === d && dtStyles.itemTextActive]}>{d}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+      <View style={dtStyles.col}>
+        <Text style={dtStyles.colLabel}>Year</Text>
+        <ScrollView style={dtStyles.scroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          {years.map(y => (
+            <TouchableOpacity key={y} style={[dtStyles.item, year === y && dtStyles.itemActive]} onPress={() => onChangeYear(y)}>
+              <Text style={[dtStyles.itemText, year === y && dtStyles.itemTextActive]}>{y}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+      <View style={dtStyles.col}>
+        <Text style={dtStyles.colLabel}>Hour</Text>
+        <ScrollView style={dtStyles.scroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          {HOURS.map(h => (
+            <TouchableOpacity key={h} style={[dtStyles.item, hour === h && dtStyles.itemActive]} onPress={() => onChangeHour(h)}>
+              <Text style={[dtStyles.itemText, hour === h && dtStyles.itemTextActive]}>{String(h).padStart(2,'0')}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+      <View style={dtStyles.col}>
+        <Text style={dtStyles.colLabel}>Min</Text>
+        <ScrollView style={dtStyles.scroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+          {MINS.map(m => (
+            <TouchableOpacity key={m} style={[dtStyles.item, minute === m && dtStyles.itemActive]} onPress={() => onChangeMinute(m)}>
+              <Text style={[dtStyles.itemText, minute === m && dtStyles.itemTextActive]}>{String(m).padStart(2,'0')}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+const dtStyles = StyleSheet.create({
+  container:      { flexDirection: 'row', gap: 4, marginBottom: 12, backgroundColor: '#0d0d0d', borderRadius: 14, padding: 8, borderWidth: 1, borderColor: '#222' },
+  col:            { flex: 1, alignItems: 'center' },
+  colLabel:       { color: '#555', fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginBottom: 4 },
+  scroll:         { height: 120 },
+  item:           { paddingVertical: 6, paddingHorizontal: 2, borderRadius: 8, alignItems: 'center', width: '100%' },
+  itemActive:     { backgroundColor: '#ff4500' },
+  itemText:       { color: '#555', fontSize: 13, fontWeight: '600' },
+  itemTextActive: { color: '#fff', fontWeight: '800' },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function MapScreen() {
   const { user } = useAuth();
@@ -220,6 +308,21 @@ export default function MapScreen() {
   const [currentVote,       setCurrentVote]       = useState<1 | -1 | null>(null);
   const [showMgpToast,      setShowMgpToast]      = useState(false);
   const [deletingPin,       setDeletingPin]       = useState(false);
+
+  // ── DateTime picker state ────────────────────────────────────────────────
+  const [evtStartYear,  setEvtStartYear]  = useState(new Date().getFullYear());
+  const [evtStartMonth, setEvtStartMonth] = useState(new Date().getMonth() + 1);
+  const [evtStartDay,   setEvtStartDay]   = useState(new Date().getDate());
+  const [evtStartHour,  setEvtStartHour]  = useState(10);
+  const [evtStartMin,   setEvtStartMin]   = useState(0);
+  const [evtHasEnd,     setEvtHasEnd]     = useState(false);
+  const [evtEndYear,    setEvtEndYear]    = useState(new Date().getFullYear());
+  const [evtEndMonth,   setEvtEndMonth]   = useState(new Date().getMonth() + 1);
+  const [evtEndDay,     setEvtEndDay]     = useState(new Date().getDate());
+  const [evtEndHour,    setEvtEndHour]    = useState(14);
+  const [evtEndMin,     setEvtEndMin]     = useState(0);
+  const [evtUseExistingPin, setEvtUseExistingPin] = useState(false);
+  const [showExistingPinPicker, setShowExistingPinPicker] = useState(false);
 
   // ── Location + initial fetch ─────────────────────────────────────────────
   useEffect(() => {
@@ -376,17 +479,20 @@ export default function MapScreen() {
 
   // ── Submit event ──────────────────────────────────────────────────────────
   const handleSubmitEvent = async () => {
-    if (!evtPin || !evtName.trim() || !evtStart.trim()) {
-      Alert.alert('Missing info', 'Name, start time, and map pin are required.'); return;
+    if (!evtPin) {
+      Alert.alert('No Location', 'Please tap the map to set an event location, or pick an existing spot.'); return;
     }
-    const startIso = safeIso(evtStart);
-    if (!startIso) {
-      Alert.alert('Invalid Date', 'Start time must be in format: YYYY-MM-DD HH:MM\nExample: 2025-08-15 10:00'); return;
+    if (!evtName.trim()) {
+      Alert.alert('Missing info', 'Event name is required.'); return;
     }
-    const endIso = evtEnd.trim() ? safeIso(evtEnd) : '';
-    if (evtEnd.trim() && !endIso) {
-      Alert.alert('Invalid Date', 'End time must be in format: YYYY-MM-DD HH:MM'); return;
-    }
+    // Build ISO strings from picker values
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const startStr = `${evtStartYear}-${pad(evtStartMonth)}-${pad(evtStartDay)}T${pad(evtStartHour)}:${pad(evtStartMin)}:00`;
+    const startIso = safeIso(startStr);
+    if (!startIso) { Alert.alert('Invalid Date', 'Could not build start time. Please check year/month/day.'); return; }
+    const endIso = evtHasEnd
+      ? safeIso(`${evtEndYear}-${pad(evtEndMonth)}-${pad(evtEndDay)}T${pad(evtEndHour)}:${pad(evtEndMin)}:00`)
+      : '';
     setSubmitting(true);
     const { data, error } = await addEvent({
       name: evtName.trim(), description: evtDesc.trim(), event_type: evtType,
@@ -399,8 +505,14 @@ export default function MapScreen() {
     setSubmitting(false);
     if (error) { Alert.alert('Error', 'Could not publish event.'); return; }
     setShowAddEvent(false);
+    // Reset all event form state
     setEvtName(''); setEvtDesc(''); setEvtVenue(''); setEvtCity(''); setEvtState('');
-    setEvtStart(''); setEvtEnd(''); setEvtMax(''); setEvtUrl(''); setEvtPin(null);
+    setEvtMax(''); setEvtUrl(''); setEvtPin(null);
+    setEvtHasEnd(false); setEvtUseExistingPin(false);
+    const now = new Date();
+    setEvtStartYear(now.getFullYear()); setEvtStartMonth(now.getMonth()+1); setEvtStartDay(now.getDate());
+    setEvtStartHour(10); setEvtStartMin(0);
+    setEvtEndHour(14); setEvtEndMin(0);
     Alert.alert('✅ Event published!', `"${data?.name}" is live on the map.`);
   };
 
@@ -924,25 +1036,51 @@ export default function MapScreen() {
         </View>
       </Modal>
 
-      {/* ─── Add Event modal ──────────────────────────────────────────────── */}
-      {/* NOTE: modalWrap uses pointerEvents="box-none" so backdrop and sheet
-               can both receive touches independently — fixes the freeze bug    */}
+      {/* ─── Add Event modal ─────────────────────────────────────────────── */}
       <Modal visible={showAddEvent} transparent animationType="slide" onRequestClose={() => setShowAddEvent(false)}>
         <View style={styles.modalWrap} pointerEvents="box-none">
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowAddEvent(false)} />
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ width: '100%' }}>
-            <View style={[styles.sheet, { maxHeight: height * 0.85, padding: 0 }]}>
+            <View style={[styles.sheet, { maxHeight: height * 0.9, padding: 0 }]}>
               <ScrollView
-                contentContainerStyle={{ padding: 16, paddingBottom: 36 }}
+                contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
                 keyboardShouldPersistTaps="handled"
                 nestedScrollEnabled
                 showsVerticalScrollIndicator={false}
               >
                 <View style={styles.sheetHandle} />
                 <Text style={styles.sheetTitle}>📅 Schedule Event</Text>
-                {evtPin && <Text style={styles.coordText}>📍 {evtPin.latitude.toFixed(5)}, {evtPin.longitude.toFixed(5)}</Text>}
 
-                {/* Event Type as tags — all 6 types as selectable chips */}
+                {/* Location row */}
+                <Text style={styles.fieldLabel}>LOCATION</Text>
+                {evtPin ? (
+                  <View style={styles.evtPinRow}>
+                    <Ionicons name="location" size={14} color="#ff4500" />
+                    <Text style={styles.evtPinText}>{evtPin.latitude.toFixed(5)}, {evtPin.longitude.toFixed(5)}</Text>
+                    <TouchableOpacity onPress={() => setEvtPin(null)} style={styles.evtPinClear}>
+                      <Ionicons name="close-circle" size={16} color="#555" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={{ gap: 8, marginBottom: 12 }}>
+                    <TouchableOpacity
+                      style={styles.evtLocBtn}
+                      onPress={() => { setShowAddEvent(false); setTimeout(() => setEvtPinMode(true), 200); }}
+                    >
+                      <Ionicons name="map-outline" size={16} color="#ff4500" />
+                      <Text style={styles.evtLocBtnText}>Tap map to drop a new pin</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.evtLocBtn, { borderColor: '#2979FF' }]}
+                      onPress={() => setShowExistingPinPicker(true)}
+                    >
+                      <Ionicons name="pin-outline" size={16} color="#2979FF" />
+                      <Text style={[styles.evtLocBtnText, { color: '#2979FF' }]}>Use an existing FPV spot</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Event Type chips */}
                 <Text style={styles.fieldLabel}>EVENT TAG</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginBottom: 12 }}>
                   <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -962,23 +1100,98 @@ export default function MapScreen() {
                 </ScrollView>
 
                 <TextInput style={styles.input} placeholder="Event name *" placeholderTextColor="#555" value={evtName} onChangeText={setEvtName} />
-                <TextInput style={[styles.input, { height: 72, textAlignVertical: 'top' }]} placeholder="Description" placeholderTextColor="#555" value={evtDesc} onChangeText={setEvtDesc} multiline />
+                <TextInput style={[styles.input, { height: 60, textAlignVertical: 'top' }]} placeholder="Description (optional)" placeholderTextColor="#555" value={evtDesc} onChangeText={setEvtDesc} multiline />
                 <TextInput style={styles.input} placeholder="Venue name" placeholderTextColor="#555" value={evtVenue} onChangeText={setEvtVenue} />
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <TextInput style={[styles.input, { flex: 1 }]} placeholder="City" placeholderTextColor="#555" value={evtCity} onChangeText={setEvtCity} />
                   <TextInput style={[styles.input, { width: 70 }]} placeholder="State" placeholderTextColor="#555" value={evtState} onChangeText={setEvtState} />
                 </View>
-                <Text style={styles.dateHint}>📅 Format: YYYY-MM-DD HH:MM  (e.g. 2025-08-15 10:00)</Text>
-                <TextInput style={styles.input} placeholder="Start: YYYY-MM-DD HH:MM *" placeholderTextColor="#555" value={evtStart} onChangeText={setEvtStart} />
-                <TextInput style={styles.input} placeholder="End: YYYY-MM-DD HH:MM (optional)" placeholderTextColor="#555" value={evtEnd} onChangeText={setEvtEnd} />
+
+                {/* Start date/time picker */}
+                <Text style={styles.fieldLabel}>START DATE & TIME</Text>
+                <DateTimePicker
+                  year={evtStartYear} month={evtStartMonth} day={evtStartDay}
+                  hour={evtStartHour} minute={evtStartMin}
+                  onChangeYear={setEvtStartYear} onChangeMonth={setEvtStartMonth}
+                  onChangeDay={setEvtStartDay} onChangeHour={setEvtStartHour}
+                  onChangeMinute={setEvtStartMin}
+                />
+
+                {/* End date/time toggle */}
+                <View style={styles.toggleRow}>
+                  <Text style={styles.toggleLabel}>Add end time (optional)</Text>
+                  <Switch
+                    value={evtHasEnd}
+                    onValueChange={setEvtHasEnd}
+                    trackColor={{ false: '#333', true: '#ff4500' }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                {evtHasEnd && (
+                  <>
+                    <Text style={styles.fieldLabel}>END DATE & TIME</Text>
+                    <DateTimePicker
+                      year={evtEndYear} month={evtEndMonth} day={evtEndDay}
+                      hour={evtEndHour} minute={evtEndMin}
+                      onChangeYear={setEvtEndYear} onChangeMonth={setEvtEndMonth}
+                      onChangeDay={setEvtEndDay} onChangeHour={setEvtEndHour}
+                      onChangeMinute={setEvtEndMin}
+                    />
+                  </>
+                )}
+
                 <TextInput style={styles.input} placeholder="Max participants" placeholderTextColor="#555" value={evtMax} onChangeText={setEvtMax} keyboardType="numeric" />
                 <TextInput style={styles.input} placeholder="Registration URL (optional)" placeholderTextColor="#555" value={evtUrl} onChangeText={setEvtUrl} autoCapitalize="none" keyboardType="url" />
                 <TouchableOpacity style={[styles.applyBtn, submitting && { opacity: 0.5 }]} onPress={handleSubmitEvent} disabled={submitting}>
-                  {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.applyBtnText}>Publish Event</Text>}
+                  {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.applyBtnText}>Publish Event 🚀</Text>}
                 </TouchableOpacity>
               </ScrollView>
             </View>
           </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* ─── Existing Pin Picker modal ───────────────────────────────────────── */}
+      <Modal visible={showExistingPinPicker} transparent animationType="slide" onRequestClose={() => setShowExistingPinPicker(false)}>
+        <View style={styles.modalWrap} pointerEvents="box-none">
+          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowExistingPinPicker(false)} />
+          <View style={[styles.sheet, { maxHeight: '70%' }]}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>📍 Pick an Existing Spot</Text>
+            <Text style={styles.sheetSection}>Select a spot to use as the event location</Text>
+            <FlatList
+              data={spots}
+              keyExtractor={s => s.id}
+              style={{ maxHeight: 400 }}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+                  <Ionicons name="location-outline" size={40} color="#333" />
+                  <Text style={{ color: '#555', marginTop: 8 }}>No spots found nearby</Text>
+                </View>
+              }
+              renderItem={({ item: spot }) => {
+                const cfg = SPOT_CONFIG[spot.spot_type] ?? SPOT_CONFIG['freestyle'];
+                return (
+                  <TouchableOpacity
+                    style={styles.spotPickerRow}
+                    onPress={() => {
+                      setEvtPin({ latitude: spot.latitude, longitude: spot.longitude });
+                      if (!evtVenue.trim()) setEvtVenue(spot.name);
+                      setShowExistingPinPicker(false);
+                    }}
+                  >
+                    <View style={[styles.spotPickerDot, { backgroundColor: cfg.color }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.spotPickerName}>{spot.name}</Text>
+                      <Text style={styles.spotPickerType}>{cfg.label}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color="#444" />
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
         </View>
       </Modal>
 
@@ -1298,4 +1511,17 @@ const styles = StyleSheet.create({
   rsvpBtnActive:     { backgroundColor: '#2979FF' },
   rsvpBtnText:       { color: '#fff', fontWeight: '700', fontSize: 14 },
   regLink:           { color: '#2979FF', fontSize: 12, marginTop: 8 },
+
+  // Event location picker
+  evtPinRow:      { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#1a1a1a', borderRadius: 10, padding: 10, marginBottom: 12, borderWidth: 1, borderColor: '#ff4500' },
+  evtPinText:     { flex: 1, color: '#ff4500', fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  evtPinClear:    { padding: 2 },
+  evtLocBtn:      { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1a1a1a', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#ff4500', marginBottom: 0 },
+  evtLocBtnText:  { color: '#ff4500', fontWeight: '700', fontSize: 13 },
+
+  // Spot picker list
+  spotPickerRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  spotPickerDot:  { width: 12, height: 12, borderRadius: 6 },
+  spotPickerName: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  spotPickerType: { color: '#555', fontSize: 11, marginTop: 2 },
 });
