@@ -1,14 +1,12 @@
 // app/(tabs)/map.tsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
   FlatList, ActivityIndicator, Platform, Alert, ScrollView,
-  KeyboardAvoidingView, Dimensions, Switch,                // ← removed SafeAreaView
-  Animated, Easing,
+  KeyboardAvoidingView, Dimensions, Switch,
+  Animated, Easing, AppState, AppStateStatus,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context'; // ← added here
-
-
+import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker, Circle, PROVIDER_GOOGLE, MapPressEvent } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,8 +16,16 @@ import {
   NewSpotData, NewEventData,
 } from '../../src/hooks/useMap';
 
-const { width } = Dimensions.get('window');
+// Try to import notifications / AsyncStorage gracefully
+let Notifications: any = null;
+let AsyncStorage: any = null;
+try { Notifications = require('expo-notifications'); } catch {}
+try { AsyncStorage = require('@react-native-async-storage/async-storage').default; } catch {}
 
+const { width, height } = Dimensions.get('window');
+const PANEL_HEIGHT = height * 0.68;
+
+// ─── Map Style ────────────────────────────────────────────────────────────────
 const DARK_MAP_STYLE = [
   { elementType: 'geometry',           stylers: [{ color: '#1a1a2e' }] },
   { elementType: 'labels.text.fill',   stylers: [{ color: '#8ec3b9' }] },
@@ -36,6 +42,7 @@ const DARK_MAP_STYLE = [
   { featureType: 'water',              elementType: 'labels.text.fill', stylers: [{ color: '#4a6fa5' }] },
 ];
 
+// ─── Pin / Event Configs ──────────────────────────────────────────────────────
 const SPOT_CONFIG: Record<string, { color: string; label: string; icon: string }> = {
   freestyle:  { color: '#00C853', label: 'Freestyle',  icon: 'bicycle'  },
   bando:      { color: '#FF6D00', label: 'Bando',      icon: 'business' },
@@ -57,6 +64,11 @@ const RADIUS_OPTIONS  = [5, 10, 25, 50, 100];
 const ALL_SPOT_TYPES  = ['freestyle','bando','race_track','open_field','indoor'];
 const ALL_EVENT_TYPES = ['race','meetup','training','tiny_whoop','championship','fun_fly'];
 
+// Race vs Meetup grouping for the quick filter buttons
+const RACE_TYPES   = ['race','championship','fun_fly'];
+const MEETUP_TYPES = ['meetup','training','tiny_whoop'];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatDate(iso: string) {
   try {
     return new Date(iso).toLocaleDateString('en-US', {
@@ -66,6 +78,15 @@ function formatDate(iso: string) {
   } catch { return iso; }
 }
 
+function daysUntil(iso: string): string {
+  const diff = Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
+  if (diff < 0)  return 'past';
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'tomorrow';
+  return `in ${diff}d`;
+}
+
+// ─── Pin Marker ───────────────────────────────────────────────────────────────
 function PinMarker({ color, icon, isMultiGP }: { color: string; icon: string; isMultiGP?: boolean }) {
   return (
     <View style={{ alignItems: 'center' }}>
@@ -87,6 +108,7 @@ const pStyles = StyleSheet.create({
   badgeText: { color: '#fff', fontSize: 7, fontWeight: '900' },
 });
 
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function MapScreen() {
   const { user } = useAuth();
   const {
@@ -96,17 +118,17 @@ export default function MapScreen() {
     syncMultiGPEvents,
     addSpot, voteSpot, addComment,
     addEvent, toggleRsvp,
+    deleteSpot, deleteEvent,
+    fetchNewNearbyEvents,
   } = useMap(user?.id);
 
   const mapRef = useRef<MapView>(null);
 
+  // ── Animated title ───────────────────────────────────────────────────────
   const animValue = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
-      Animated.timing(animValue, {
-        toValue: 1, duration: 3000,
-        easing: Easing.linear, useNativeDriver: false,
-      })
+      Animated.timing(animValue, { toValue: 1, duration: 3000, easing: Easing.linear, useNativeDriver: false })
     ).start();
   }, [animValue]);
   const animatedColor = animValue.interpolate({
@@ -114,45 +136,75 @@ export default function MapScreen() {
     outputRange: ['#ff4500','#ff8c00','#ffcc00','#ff6600','#ff4500'],
   });
 
-  const [userLocation,    setUserLocation]    = useState<{ latitude: number; longitude: number } | null>(null);
-  const [locationGranted, setLocationGranted] = useState<boolean | null>(null);
-  const [isSatellite,     setIsSatellite]     = useState(false);
-  const [radiusMiles,      setRadiusMiles]     = useState(50);
-  const [showSpots,        setShowSpots]       = useState(true);
-  const [showEvents,       setShowEvents]      = useState(true);
-  const [spotTypeFilters,  setSpotTypeFilters] = useState<string[]>([...ALL_SPOT_TYPES]);
-  const [eventTypeFilters, setEventTypeFilters]= useState<string[]>([...ALL_EVENT_TYPES]);
-  const [showFilterPanel,  setShowFilterPanel] = useState(false);
-  const [activeView,       setActiveView]      = useState<'map' | 'events'>('map');
-  const [spotPinMode,      setSpotPinMode]     = useState(false);
-  const [evtPinMode,       setEvtPinMode]      = useState(false);
-  const [spotPin,          setSpotPin]         = useState<{ latitude: number; longitude: number } | null>(null);
-  const [evtPin,           setEvtPin]          = useState<{ latitude: number; longitude: number } | null>(null);
-  const [selectedSpot,     setSelectedSpot]    = useState<FlySpot | null>(null);
-  const [selectedEvent,    setSelectedEvent]   = useState<RaceEvent | null>(null);
-  const [showAddSpot,      setShowAddSpot]     = useState(false);
-  const [showAddEvent,     setShowAddEvent]    = useState(false);
-  const [spotName,         setSpotName]        = useState('');
-  const [spotDesc,         setSpotDesc]        = useState('');
-  const [spotType,         setSpotType]        = useState<FlySpot['spot_type']>('freestyle');
-  const [spotHazard,       setSpotHazard]      = useState<FlySpot['hazard_level']>('low');
-  const [evtName,          setEvtName]         = useState('');
-  const [evtDesc,          setEvtDesc]         = useState('');
-  const [evtType,          setEvtType]         = useState<RaceEvent['event_type']>('race');
-  const [evtVenue,         setEvtVenue]        = useState('');
-  const [evtCity,          setEvtCity]         = useState('');
-  const [evtState,         setEvtState]        = useState('');
-  const [evtStart,         setEvtStart]        = useState('');
-  const [evtEnd,           setEvtEnd]          = useState('');
-  const [evtMax,           setEvtMax]          = useState('');
-  const [evtUrl,           setEvtUrl]          = useState('');
-  const [commentText,      setCommentText]     = useState('');
-  const [isAnonymous,      setIsAnonymous]     = useState(false);
-  const [submitting,       setSubmitting]      = useState(false);
-  const [postingComment,   setPostingComment]  = useState(false);
-  const [currentVote,      setCurrentVote]     = useState<1 | -1 | null>(null);
-  const [showMgpToast,     setShowMgpToast]    = useState(false);
+  // ── Events panel slide animation ─────────────────────────────────────────
+  const panelSlide = useRef(new Animated.Value(PANEL_HEIGHT)).current;
+  const [showEventsPanel, setShowEventsPanel] = useState(false);
 
+  const openPanel = useCallback((filter: 'race' | 'meetup' | 'all') => {
+    setEventPanelFilter(filter);
+    setShowEventsPanel(true);
+    Animated.spring(panelSlide, {
+      toValue: 0, useNativeDriver: true, tension: 65, friction: 11,
+    }).start();
+  }, [panelSlide]);
+
+  const closePanel = useCallback(() => {
+    Animated.timing(panelSlide, {
+      toValue: PANEL_HEIGHT, duration: 260, easing: Easing.in(Easing.ease), useNativeDriver: true,
+    }).start(() => setShowEventsPanel(false));
+  }, [panelSlide]);
+
+  // ── Core state ───────────────────────────────────────────────────────────
+  const [userLocation,      setUserLocation]      = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationGranted,   setLocationGranted]   = useState<boolean | null>(null);
+  const [isSatellite,       setIsSatellite]       = useState(false);
+  const [radiusMiles,       setRadiusMiles]       = useState(50);
+  const [showSpots,         setShowSpots]         = useState(true);
+  const [showEvents,        setShowEvents]        = useState(true);
+  const [spotTypeFilters,   setSpotTypeFilters]   = useState<string[]>([...ALL_SPOT_TYPES]);
+  const [eventTypeFilters,  setEventTypeFilters]  = useState<string[]>([...ALL_EVENT_TYPES]);
+  const [showFilterPanel,   setShowFilterPanel]   = useState(false);
+
+  // Events panel state
+  const [eventPanelFilter,  setEventPanelFilter]  = useState<'all' | 'race' | 'meetup'>('all');
+  const [panelDistance,     setPanelDistance]     = useState(50);
+
+  // Pin mode
+  const [spotPinMode,       setSpotPinMode]       = useState(false);
+  const [evtPinMode,        setEvtPinMode]        = useState(false);
+  const [spotPin,           setSpotPin]           = useState<{ latitude: number; longitude: number } | null>(null);
+  const [evtPin,            setEvtPin]            = useState<{ latitude: number; longitude: number } | null>(null);
+
+  // Detail modals
+  const [selectedSpot,      setSelectedSpot]      = useState<FlySpot | null>(null);
+  const [selectedEvent,     setSelectedEvent]     = useState<RaceEvent | null>(null);
+
+  // Add forms
+  const [showAddSpot,       setShowAddSpot]       = useState(false);
+  const [showAddEvent,      setShowAddEvent]      = useState(false);
+  const [spotName,          setSpotName]          = useState('');
+  const [spotDesc,          setSpotDesc]          = useState('');
+  const [spotType,          setSpotType]          = useState<FlySpot['spot_type']>('freestyle');
+  const [spotHazard,        setSpotHazard]        = useState<FlySpot['hazard_level']>('low');
+  const [evtName,           setEvtName]           = useState('');
+  const [evtDesc,           setEvtDesc]           = useState('');
+  const [evtType,           setEvtType]           = useState<RaceEvent['event_type']>('meetup');
+  const [evtVenue,          setEvtVenue]          = useState('');
+  const [evtCity,           setEvtCity]           = useState('');
+  const [evtState,          setEvtState]          = useState('');
+  const [evtStart,          setEvtStart]          = useState('');
+  const [evtEnd,            setEvtEnd]            = useState('');
+  const [evtMax,            setEvtMax]            = useState('');
+  const [evtUrl,            setEvtUrl]            = useState('');
+  const [commentText,       setCommentText]       = useState('');
+  const [isAnonymous,       setIsAnonymous]       = useState(false);
+  const [submitting,        setSubmitting]        = useState(false);
+  const [postingComment,    setPostingComment]    = useState(false);
+  const [currentVote,       setCurrentVote]       = useState<1 | -1 | null>(null);
+  const [showMgpToast,      setShowMgpToast]      = useState(false);
+  const [deletingPin,       setDeletingPin]       = useState(false);
+
+  // ── Location + initial fetch ─────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -170,6 +222,54 @@ export default function MapScreen() {
     })();
   }, []);
 
+  // ── Push notification setup ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!Notifications) return;
+    (async () => {
+      try {
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status !== 'granted') return;
+        Notifications.setNotificationHandler({
+          handleNotification: async () => ({
+            shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false,
+          }),
+        });
+      } catch {}
+    })();
+  }, []);
+
+  // ── AppState: check for new nearby events when app comes to foreground ────
+  const appStateRef = useRef<AppStateStatus>('active');
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      if (appStateRef.current !== 'active' && nextState === 'active') {
+        if (!userLocation || !Notifications || !AsyncStorage || !fetchNewNearbyEvents) return;
+        try {
+          const lastCheck = await AsyncStorage.getItem('fpv_last_notif_check');
+          const since = lastCheck ?? new Date(Date.now() - 3_600_000).toISOString();
+          const newEvts = await fetchNewNearbyEvents(userLocation.latitude, userLocation.longitude, radiusMiles, since);
+          await AsyncStorage.setItem('fpv_last_notif_check', new Date().toISOString());
+          if (newEvts && newEvts.length > 0) {
+            const cfg = EVENT_CONFIG[newEvts[0].event_type] ?? { label: 'Event' };
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: '🚁 New FPV Event Near You!',
+                body: newEvts.length === 1
+                  ? `${newEvts[0].name} – ${cfg.label} within ${radiusMiles}mi`
+                  : `${newEvts.length} new events within ${radiusMiles}mi of you`,
+                data: { eventId: newEvts[0].id },
+              },
+              trigger: null,
+            });
+          }
+        } catch {}
+      }
+      appStateRef.current = nextState;
+    });
+    return () => sub.remove();
+  }, [userLocation, radiusMiles, fetchNewNearbyEvents]);
+
+  // ── MGP toast ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (mgpSyncCount > 0) {
       setShowMgpToast(true);
@@ -178,6 +278,7 @@ export default function MapScreen() {
     }
   }, [mgpSyncCount]);
 
+  // ── Refresh ───────────────────────────────────────────────────────────────
   const refreshData = useCallback(() => {
     if (!userLocation) return;
     const { latitude, longitude } = userLocation;
@@ -185,6 +286,7 @@ export default function MapScreen() {
     if (showEvents) fetchEvents(latitude, longitude, radiusMiles, eventTypeFilters);
   }, [userLocation, radiusMiles, showSpots, showEvents, spotTypeFilters, eventTypeFilters]);
 
+  // ── Map press ────────────────────────────────────────────────────────────
   const handleMapPress = (e: MapPressEvent) => {
     const coords = e.nativeEvent.coordinate;
     if (spotPinMode) { setSpotPin(coords); setSpotPinMode(false); setShowAddSpot(true); }
@@ -194,6 +296,7 @@ export default function MapScreen() {
   const toggleSpotType  = (t: string) => setSpotTypeFilters(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
   const toggleEventType = (t: string) => setEventTypeFilters(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
 
+  // ── Submit spot ──────────────────────────────────────────────────────────
   const handleSubmitSpot = async () => {
     if (!spotPin || !spotName.trim()) { Alert.alert('Missing info', 'Spot name and map pin are required.'); return; }
     setSubmitting(true);
@@ -209,8 +312,11 @@ export default function MapScreen() {
     Alert.alert('✅ Spot added!', `"${data?.name}" is now on the map.`);
   };
 
+  // ── Submit event ──────────────────────────────────────────────────────────
   const handleSubmitEvent = async () => {
-    if (!evtPin || !evtName.trim() || !evtStart.trim()) { Alert.alert('Missing info', 'Name, start time, and map pin are required.'); return; }
+    if (!evtPin || !evtName.trim() || !evtStart.trim()) {
+      Alert.alert('Missing info', 'Name, start time, and map pin are required.'); return;
+    }
     setSubmitting(true);
     const { data, error } = await addEvent({
       name: evtName.trim(), description: evtDesc.trim(), event_type: evtType,
@@ -228,11 +334,13 @@ export default function MapScreen() {
     Alert.alert('✅ Event published!', `"${data?.name}" is live on the map.`);
   };
 
+  // ── Open spot ─────────────────────────────────────────────────────────────
   const openSpot = async (spot: FlySpot) => {
     setSelectedSpot(spot); setCurrentVote(null); setCommentText('');
     await fetchComments(spot.id);
   };
 
+  // ── Comment ───────────────────────────────────────────────────────────────
   const handlePostComment = async () => {
     if (!selectedSpot || !commentText.trim()) return;
     setPostingComment(true);
@@ -240,6 +348,7 @@ export default function MapScreen() {
     setCommentText(''); setPostingComment(false);
   };
 
+  // ── Vote ──────────────────────────────────────────────────────────────────
   const handleVote = async (v: 1 | -1) => {
     if (!selectedSpot) return;
     await voteSpot(selectedSpot.id, v, currentVote);
@@ -247,13 +356,65 @@ export default function MapScreen() {
     setSelectedSpot(prev => {
       if (!prev) return null;
       let up = prev.thumbs_up, down = prev.thumbs_down;
-      if (currentVote === 1) up--;
-      if (currentVote === -1) down--;
+      if (currentVote === 1) up--; if (currentVote === -1) down--;
       if (v !== currentVote) { if (v === 1) up++; else down++; }
       return { ...prev, thumbs_up: Math.max(0, up), thumbs_down: Math.max(0, down) };
     });
   };
 
+  // ── Delete spot ───────────────────────────────────────────────────────────
+  const handleDeleteSpot = async () => {
+    if (!selectedSpot) return;
+    Alert.alert('Delete Spot', `Remove "${selectedSpot.name}" from the map?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          setDeletingPin(true);
+          const err = await deleteSpot(selectedSpot.id);
+          setDeletingPin(false);
+          if (err) { Alert.alert('Error', 'Could not delete spot.'); return; }
+          setSelectedSpot(null);
+        },
+      },
+    ]);
+  };
+
+  // ── Delete event ──────────────────────────────────────────────────────────
+  const handleDeleteEvent = async () => {
+    if (!selectedEvent) return;
+    Alert.alert('Cancel Event', `Remove "${selectedEvent.name}"? This cannot be undone.`, [
+      { text: 'Keep It', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          setDeletingPin(true);
+          const err = await deleteEvent(selectedEvent.id);
+          setDeletingPin(false);
+          if (err) { Alert.alert('Error', 'Could not delete event.'); return; }
+          setSelectedEvent(null);
+        },
+      },
+    ]);
+  };
+
+  // ── Filtered/visible items ────────────────────────────────────────────────
+  const visibleSpots  = showSpots  ? spots.filter(s => spotTypeFilters.includes(s.spot_type))   : [];
+  const visibleEvents = showEvents ? events.filter(e => eventTypeFilters.includes(e.event_type)) : [];
+
+  // Events panel list (filtered by panel tab + distance)
+  const panelEvents = useMemo(() => {
+    const typeFilter =
+      eventPanelFilter === 'race'   ? RACE_TYPES :
+      eventPanelFilter === 'meetup' ? MEETUP_TYPES : ALL_EVENT_TYPES;
+    return events.filter(e => typeFilter.includes(e.event_type));
+  }, [events, eventPanelFilter]);
+
+  // Count badges for quick-filter buttons
+  const raceCount   = events.filter(e => RACE_TYPES.includes(e.event_type)).length;
+  const meetupCount = events.filter(e => MEETUP_TYPES.includes(e.event_type)).length;
+
+  // Permission denied screen
   if (locationGranted === false) {
     return (
       <View style={styles.permScreen}>
@@ -267,12 +428,10 @@ export default function MapScreen() {
     );
   }
 
-  const visibleSpots  = showSpots  ? spots.filter(s => spotTypeFilters.includes(s.spot_type))   : [];
-  const visibleEvents = showEvents ? events.filter(e => eventTypeFilters.includes(e.event_type)) : [];
-
   return (
     <View style={styles.container}>
 
+      {/* ─── Map ─────────────────────────────────────────────────────────── */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
@@ -308,6 +467,7 @@ export default function MapScreen() {
         {evtPin  && <Marker coordinate={evtPin}><Ionicons name="calendar" size={36} color="#FFD700" /></Marker>}
       </MapView>
 
+      {/* ─── Pin-drop overlay ─────────────────────────────────────────────── */}
       {(spotPinMode || evtPinMode) && (
         <View style={styles.pinDropOverlay} pointerEvents="box-none">
           <View style={styles.pinDropBanner}>
@@ -320,20 +480,22 @@ export default function MapScreen() {
         </View>
       )}
 
+      {/* ─── MultiGP syncing badge ─────────────────────────────────────────── */}
       {mgpSyncing && (
         <View style={styles.mgpSyncBadge} pointerEvents="none">
           <ActivityIndicator size="small" color="#2979FF" />
           <Text style={styles.mgpSyncText}>Syncing MultiGP…</Text>
         </View>
       )}
-
       {showMgpToast && (
         <View style={styles.mgpToast} pointerEvents="none">
           <Text style={styles.mgpToastText}>🏁 {mgpSyncCount} MultiGP race{mgpSyncCount !== 1 ? 's' : ''} synced nearby</Text>
         </View>
       )}
 
+      {/* ─── Header ──────────────────────────────────────────────────────── */}
       <SafeAreaView style={styles.headerSafe} pointerEvents="box-none">
+        {/* Title row */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Animated.Text style={[styles.headerTitle, { color: animatedColor }]}>FPV Map</Animated.Text>
@@ -344,9 +506,6 @@ export default function MapScreen() {
             <TouchableOpacity style={[styles.iconBtn, isSatellite && styles.iconBtnSatellite]} onPress={() => setIsSatellite(v => !v)}>
               <Ionicons name="layers-outline" size={20} color={isSatellite ? '#FFD700' : '#fff'} />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.iconBtn, activeView === 'events' && styles.iconBtnActive]} onPress={() => setActiveView(v => v === 'map' ? 'events' : 'map')}>
-              <Ionicons name={activeView === 'map' ? 'list-outline' : 'map-outline'} size={20} color={activeView === 'events' ? '#ff4500' : '#fff'} />
-            </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn} onPress={() => setShowFilterPanel(true)}>
               <Ionicons name="options-outline" size={20} color="#fff" />
             </TouchableOpacity>
@@ -356,81 +515,180 @@ export default function MapScreen() {
           </View>
         </View>
 
-        <View style={styles.legendSection}>
-          <Text style={styles.legendSectionLabel}>📍 SPOTS</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.legendRow}>
-            {Object.entries(SPOT_CONFIG).map(([key, cfg]) => (
-              <TouchableOpacity key={key} style={[styles.legendChip, { borderColor: cfg.color }, !spotTypeFilters.includes(key) && styles.legendChipOff]} onPress={() => toggleSpotType(key)}>
-                <View style={[styles.legendDot, { backgroundColor: cfg.color }]} />
-                <Text style={styles.legendLabel}>{cfg.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+        {/* Quick-filter buttons row — clean, no legend clutter */}
+        <View style={styles.quickFilterRow}>
+          {/* Race button */}
+          <TouchableOpacity
+            style={[styles.qfBtn, styles.qfBtnRace]}
+            onPress={() => openPanel('race')}
+          >
+            <Ionicons name="trophy" size={14} color="#fff" style={{ marginRight: 5 }} />
+            <Text style={styles.qfBtnText}>Race</Text>
+            {raceCount > 0 && (
+              <View style={styles.qfBadge}><Text style={styles.qfBadgeText}>{raceCount}</Text></View>
+            )}
+          </TouchableOpacity>
 
-        <View style={[styles.legendSection, { marginBottom: 4 }]}>
-          <Text style={styles.legendSectionLabel}>🏁 EVENTS</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.legendRow}>
-            {Object.entries(EVENT_CONFIG).map(([key, cfg]) => (
-              <TouchableOpacity key={key} style={[styles.legendChip, { borderColor: cfg.color }, !eventTypeFilters.includes(key) && styles.legendChipOff]} onPress={() => toggleEventType(key)}>
-                <View style={[styles.legendDot, { backgroundColor: cfg.color }]} />
-                <Text style={styles.legendLabel}>{cfg.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {/* Meetup button */}
+          <TouchableOpacity
+            style={[styles.qfBtn, styles.qfBtnMeetup]}
+            onPress={() => openPanel('meetup')}
+          >
+            <Ionicons name="people" size={14} color="#fff" style={{ marginRight: 5 }} />
+            <Text style={styles.qfBtnText}>Meetup</Text>
+            {meetupCount > 0 && (
+              <View style={styles.qfBadge}><Text style={styles.qfBadgeText}>{meetupCount}</Text></View>
+            )}
+          </TouchableOpacity>
+
+          {/* All events button */}
+          <TouchableOpacity
+            style={[styles.qfBtn, styles.qfBtnAll]}
+            onPress={() => openPanel('all')}
+          >
+            <Ionicons name="calendar-outline" size={14} color="#fff" style={{ marginRight: 5 }} />
+            <Text style={styles.qfBtnText}>All Events</Text>
+            {events.length > 0 && (
+              <View style={[styles.qfBadge, { backgroundColor: '#555' }]}>
+                <Text style={styles.qfBadgeText}>{events.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
 
-      {activeView === 'events' && (
-        <View style={styles.eventsPanel}>
-          <Text style={styles.eventsPanelTitle}>Upcoming Events · {radiusMiles}mi · {visibleEvents.length} found</Text>
+      {/* ─── Events Panel (slide-up bottom sheet) ────────────────────────── */}
+      {showEventsPanel && (
+        <Animated.View
+          style={[styles.eventsPanel, { transform: [{ translateY: panelSlide }] }]}
+          pointerEvents="box-none"
+        >
+          {/* Panel header */}
+          <View style={styles.panelHeader}>
+            <View style={styles.panelHandle} />
+            <View style={styles.panelTitleRow}>
+              <Text style={styles.panelTitle}>
+                {eventPanelFilter === 'race'   ? '🏁 Race Events' :
+                 eventPanelFilter === 'meetup' ? '👥 Meetups' : '📅 All Events'}
+              </Text>
+              <TouchableOpacity style={styles.panelCloseBtn} onPress={closePanel}>
+                <Ionicons name="close" size={20} color="#888" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Tab bar */}
+            <View style={styles.panelTabs}>
+              {(['all', 'race', 'meetup'] as const).map(tab => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[styles.panelTab, eventPanelFilter === tab && styles.panelTabActive]}
+                  onPress={() => setEventPanelFilter(tab)}
+                >
+                  <Text style={[styles.panelTabText, eventPanelFilter === tab && styles.panelTabTextActive]}>
+                    {tab === 'all' ? 'All' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              <View style={{ flex: 1 }} />
+              {/* Schedule Event button inside panel */}
+              <TouchableOpacity
+                style={styles.scheduleBtn}
+                onPress={() => { closePanel(); setTimeout(() => { setEvtPinMode(true); }, 300); }}
+              >
+                <Ionicons name="add" size={15} color="#fff" />
+                <Text style={styles.scheduleBtnText}>Schedule</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Distance filter row */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.panelDistRow}>
+              <Text style={styles.panelDistLabel}>Within:</Text>
+              {RADIUS_OPTIONS.map(r => (
+                <TouchableOpacity
+                  key={r}
+                  style={[styles.panelDistBtn, panelDistance === r && styles.panelDistBtnActive]}
+                  onPress={() => setPanelDistance(r)}
+                >
+                  <Text style={[styles.panelDistBtnText, panelDistance === r && { color: '#fff' }]}>{r}mi</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Event list */}
           <FlatList
-            data={visibleEvents}
+            data={panelEvents}
             keyExtractor={e => e.id}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 24 }}
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
                 <Ionicons name="calendar-outline" size={44} color="#333" />
-                <Text style={styles.emptyText}>No events in this area</Text>
-                <Text style={styles.emptySub}>Tap the Event FAB to post one!</Text>
+                <Text style={styles.emptyText}>No events found</Text>
+                <Text style={styles.emptySub}>Tap "Schedule" to post one!</Text>
               </View>
             }
             renderItem={({ item: evt }) => {
               const cfg = EVENT_CONFIG[evt.event_type];
+              const countdown = daysUntil(evt.start_time);
               return (
-                <TouchableOpacity style={styles.eventRow} onPress={() => setSelectedEvent(evt)}>
+                <TouchableOpacity
+                  style={styles.eventRow}
+                  onPress={() => { closePanel(); setTimeout(() => setSelectedEvent(evt), 320); }}
+                  activeOpacity={0.75}
+                >
                   <View style={[styles.eventTypeBar, { backgroundColor: cfg.color }]} />
                   <View style={styles.eventRowBody}>
                     <View style={styles.eventRowTop}>
+                      <Ionicons name={cfg.icon as any} size={14} color={cfg.color} style={{ marginRight: 5 }} />
                       <Text style={styles.eventRowName} numberOfLines={1}>{evt.name}</Text>
-                      {evt.event_source === 'multigp' && <View style={styles.multigpBadge}><Text style={styles.multigpText}>MultiGP</Text></View>}
+                      {evt.event_source === 'multigp' && (
+                        <View style={styles.multigpBadge}><Text style={styles.multigpText}>M</Text></View>
+                      )}
+                      <View style={[styles.countdownBadge, { backgroundColor: countdown === 'today' ? '#ff4500' : countdown === 'tomorrow' ? '#FF9100' : '#1a1a2e' }]}>
+                        <Text style={styles.countdownText}>{countdown}</Text>
+                      </View>
                     </View>
                     <Text style={styles.eventRowDate}>{formatDate(evt.start_time)}</Text>
-                    <Text style={styles.eventRowLoc} numberOfLines={1}>📍 {[evt.venue_name, evt.city, evt.state].filter(Boolean).join(', ') || 'Location TBD'}</Text>
+                    <Text style={styles.eventRowLoc} numberOfLines={1}>
+                      📍 {[evt.venue_name, evt.city, evt.state].filter(Boolean).join(', ') || 'Location TBD'}
+                    </Text>
                     <View style={styles.eventRowFooter}>
                       <Text style={[styles.eventTypePill, { color: cfg.color }]}>{cfg.label}</Text>
-                      <Text style={styles.eventRowRsvp}>👥 {evt.rsvp_count}</Text>
+                      <TouchableOpacity
+                        style={[styles.rsvpMiniBtn, evt.user_rsvpd && styles.rsvpMiniBtnActive]}
+                        onPress={async (e) => {
+                          e.stopPropagation?.();
+                          await toggleRsvp(evt.id);
+                        }}
+                      >
+                        <Ionicons name={evt.user_rsvpd ? 'checkmark-circle' : 'add-circle-outline'} size={14} color="#fff" />
+                        <Text style={styles.rsvpMiniText}>{evt.user_rsvpd ? 'Going' : 'RSVP'} · {evt.rsvp_count}</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 </TouchableOpacity>
               );
             }}
           />
-        </View>
+        </Animated.View>
       )}
 
-      {!spotPinMode && !evtPinMode && (
+      {/* ─── FABs ─────────────────────────────────────────────────────────── */}
+      {!spotPinMode && !evtPinMode && !showEventsPanel && (
         <View style={styles.fabGroup}>
-          <TouchableOpacity style={[styles.fab, styles.fabEvent]} onPress={() => { setEvtPinMode(true); setActiveView('map'); }}>
+          <TouchableOpacity style={[styles.fab, styles.fabEvent]} onPress={() => { setEvtPinMode(true); }}>
             <Ionicons name="calendar-outline" size={18} color="#fff" />
             <Text style={styles.fabLabel}>Event</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.fab} onPress={() => { setSpotPinMode(true); setActiveView('map'); }}>
+          <TouchableOpacity style={styles.fab} onPress={() => { setSpotPinMode(true); }}>
             <Ionicons name="add" size={20} color="#fff" />
             <Text style={styles.fabLabel}>Spot</Text>
           </TouchableOpacity>
         </View>
       )}
 
+      {/* ─── Filter panel modal ───────────────────────────────────────────── */}
       <Modal visible={showFilterPanel} transparent animationType="slide" onRequestClose={() => setShowFilterPanel(false)}>
         <View style={styles.modalWrap}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowFilterPanel(false)} />
@@ -474,6 +732,7 @@ export default function MapScreen() {
         </View>
       </Modal>
 
+      {/* ─── Add Spot modal ───────────────────────────────────────────────── */}
       <Modal visible={showAddSpot} transparent animationType="slide" onRequestClose={() => setShowAddSpot(false)}>
         <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowAddSpot(false)} />
@@ -504,13 +763,34 @@ export default function MapScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* ─── Add Event modal ──────────────────────────────────────────────── */}
       <Modal visible={showAddEvent} transparent animationType="slide" onRequestClose={() => setShowAddEvent(false)}>
         <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowAddEvent(false)} />
           <ScrollView style={[styles.sheet, { maxHeight: '85%' }]} keyboardShouldPersistTaps="handled">
             <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>📅 Publish Race Event</Text>
+            <Text style={styles.sheetTitle}>📅 Schedule Event</Text>
             {evtPin && <Text style={styles.coordText}>📍 {evtPin.latitude.toFixed(5)}, {evtPin.longitude.toFixed(5)}</Text>}
+
+            {/* Event Type as tags — all 6 types as selectable chips */}
+            <Text style={styles.fieldLabel}>EVENT TAG</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {ALL_EVENT_TYPES.map(t => { const cfg = EVENT_CONFIG[t];
+                  return (
+                    <TouchableOpacity
+                      key={t}
+                      style={[styles.chip, evtType === t ? { backgroundColor: cfg.color } : styles.chipOff]}
+                      onPress={() => setEvtType(t as RaceEvent['event_type'])}
+                    >
+                      <Ionicons name={cfg.icon as any} size={12} color={evtType === t ? '#fff' : '#555'} style={{ marginRight: 4 }} />
+                      <Text style={[styles.chipText, evtType !== t && styles.chipTextOff]}>{cfg.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
             <TextInput style={styles.input} placeholder="Event name *" placeholderTextColor="#555" value={evtName} onChangeText={setEvtName} />
             <TextInput style={[styles.input, { height: 72, textAlignVertical: 'top' }]} placeholder="Description" placeholderTextColor="#555" value={evtDesc} onChangeText={setEvtDesc} multiline />
             <TextInput style={styles.input} placeholder="Venue name" placeholderTextColor="#555" value={evtVenue} onChangeText={setEvtVenue} />
@@ -522,12 +802,6 @@ export default function MapScreen() {
             <TextInput style={styles.input} placeholder="End: YYYY-MM-DD HH:MM (optional)" placeholderTextColor="#555" value={evtEnd} onChangeText={setEvtEnd} />
             <TextInput style={styles.input} placeholder="Max participants" placeholderTextColor="#555" value={evtMax} onChangeText={setEvtMax} keyboardType="numeric" />
             <TextInput style={styles.input} placeholder="Registration URL (optional)" placeholderTextColor="#555" value={evtUrl} onChangeText={setEvtUrl} autoCapitalize="none" />
-            <Text style={styles.fieldLabel}>Event Type</Text>
-            <View style={styles.chipWrap}>
-              {ALL_EVENT_TYPES.map(t => { const cfg = EVENT_CONFIG[t];
-                return <TouchableOpacity key={t} style={[styles.chip, evtType === t ? { backgroundColor: cfg.color } : styles.chipOff]} onPress={() => setEvtType(t as RaceEvent['event_type'])}><Text style={[styles.chipText, evtType !== t && styles.chipTextOff]}>{cfg.label}</Text></TouchableOpacity>;
-              })}
-            </View>
             <TouchableOpacity style={[styles.applyBtn, submitting && { opacity: 0.5 }, { marginBottom: 32 }]} onPress={handleSubmitEvent} disabled={submitting}>
               {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.applyBtnText}>Publish Event</Text>}
             </TouchableOpacity>
@@ -535,6 +809,7 @@ export default function MapScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* ─── Spot detail modal ────────────────────────────────────────────── */}
       <Modal visible={!!selectedSpot} transparent animationType="slide" onRequestClose={() => setSelectedSpot(null)}>
         <View style={styles.modalWrap}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setSelectedSpot(null)} />
@@ -549,6 +824,16 @@ export default function MapScreen() {
                   <View style={[styles.hazardBadge, { backgroundColor: selectedSpot.hazard_level === 'low' ? '#00C853' : selectedSpot.hazard_level === 'medium' ? '#FFD600' : '#FF1744' }]}>
                     <Text style={styles.hazardText}>⚠ {selectedSpot.hazard_level}</Text>
                   </View>
+                  <View style={{ flex: 1 }} />
+                  {/* Delete button — only for owner */}
+                  {selectedSpot.created_by === user?.id && (
+                    <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteSpot} disabled={deletingPin}>
+                      {deletingPin
+                        ? <ActivityIndicator size="small" color="#FF1744" />
+                        : <><Ionicons name="trash-outline" size={15} color="#FF1744" /><Text style={styles.deleteBtnText}>Delete</Text></>
+                      }
+                    </TouchableOpacity>
+                  )}
                 </View>
                 <Text style={styles.detailName}>{selectedSpot.name}</Text>
                 {selectedSpot.creator_username && <Text style={styles.detailMeta}>Added by @{selectedSpot.creator_username}</Text>}
@@ -567,7 +852,7 @@ export default function MapScreen() {
                 <FlatList
                   data={comments}
                   keyExtractor={c => c.id}
-                  style={{ maxHeight: 180 }}
+                  style={{ maxHeight: 160 }}
                   ListEmptyComponent={<Text style={styles.noComments}>No comments yet. Be first!</Text>}
                   renderItem={({ item: c }) => (
                     <View style={styles.commentItem}>
@@ -595,6 +880,7 @@ export default function MapScreen() {
         </View>
       </Modal>
 
+      {/* ─── Event detail modal ───────────────────────────────────────────── */}
       <Modal visible={!!selectedEvent} transparent animationType="slide" onRequestClose={() => setSelectedEvent(null)}>
         <View style={styles.modalWrap}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setSelectedEvent(null)} />
@@ -605,8 +891,20 @@ export default function MapScreen() {
                 {selectedEvent.event_source === 'multigp' && (
                   <View style={styles.multigpBanner}><Text style={styles.multigpBannerText}>🏁 Official MultiGP Race</Text></View>
                 )}
-                <View style={[styles.detailTypeBadge, { backgroundColor: EVENT_CONFIG[selectedEvent.event_type]?.color ?? '#ff4500', alignSelf: 'flex-start', marginBottom: 6 }]}>
-                  <Text style={styles.detailTypeTxt}>{EVENT_CONFIG[selectedEvent.event_type]?.label}</Text>
+                <View style={styles.eventDetailHeaderRow}>
+                  <View style={[styles.detailTypeBadge, { backgroundColor: EVENT_CONFIG[selectedEvent.event_type]?.color ?? '#ff4500' }]}>
+                    <Text style={styles.detailTypeTxt}>{EVENT_CONFIG[selectedEvent.event_type]?.label}</Text>
+                  </View>
+                  <View style={{ flex: 1 }} />
+                  {/* Delete button — only for organizer, non-MultiGP */}
+                  {selectedEvent.organizer_id === user?.id && selectedEvent.event_source !== 'multigp' && (
+                    <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteEvent} disabled={deletingPin}>
+                      {deletingPin
+                        ? <ActivityIndicator size="small" color="#FF1744" />
+                        : <><Ionicons name="trash-outline" size={15} color="#FF1744" /><Text style={styles.deleteBtnText}>Delete</Text></>
+                      }
+                    </TouchableOpacity>
+                  )}
                 </View>
                 <Text style={styles.detailName}>{selectedEvent.name}</Text>
                 <Text style={styles.detailMeta}>🗓 {formatDate(selectedEvent.start_time)}</Text>
@@ -643,6 +941,7 @@ export default function MapScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container:   { flex: 1, backgroundColor: '#0a0a0a' },
   permScreen:  { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a', padding: 32 },
@@ -650,56 +949,98 @@ const styles = StyleSheet.create({
   permDesc:    { color: '#888', fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
   permBtn:     { backgroundColor: '#ff4500', paddingHorizontal: 28, paddingVertical: 12, borderRadius: 24 },
   permBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  headerSafe:       { position: 'absolute', top: 0, left: 0, right: 0 },
-  header:           { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 4 },
-  headerLeft:       { flexDirection: 'column' },
-  headerTitle:      { fontSize: 22, fontWeight: '800', letterSpacing: 1, textShadowColor: '#000', textShadowRadius: 6 },
-  headerSub:        { color: '#888', fontSize: 11, fontWeight: '500', marginTop: 1 },
-  headerRight:      { flexDirection: 'row', gap: 6 },
+
+  // Header
+  headerSafe:    { position: 'absolute', top: 0, left: 0, right: 0 },
+  header:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 6 },
+  headerLeft:    { flexDirection: 'column' },
+  headerTitle:   { fontSize: 22, fontWeight: '800', letterSpacing: 1, textShadowColor: '#000', textShadowRadius: 6 },
+  headerSub:     { color: '#888', fontSize: 11, fontWeight: '500', marginTop: 1 },
+  headerRight:   { flexDirection: 'row', gap: 6 },
   iconBtn:          { backgroundColor: 'rgba(0,0,0,0.65)', padding: 8, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
-  iconBtnActive:    { borderColor: '#ff4500', backgroundColor: 'rgba(255,69,0,0.15)' },
   iconBtnSatellite: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
-  mgpSyncBadge: { position: 'absolute', bottom: 148, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
-  mgpSyncText:  { color: '#2979FF', fontSize: 12, fontWeight: '600' },
-  mgpToast:     { position: 'absolute', bottom: 110, alignSelf: 'center', backgroundColor: 'rgba(41,121,255,0.92)', paddingHorizontal: 18, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: '#2979FF' },
-  mgpToastText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  legendSection:      { paddingLeft: 10, paddingBottom: 2 },
-  legendSectionLabel: { color: '#666', fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 3, marginLeft: 2 },
-  legendRow:          { paddingRight: 10, gap: 6, flexDirection: 'row' },
-  legendChip:         { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: 9, paddingVertical: 5, borderRadius: 14, borderWidth: 1, gap: 4 },
-  legendChipOff:      { opacity: 0.3 },
-  legendDot:          { width: 7, height: 7, borderRadius: 4 },
-  legendLabel:        { color: '#ddd', fontSize: 10, fontWeight: '700' },
+
+  // Quick filter row (replaces old legend)
+  quickFilterRow: { flexDirection: 'row', paddingHorizontal: 12, paddingBottom: 6, gap: 8 },
+  qfBtn:          { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
+  qfBtnRace:      { backgroundColor: '#cc0000' },
+  qfBtnMeetup:    { backgroundColor: '#cc7000' },
+  qfBtnAll:       { backgroundColor: '#1a3a5c' },
+  qfBtnText:      { color: '#fff', fontWeight: '700', fontSize: 13 },
+  qfBadge:        { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 10, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, marginLeft: 6 },
+  qfBadgeText:    { color: '#fff', fontSize: 10, fontWeight: '800' },
+
+  // Events panel
+  eventsPanel:      { position: 'absolute', bottom: 0, left: 0, right: 0, height: PANEL_HEIGHT, backgroundColor: '#0f0f0f', borderTopLeftRadius: 22, borderTopRightRadius: 22, elevation: 20, shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.5, shadowRadius: 16 },
+  panelHeader:      { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+  panelHandle:      { width: 36, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
+  panelTitleRow:    { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  panelTitle:       { color: '#fff', fontSize: 17, fontWeight: '800', flex: 1 },
+  panelCloseBtn:    { padding: 4 },
+  panelTabs:        { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 6 },
+  panelTab:         { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a' },
+  panelTabActive:   { backgroundColor: '#ff4500', borderColor: '#ff4500' },
+  panelTabText:     { color: '#666', fontWeight: '700', fontSize: 12 },
+  panelTabTextActive: { color: '#fff' },
+  scheduleBtn:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a3a5c', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, gap: 4, borderWidth: 1, borderColor: '#2979FF' },
+  scheduleBtnText:  { color: '#fff', fontWeight: '700', fontSize: 12 },
+  panelDistRow:     { flexDirection: 'row', alignItems: 'center', paddingBottom: 8, gap: 6 },
+  panelDistLabel:   { color: '#555', fontSize: 11, fontWeight: '700', marginRight: 2 },
+  panelDistBtn:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a' },
+  panelDistBtnActive: { backgroundColor: '#ff4500', borderColor: '#ff4500' },
+  panelDistBtnText: { color: '#666', fontWeight: '600', fontSize: 11 },
+
+  // Event rows in panel
+  eventRow:         { flexDirection: 'row', marginHorizontal: 12, marginVertical: 4, borderRadius: 12, overflow: 'hidden', backgroundColor: '#141414', borderWidth: 1, borderColor: '#1e1e1e' },
+  eventTypeBar:     { width: 4 },
+  eventRowBody:     { flex: 1, padding: 10 },
+  eventRowTop:      { flexDirection: 'row', alignItems: 'center', marginBottom: 3 },
+  eventRowName:     { color: '#fff', fontWeight: '700', fontSize: 14, flex: 1 },
+  eventRowDate:     { color: '#777', fontSize: 11, marginBottom: 2 },
+  eventRowLoc:      { color: '#555', fontSize: 11, marginBottom: 5 },
+  eventRowFooter:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  eventTypePill:    { fontSize: 11, fontWeight: '700' },
+  countdownBadge:   { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginLeft: 4 },
+  countdownText:    { color: '#fff', fontSize: 9, fontWeight: '800' },
+  rsvpMiniBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#1a3a5c', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, borderColor: '#2979FF' },
+  rsvpMiniBtnActive: { backgroundColor: '#2979FF' },
+  rsvpMiniText:     { color: '#fff', fontSize: 11, fontWeight: '700' },
+  multigpBadge:     { backgroundColor: '#2979FF', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, marginLeft: 4 },
+  multigpText:      { color: '#fff', fontSize: 8, fontWeight: '800' },
+
+  // Empty state
+  emptyWrap: { alignItems: 'center', paddingTop: 50, gap: 8 },
+  emptyText: { color: '#555', fontSize: 16, fontWeight: '600' },
+  emptySub:  { color: '#444', fontSize: 13 },
+
+  // FABs
+  fabGroup: { position: 'absolute', bottom: 32, right: 16, gap: 10, alignItems: 'flex-end' },
+  fab:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ff4500', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 24, gap: 6, elevation: 6, shadowColor: '#ff4500', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 },
+  fabEvent: { backgroundColor: '#1a3a5c' },
+  fabLabel: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // Pin drop
   pinDropOverlay:    { position: 'absolute', bottom: 110, left: 0, right: 0, alignItems: 'center' },
   pinDropBanner:     { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.85)', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20, gap: 8, borderWidth: 1, borderColor: '#ff4500' },
   pinDropText:       { color: '#fff', fontWeight: '600', fontSize: 13 },
   pinDropCancel:     { marginTop: 10, backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: '#444' },
   pinDropCancelText: { color: '#ccc', fontWeight: '600', fontSize: 13 },
-  eventsPanel:      { position: 'absolute', top: 180, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(10,10,10,0.97)' },
-  eventsPanelTitle: { color: '#888', fontSize: 12, fontWeight: '700', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  eventRow:         { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#1a1a1a', marginHorizontal: 12, marginVertical: 4, borderRadius: 10, overflow: 'hidden', backgroundColor: '#111' },
-  eventTypeBar:     { width: 4 },
-  eventRowBody:     { flex: 1, padding: 10 },
-  eventRowTop:      { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 },
-  eventRowName:     { color: '#fff', fontWeight: '700', fontSize: 14, flex: 1 },
-  eventRowDate:     { color: '#888', fontSize: 12, marginBottom: 2 },
-  eventRowLoc:      { color: '#666', fontSize: 11, marginBottom: 4 },
-  eventRowFooter:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  eventTypePill:    { fontSize: 11, fontWeight: '700' },
-  eventRowRsvp:     { color: '#666', fontSize: 11 },
-  emptyWrap:        { alignItems: 'center', paddingTop: 60, gap: 8 },
-  emptyText:        { color: '#555', fontSize: 16, fontWeight: '600' },
-  emptySub:         { color: '#444', fontSize: 13 },
-  fabGroup: { position: 'absolute', bottom: 32, right: 16, gap: 10, alignItems: 'flex-end' },
-  fab:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ff4500', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 24, gap: 6, elevation: 6, shadowColor: '#ff4500', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 },
-  fabEvent: { backgroundColor: '#1a3a5c' },
-  fabLabel: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // MGP badges
+  mgpSyncBadge: { position: 'absolute', bottom: 148, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
+  mgpSyncText:  { color: '#2979FF', fontSize: 12, fontWeight: '600' },
+  mgpToast:     { position: 'absolute', bottom: 110, alignSelf: 'center', backgroundColor: 'rgba(41,121,255,0.92)', paddingHorizontal: 18, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: '#2979FF' },
+  mgpToastText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // Modals / sheets
   modalWrap:   { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
   backdrop:    { ...StyleSheet.absoluteFillObject },
   sheet:       { backgroundColor: '#111', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, paddingBottom: 32 },
   sheetHandle: { width: 36, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 14 },
   sheetTitle:  { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 16 },
   sheetSection:{ color: '#888', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 8, marginTop: 4 },
+
+  // Filters
   radiusRow:       { flexDirection: 'row', gap: 8, marginBottom: 16 },
   radiusBtn:       { flex: 1, paddingVertical: 8, borderRadius: 10, backgroundColor: '#1a1a1a', alignItems: 'center', borderWidth: 1, borderColor: '#333' },
   radiusBtnActive: { backgroundColor: '#ff4500', borderColor: '#ff4500' },
@@ -708,29 +1049,42 @@ const styles = StyleSheet.create({
   toggleLabel: { color: '#fff', fontWeight: '600', fontSize: 14 },
   toggleCount: { color: '#555', fontSize: 11, marginTop: 2 },
   chipWrap:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  chip:        { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
+  chip:        { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, flexDirection: 'row', alignItems: 'center' },
   chipOff:     { backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#333' },
   chipText:    { color: '#fff', fontWeight: '700', fontSize: 12 },
   chipTextOff: { color: '#555' },
   applyBtn:     { backgroundColor: '#ff4500', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   applyBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  // Inputs
   input:      { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 12, color: '#fff', fontSize: 14, marginBottom: 10, borderWidth: 1, borderColor: '#2a2a2a' },
   coordText:  { color: '#555', fontSize: 11, marginBottom: 10, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
   fieldLabel: { color: '#888', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 6, marginTop: 4 },
-  detailHeader:    { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  detailTypeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  detailTypeTxt:   { color: '#fff', fontWeight: '800', fontSize: 11 },
-  hazardBadge:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  hazardText:      { color: '#fff', fontWeight: '700', fontSize: 11 },
-  detailName:      { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 4 },
-  detailMeta:      { color: '#666', fontSize: 12, marginBottom: 3 },
-  detailDesc:      { color: '#aaa', fontSize: 14, lineHeight: 20, marginTop: 6, marginBottom: 8 },
+
+  // Spot/Event detail
+  detailHeader:        { flexDirection: 'row', gap: 8, marginBottom: 8, alignItems: 'center' },
+  eventDetailHeaderRow:{ flexDirection: 'row', gap: 8, marginBottom: 8, alignItems: 'center' },
+  detailTypeBadge:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  detailTypeTxt:       { color: '#fff', fontWeight: '800', fontSize: 11 },
+  hazardBadge:         { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  hazardText:          { color: '#fff', fontWeight: '700', fontSize: 11 },
+  detailName:          { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 4 },
+  detailMeta:          { color: '#666', fontSize: 12, marginBottom: 3 },
+  detailDesc:          { color: '#aaa', fontSize: 14, lineHeight: 20, marginTop: 6, marginBottom: 8 },
+
+  // Delete button
+  deleteBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: 'rgba(255,23,68,0.12)', borderWidth: 1, borderColor: '#FF1744' },
+  deleteBtnText: { color: '#FF1744', fontWeight: '700', fontSize: 12 },
+
+  // Votes
   voteRow:           { flexDirection: 'row', gap: 10, marginVertical: 12 },
   voteBtn:           { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#2a2a2a' },
   voteBtnActive:     { backgroundColor: '#00C853', borderColor: '#00C853' },
   voteBtnDown:       { borderColor: '#2a2a2a' },
   voteBtnDownActive: { backgroundColor: '#FF1744', borderColor: '#FF1744' },
   voteCount:         { color: '#aaa', fontWeight: '700', fontSize: 14 },
+
+  // Comments
   commentsHeader: { color: '#888', fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
   noComments:     { color: '#444', fontSize: 13, textAlign: 'center', paddingVertical: 16 },
   commentItem:    { flexDirection: 'row', gap: 8, marginBottom: 10 },
@@ -743,10 +1097,10 @@ const styles = StyleSheet.create({
   commentSendBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#ff4500', justifyContent: 'center', alignItems: 'center' },
   anonRow:        { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   anonLabel:      { color: '#666', fontSize: 12 },
+
+  // Event detail footer
   multigpBanner:     { backgroundColor: '#1a1a2e', borderRadius: 8, padding: 8, marginBottom: 10, alignItems: 'center', borderWidth: 1, borderColor: '#2979FF' },
   multigpBannerText: { color: '#2979FF', fontWeight: '800', fontSize: 13 },
-  multigpBadge:      { backgroundColor: '#2979FF', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  multigpText:       { color: '#fff', fontSize: 9, fontWeight: '800' },
   eventDetailFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
   rsvpCountWrap:     { alignItems: 'center' },
   rsvpCountNum:      { color: '#fff', fontSize: 24, fontWeight: '800' },
