@@ -17,20 +17,22 @@ export function useFollow(profileUserId: string, currentUserId?: string) {
 
   const isOwnProfile = !!currentUserId && currentUserId === profileUserId;
 
-  // ── seed counts from the users row ────────────────────────────────────────
+  // ── FIX: query follows table directly instead of stale cached counts ────────
   useEffect(() => {
     if (!profileUserId) return;
-    supabase
-      .from('users')
-      .select('followers_count, following_count')
-      .eq('id', profileUserId)
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          setFollowersCount(data.followers_count ?? 0);
-          setFollowingCount(data.following_count ?? 0);
-        }
-      });
+    Promise.all([
+      supabase
+        .from('follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('following_id', profileUserId),
+      supabase
+        .from('follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('follower_id', profileUserId),
+    ]).then(([{ count: fc }, { count: fing }]) => {
+      setFollowersCount(fc ?? 0);
+      setFollowingCount(fing ?? 0);
+    });
   }, [profileUserId]);
 
   // ── check whether current user already follows ────────────────────────────
