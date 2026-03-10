@@ -70,6 +70,20 @@ export function useNotifications(userId?: string) {
     setUnreadCount(prev => Math.max(0, prev - 1));
   }, []);
 
+  // ── Mark multiple IDs as read (for grouped notifications) ─────────────────
+  const markReadBulk = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    await supabase
+      .from('notifications')
+      .update({ read: true })
+      .in('id', ids);
+    setNotifications(prev => {
+      const next = prev.map(n => ids.includes(n.id) ? { ...n, read: true } : n);
+      setUnreadCount(next.filter(n => !n.read).length);
+      return next;
+    });
+  }, []);
+
   // ── Delete single notification ─────────────────────────────────────────────
   const deleteNotification = useCallback(async (id: string) => {
     const { error } = await supabase.from('notifications').delete().eq('id', id);
@@ -77,9 +91,26 @@ export function useNotifications(userId?: string) {
       console.warn('[useNotifications] delete blocked, marking read instead:', error.message);
       await supabase.from('notifications').update({ read: true }).eq('id', id);
     }
-    // Always update local state regardless of DB outcome
     setNotifications(prev => {
       const next = prev.filter(n => n.id !== id);
+      setUnreadCount(next.filter(n => !n.read).length);
+      return next;
+    });
+  }, []);
+
+  // ── Delete multiple notifications (for grouped swipe-delete) ──────────────
+  const deleteNotificationBulk = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .in('id', ids);
+    if (error) {
+      console.warn('[useNotifications] bulk delete blocked, marking read instead:', error.message);
+      await supabase.from('notifications').update({ read: true }).in('id', ids);
+    }
+    setNotifications(prev => {
+      const next = prev.filter(n => !ids.includes(n.id));
       setUnreadCount(next.filter(n => !n.read).length);
       return next;
     });
@@ -100,12 +131,11 @@ export function useNotifications(userId?: string) {
         .eq('user_id', userId)
         .eq('read', false);
     }
-    // Always clear local state
     setNotifications([]);
     setUnreadCount(0);
   }, [userId]);
 
-  // ── Send a notification (used by useFollow, PostCard, etc.) ───────────────
+  // ── Send a notification ────────────────────────────────────────────────────
   const sendNotification = useCallback(async (params: {
     recipientId: string;
     actorId:     string;
@@ -114,7 +144,7 @@ export function useNotifications(userId?: string) {
     commentId?:  string;
     message?:    string;
   }) => {
-    if (params.recipientId === params.actorId) return; // never notify yourself
+    if (params.recipientId === params.actorId) return;
     await supabase.from('notifications').insert({
       user_id:    params.recipientId,
       actor_id:   params.actorId,
@@ -128,66 +158,37 @@ export function useNotifications(userId?: string) {
   // ── Real-time subscription ─────────────────────────────────────────────────
   useEffect(() => {
     if (!userId) return;
-
     fetchNotifications();
 
     const channel = supabase
       .channel(`notifications_user_${userId}`)
-      // ── New notification arrives ──
-      .on(
-        'postgres_changes',
-        {
-          event:  'INSERT',
-          schema: 'public',
-          table:  'notifications',
-          filter: `user_id=eq.${userId}`,
-        },
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
         async (payload) => {
           const { data } = await supabase
             .from('notifications')
-            .select(`
-              *,
-              actor:actor_id ( username, avatar_url ),
-              post:post_id   ( thumbnail_url, caption )
-            `)
+            .select(`*, actor:actor_id ( username, avatar_url ), post:post_id ( thumbnail_url, caption )`)
             .eq('id', (payload.new as { id: string }).id)
             .single();
-
           if (data) {
             setNotifications(prev => [data as AppNotification, ...prev]);
             setUnreadCount(prev => prev + 1);
           }
         }
       )
-      // ── Notification marked as read (UPDATE) — keeps all instances in sync ──
-      .on(
-        'postgres_changes',
-        {
-          event:  'UPDATE',
-          schema: 'public',
-          table:  'notifications',
-          filter: `user_id=eq.${userId}`,
-        },
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
         (payload) => {
           const updated = payload.new as { id: string; read: boolean };
           setNotifications(prev => {
-            const next = prev.map(n =>
-              n.id === updated.id ? { ...n, read: updated.read } : n
-            );
+            const next = prev.map(n => n.id === updated.id ? { ...n, read: updated.read } : n);
             setUnreadCount(next.filter(n => !n.read).length);
             return next;
           });
         }
       )
-      // ── Notification deleted ──────────────────────────────────────────────
-      .on(
-        'postgres_changes',
-        {
-          event:  'DELETE',
-          schema: 'public',
-          table:  'notifications',
-          filter: `user_id=eq.${userId}`,
-        },
+      .on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
         (payload) => {
           const deleted = payload.old as { id: string };
           setNotifications(prev => {
@@ -209,7 +210,9 @@ export function useNotifications(userId?: string) {
     fetchNotifications,
     markAllRead,
     markRead,
+    markReadBulk,
     deleteNotification,
+    deleteNotificationBulk,
     clearAll,
     sendNotification,
   };
