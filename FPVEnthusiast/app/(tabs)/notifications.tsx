@@ -130,11 +130,11 @@ export default function NotificationsScreen() {
     clearAll,
   } = useNotificationsContext();
 
-  // ── FIX: fetch fresh data then mark all read whenever screen is focused ────
+  // ── Refresh list when screen is focused; badge reflects real unread count ──
   useFocusEffect(
     useCallback(() => {
-      fetchNotifications().then(() => markAllRead());
-    }, [fetchNotifications, markAllRead])
+      fetchNotifications();
+    }, [fetchNotifications])
   );
 
   // ── FIX: navigate to user profile by actor_id (not username route) ─────────
