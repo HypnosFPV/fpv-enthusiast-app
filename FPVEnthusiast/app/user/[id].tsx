@@ -48,6 +48,8 @@ export default function UserProfileScreen() {
   const [posts,     setPosts]     = useState<Post[]>([]);
   const [loadingP,  setLoadingP]  = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [liveFollowersCount, setLiveFollowersCount] = useState(0);
+  const [liveFollowingCount, setLiveFollowingCount] = useState(0);
 
   const {
     isFollowing, toggling,
@@ -57,13 +59,18 @@ export default function UserProfileScreen() {
   /* ── fetch data ─────────────────────────────────────────────────── */
   const loadData = useCallback(async () => {
     if (!id) return;
-    const [{ data: prof }, { data: postsData }] = await Promise.all([
+    const [{ data: prof }, { data: postsData }, { count: fc }, { count: fing }] = await Promise.all([
       supabase.from('users').select('*').eq('id', id).single(),
       supabase.from('posts').select('id, media_url, thumbnail_url, social_url, platform, caption, created_at')
         .eq('user_id', id).order('created_at', { ascending: false }).limit(60),
+      // FIX: query follows table directly for accurate counts
+      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', id),
+      supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', id),
     ]);
     setProfile(prof as UserProfile);
     setPosts((postsData as Post[]) ?? []);
+    setLiveFollowersCount(fc ?? 0);
+    setLiveFollowingCount(fing ?? 0);
     setLoadingP(false);
   }, [id]);
 
@@ -161,11 +168,11 @@ export default function UserProfileScreen() {
               <Text style={styles.statLabel}>Posts</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statNum}>{profile.followers_count ?? 0}</Text>
+              <Text style={styles.statNum}>{liveFollowersCount}</Text>
               <Text style={styles.statLabel}>Followers</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statNum}>{profile.following_count ?? 0}</Text>
+              <Text style={styles.statNum}>{liveFollowingCount}</Text>
               <Text style={styles.statLabel}>Following</Text>
             </View>
           </View>
