@@ -25,7 +25,7 @@ const MOBILE_UA =
 const { width } = Dimensions.get('window');
 
 // ── double-tap threshold ──────────────────────────────────────────────────────
-const DOUBLE_TAP_DELAY = 300; // ms
+const DOUBLE_TAP_DELAY = 220; // ms — window to detect double-tap
 
 function getYoutubeVideoId(url?: string | null): string | null {
   if (!url) return null;
@@ -381,33 +381,36 @@ export default function PostCard(props: Props) {
   }, [localLiked, onLike, post.id, runOverlayHeart, runHeartBounce]);
 
   // ── timer-based tap handler ─────────────────────────────────────────────
-  // onSingleTap fires IMMEDIATELY on first tap (so zoom/link-open feels instant).
-  // If a second tap arrives within DOUBLE_TAP_DELAY we close any zoom that just
-  // opened and fire the like overlay instead.
+  // We MUST delay the single-tap action (zoom/link-open) until we know no
+  // second tap is coming — otherwise the zoom modal opens immediately and
+  // swallows the second tap, making double-tap undetectable.
+  //
+  // Delay = DOUBLE_TAP_DELAY + 30ms (250ms total — feels fast, not broken).
+  // Double-tap window = 220ms — tight enough that intentional double-taps
+  // are always caught before zoom opens.
   const handleMediaTap = useCallback((onSingleTap?: () => void) => {
     const now = Date.now();
     if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
       // ── Double tap ──
-      // Cancel any pending zoom / link-open action
       if (singleTapTimerRef.current) {
         clearTimeout(singleTapTimerRef.current);
         singleTapTimerRef.current = null;
       }
-      // Close zoom modal if it was just opened by the first tap
-      setZoomUri(null);
       fireLikeFromDoubleTap();
       lastTapRef.current = 0; // reset so third tap doesn't re-trigger
     } else {
-      // ── First tap — fire action immediately (no delay) ──
-      // Zoom / link-open feels instant this way; if a second tap follows
-      // quickly we cancel it above.
+      // ── First tap — start short timer ──
+      // 250ms total delay: fast enough to feel responsive, long enough to
+      // detect a second tap before zoom opens and blocks touch events.
       lastTapRef.current = now;
       if (onSingleTap) {
-        onSingleTap();
+        singleTapTimerRef.current = setTimeout(() => {
+          singleTapTimerRef.current = null;
+          onSingleTap();
+        }, DOUBLE_TAP_DELAY + 30);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fireLikeFromDoubleTap]); // setZoomUri is stable (useState setter)
+  }, [fireLikeFromDoubleTap]);
 
   // ── like button press ────────────────────────────────────────────────────
   const handleLikePress = useCallback(() => {
