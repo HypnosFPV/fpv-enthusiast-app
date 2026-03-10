@@ -1,5 +1,6 @@
 // app/(tabs)/notifications.tsx
 // Full notifications screen with:
+//   • Animated cycling-colour title (same style as FPV Feed)
 //   • Comment/like/mention → navigates to post detail (/post/[id])
 //   • Follow → Follow Back / View Profile action sheet
 //   • Reply → navigates to post detail with comment_id param
@@ -9,11 +10,11 @@
 //   • Visual badge on each type icon
 //   • Swipe-left to delete
 //   • Mark all read + Clear all header buttons
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
   Image, ActivityIndicator, RefreshControl, Animated,
-  Modal, Pressable, SectionList,
+  Modal, Pressable, SectionList, Easing,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,8 +36,8 @@ function timeAgo(iso: string): string {
 
 /** Buckets notifications into Today / Yesterday / Earlier sections */
 function groupByDate(notifications: AppNotification[]): Array<{ title: string; data: AppNotification[] }> {
-  const now   = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const now       = new Date();
+  const today     = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const yesterday = today - 86400000;
 
   const groups: Record<string, AppNotification[]> = {
@@ -62,11 +63,11 @@ const TYPE_META: Record<
   string,
   { icon: string; color: string; label: (actor: string) => string }
 > = {
-  like:    { icon: 'heart',           color: '#e74c3c', label: (a) => `${a} liked your post`          },
-  comment: { icon: 'chatbubble',      color: '#3498db', label: (a) => `${a} commented on your post`   },
-  follow:  { icon: 'person-add',      color: '#2ecc71', label: (a) => `${a} started following you`    },
-  mention: { icon: 'at-circle',       color: '#f39c12', label: (a) => `${a} mentioned you`            },
-  reply:   { icon: 'return-down-back',color: '#9b59b6', label: (a) => `${a} replied to your comment`  },
+  like:    { icon: 'heart',            color: '#e74c3c', label: (a) => `${a} liked your post`          },
+  comment: { icon: 'chatbubble',       color: '#3498db', label: (a) => `${a} commented on your post`   },
+  follow:  { icon: 'person-add',       color: '#2ecc71', label: (a) => `${a} started following you`    },
+  mention: { icon: 'at-circle',        color: '#f39c12', label: (a) => `${a} mentioned you`            },
+  reply:   { icon: 'return-down-back', color: '#9b59b6', label: (a) => `${a} replied to your comment`  },
 };
 
 // ─── Follow Action Sheet ───────────────────────────────────────────────────────
@@ -172,26 +173,27 @@ function NotifRow({
   onPress:  (n: AppNotification) => void;
   onDelete: (id: string) => void;
 }) {
-  const swipeRef = useRef<Swipeable>(null);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
+  const swipeRef  = useRef<Swipeable>(null);
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(18)).current;
 
-  // Stagger-in animation
-  React.useEffect(() => {
+  // Stagger-in animation on mount
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 280,
-        delay: Math.min(index * 40, 400), // max 400ms delay
+        duration: 260,
+        delay: Math.min(index * 35, 350),
         useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 280,
-        delay: Math.min(index * 40, 400),
+        duration: 260,
+        delay: Math.min(index * 35, 350),
         useNativeDriver: true,
       }),
     ]).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const meta   = TYPE_META[item.type] ?? TYPE_META.like;
@@ -217,10 +219,7 @@ function NotifRow({
         )}
       >
         <TouchableOpacity
-          style={[
-            styles.row,
-            !item.read && styles.rowUnread,
-          ]}
+          style={[styles.row, !item.read && styles.rowUnread]}
           onPress={() => onPress(item)}
           activeOpacity={0.75}
           disabled={!isActionable}
@@ -264,7 +263,7 @@ function NotifRow({
             <Ionicons name="chevron-forward" size={14} color="#444" style={{ marginLeft: 4 }} />
           )}
 
-          {/* Unread dot (right side) */}
+          {/* Unread dot */}
           {!item.read && <View style={styles.unreadDot} />}
         </TouchableOpacity>
       </Swipeable>
@@ -288,6 +287,23 @@ export default function NotificationsScreen() {
     clearAll,
   } = useNotificationsContext();
 
+  // ── Animated cycling title (same as FPV Feed) ─────────────────────────────
+  const animValue = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(animValue, {
+        toValue:         1,
+        duration:        3000,
+        easing:          Easing.linear,
+        useNativeDriver: false,
+      })
+    ).start();
+  }, [animValue]);
+  const animatedColor = animValue.interpolate({
+    inputRange:  [0,        0.25,      0.5,       0.75,      1       ],
+    outputRange: ['#ff4500','#ff8c00', '#ffcc00', '#ff6600', '#ff4500'],
+  });
+
   // ── Follow action sheet state ─────────────────────────────────────────────
   const [followSheet, setFollowSheet] = useState<{
     actorId:     string;
@@ -307,23 +323,13 @@ export default function NotificationsScreen() {
     if (!n.read) await markRead(n.id);
 
     if (n.type === 'follow') {
-      // Show Follow Back / View Profile action sheet
       setFollowSheet({
         actorId:     n.actor_id ?? '',
         actorName:   (n.actor as any)?.username ?? 'User',
         actorAvatar: (n.actor as any)?.avatar_url ?? null,
       });
-    } else if (n.type === 'reply' && n.post_id) {
-      // Navigate to post detail, highlight the specific comment thread
-      router.push({
-        pathname: '/post/[id]',
-        params: {
-          id: n.post_id,
-          ...(n.comment_id ? { comment_id: n.comment_id } : {}),
-        },
-      });
     } else if (n.post_id) {
-      // like / comment / mention — navigate to the specific post
+      // comment / like / mention / reply → post detail screen
       router.push({
         pathname: '/post/[id]',
         params: {
@@ -340,7 +346,7 @@ export default function NotificationsScreen() {
     router.push({ pathname: '/user/[id]', params: { id: followSheet.actorId } });
   }, [followSheet, router]);
 
-  // ── Group notifications by date ───────────────────────────────────────────
+  // ── Group by date ─────────────────────────────────────────────────────────
   const sections = groupByDate(notifications);
 
   if (loading && !notifications.length) {
@@ -357,7 +363,10 @@ export default function NotificationsScreen() {
       {/* ── Header ── */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Notifications</Text>
+          {/* Animated cycling-colour title */}
+          <Animated.Text style={[styles.title, { color: animatedColor }]}>
+            Notifications
+          </Animated.Text>
           {unreadCount > 0 && (
             <Text style={styles.unreadLabel}>{unreadCount} unread</Text>
           )}
@@ -378,7 +387,7 @@ export default function NotificationsScreen() {
         </View>
       </View>
 
-      {/* ── Swipe hint (always visible when list is non-empty) ── */}
+      {/* ── Swipe hint ── */}
       {notifications.length > 0 && (
         <View style={styles.swipeHint}>
           <Ionicons name="arrow-back-outline" size={12} color="#555" />
@@ -449,24 +458,24 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0d0d0d' },
   center:    { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0d0d0d' },
 
-  header:        {
+  header: {
     paddingTop: 56, paddingBottom: 14, paddingHorizontal: 16,
     borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
     flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
   },
-  title:         { color: '#fff', fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
+  title:         { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
   unreadLabel:   { color: '#ff4500', fontSize: 12, fontWeight: '600', marginTop: 2 },
   headerActions: { flexDirection: 'row', gap: 8, paddingBottom: 2 },
-  markAllBtn:    {
+  markAllBtn: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 12, paddingVertical: 7,
     borderRadius: 14, borderWidth: 1, borderColor: '#2a2a2a',
     backgroundColor: '#161616',
   },
-  markAllText:   { color: '#888', fontSize: 12, fontWeight: '500' },
-  clearAllBtn:   { borderColor: '#3a1a1a', backgroundColor: '#1a0a0a' },
+  markAllText: { color: '#888', fontSize: 12, fontWeight: '500' },
+  clearAllBtn: { borderColor: '#3a1a1a', backgroundColor: '#1a0a0a' },
 
-  swipeHint:     {
+  swipeHint: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 16, paddingVertical: 6,
     borderBottomWidth: 1, borderBottomColor: '#111',
@@ -485,7 +494,6 @@ const styles = StyleSheet.create({
   listContent:    { paddingBottom: 120 },
   emptyContainer: { flex: 1 },
 
-  // Row
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -498,7 +506,6 @@ const styles = StyleSheet.create({
   },
   rowUnread: { backgroundColor: '#110800' },
 
-  // Left unread accent
   unreadBar: {
     position: 'absolute',
     left: 0, top: 0, bottom: 0,
@@ -507,14 +514,11 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
 
-  rowBody:   { flex: 1, marginHorizontal: 12 },
-  rowText:   { color: '#ddd', fontSize: 14, lineHeight: 20 },
-  bold:      { fontWeight: '700', color: '#fff' },
-  messagePreview: {
-    color: '#666', fontSize: 13, marginTop: 2,
-    fontStyle: 'italic',
-  },
-  timeText:  { color: '#555', fontSize: 12, marginTop: 4 },
+  rowBody:        { flex: 1, marginHorizontal: 12 },
+  rowText:        { color: '#ddd', fontSize: 14, lineHeight: 20 },
+  bold:           { fontWeight: '700', color: '#fff' },
+  messagePreview: { color: '#666', fontSize: 13, marginTop: 2, fontStyle: 'italic' },
+  timeText:       { color: '#555', fontSize: 12, marginTop: 4 },
 
   avatarWrap:        { position: 'relative' },
   avatar:            { width: 48, height: 48, borderRadius: 24 },
@@ -539,7 +543,7 @@ const styles = StyleSheet.create({
 
   // ── Follow Action Sheet ──────────────────────────────────────────────────
   sheetBackdrop:          { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
-  sheet:                  {
+  sheet: {
     backgroundColor: '#161616',
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     paddingBottom: 44, paddingTop: 6,
