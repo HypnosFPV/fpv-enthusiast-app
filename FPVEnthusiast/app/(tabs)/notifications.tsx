@@ -1,9 +1,19 @@
 // app/(tabs)/notifications.tsx
+// Full notifications screen with:
+//   • Comment/like/mention → navigates to post detail (/post/[id])
+//   • Follow → Follow Back / View Profile action sheet
+//   • Reply → navigates to post detail with comment_id param
+//   • Section grouping: Today / Yesterday / Earlier
+//   • Stagger-animated row entrance
+//   • Left-border unread indicator (+ orange dot)
+//   • Visual badge on each type icon
+//   • Swipe-left to delete
+//   • Mark all read + Clear all header buttons
 import React, { useCallback, useRef, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
   Image, ActivityIndicator, RefreshControl, Animated,
-  Modal, Pressable,
+  Modal, Pressable, SectionList,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,26 +33,45 @@ function timeAgo(iso: string): string {
   return `${Math.floor(diff / 86400)}d`;
 }
 
+/** Buckets notifications into Today / Yesterday / Earlier sections */
+function groupByDate(notifications: AppNotification[]): Array<{ title: string; data: AppNotification[] }> {
+  const now   = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterday = today - 86400000;
+
+  const groups: Record<string, AppNotification[]> = {
+    Today:     [],
+    Yesterday: [],
+    Earlier:   [],
+  };
+
+  for (const n of notifications) {
+    const t = new Date(n.created_at).getTime();
+    if (t >= today)          groups.Today.push(n);
+    else if (t >= yesterday) groups.Yesterday.push(n);
+    else                     groups.Earlier.push(n);
+  }
+
+  return Object.entries(groups)
+    .filter(([, data]) => data.length > 0)
+    .map(([title, data]) => ({ title, data }));
+}
+
+// ─── Type metadata ─────────────────────────────────────────────────────────
 const TYPE_META: Record<
   string,
   { icon: string; color: string; label: (actor: string) => string }
 > = {
-  like:    { icon: 'heart',      color: '#e74c3c', label: (a) => `${a} liked your post`        },
-  comment: { icon: 'chatbubble', color: '#3498db', label: (a) => `${a} commented on your post` },
-  follow:  { icon: 'person-add', color: '#2ecc71', label: (a) => `${a} started following you`  },
-  mention: { icon: 'at-circle',  color: '#f39c12', label: (a) => `${a} mentioned you`          },
+  like:    { icon: 'heart',           color: '#e74c3c', label: (a) => `${a} liked your post`          },
+  comment: { icon: 'chatbubble',      color: '#3498db', label: (a) => `${a} commented on your post`   },
+  follow:  { icon: 'person-add',      color: '#2ecc71', label: (a) => `${a} started following you`    },
+  mention: { icon: 'at-circle',       color: '#f39c12', label: (a) => `${a} mentioned you`            },
+  reply:   { icon: 'return-down-back',color: '#9b59b6', label: (a) => `${a} replied to your comment`  },
 };
 
 // ─── Follow Action Sheet ───────────────────────────────────────────────────────
-// Shown when tapping a "follow" notification — lets you Follow Back or View Profile
 function FollowActionSheet({
-  visible,
-  actorId,
-  actorName,
-  actorAvatar,
-  currentUserId,
-  onViewProfile,
-  onClose,
+  visible, actorId, actorName, actorAvatar, currentUserId, onViewProfile, onClose,
 }: {
   visible:       boolean;
   actorId:       string;
@@ -54,18 +83,8 @@ function FollowActionSheet({
 }) {
   const { isFollowing, toggling, toggle } = useFollows(currentUserId, actorId);
 
-  const handleFollowBack = async () => {
-    await toggle();
-    // Don't close — let them see the updated state
-  };
-
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.sheetBackdrop} onPress={onClose} />
       <View style={styles.sheet}>
         {/* User info */}
@@ -83,13 +102,12 @@ function FollowActionSheet({
           </View>
         </View>
 
-        {/* Divider */}
         <View style={styles.sheetDivider} />
 
         {/* Follow Back */}
         <TouchableOpacity
           style={[styles.sheetBtn, isFollowing && styles.sheetBtnFollowing]}
-          onPress={handleFollowBack}
+          onPress={toggle}
           disabled={toggling}
           activeOpacity={0.8}
         >
@@ -110,16 +128,11 @@ function FollowActionSheet({
         </TouchableOpacity>
 
         {/* View Profile */}
-        <TouchableOpacity
-          style={styles.sheetBtnSecondary}
-          onPress={onViewProfile}
-          activeOpacity={0.8}
-        >
+        <TouchableOpacity style={styles.sheetBtnSecondary} onPress={onViewProfile} activeOpacity={0.8}>
           <Ionicons name="person-outline" size={20} color="#ff4500" />
-          <Text style={styles.sheetBtnSecondaryText}>View Profile</Text>
+          <Text style={styles.sheetBtnSecondaryText}>View Profile →</Text>
         </TouchableOpacity>
 
-        {/* Cancel */}
         <TouchableOpacity style={styles.sheetCancel} onPress={onClose} activeOpacity={0.7}>
           <Text style={styles.sheetCancelText}>Cancel</Text>
         </TouchableOpacity>
@@ -150,18 +163,43 @@ function DeleteAction({
 // ─── Notification Row ─────────────────────────────────────────────────────────
 function NotifRow({
   item,
+  index,
   onPress,
   onDelete,
 }: {
   item:     AppNotification;
+  index:    number;
   onPress:  (n: AppNotification) => void;
   onDelete: (id: string) => void;
 }) {
   const swipeRef = useRef<Swipeable>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  // Stagger-in animation
+  React.useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 280,
+        delay: Math.min(index * 40, 400), // max 400ms delay
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 280,
+        delay: Math.min(index * 40, 400),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
   const meta   = TYPE_META[item.type] ?? TYPE_META.like;
   const actor  = (item.actor as any)?.username ?? 'Someone';
   const thumb  = (item.post  as any)?.thumbnail_url ?? null;
   const avatar = (item.actor as any)?.avatar_url ?? null;
+
+  const isActionable = item.type === 'follow' || !!item.post_id;
 
   const handleDelete = () => {
     swipeRef.current?.close();
@@ -169,56 +207,68 @@ function NotifRow({
   };
 
   return (
-    <Swipeable
-      ref={swipeRef}
-      friction={2}
-      overshootRight={false}
-      renderRightActions={(progress) => (
-        <DeleteAction progress={progress} onDelete={handleDelete} />
-      )}
-    >
-      <TouchableOpacity
-        style={[styles.row, !item.read && styles.rowUnread]}
-        onPress={() => onPress(item)}
-        activeOpacity={0.75}
-      >
-        {/* Avatar + type badge */}
-        <View style={styles.avatarWrap}>
-          {avatar ? (
-            <Image source={{ uri: avatar }} style={styles.avatar} />
-          ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Ionicons name="person" size={20} color="#555" />
-            </View>
-          )}
-          <View style={[styles.iconBadge, { backgroundColor: meta.color }]}>
-            <Ionicons name={meta.icon as any} size={10} color="#fff" />
-          </View>
-        </View>
-
-        {/* Text */}
-        <View style={styles.rowBody}>
-          <Text style={styles.rowText} numberOfLines={2}>
-            <Text style={styles.bold}>{actor}</Text>
-            {' '}{meta.label(actor).replace(actor + ' ', '')}
-          </Text>
-          <Text style={styles.timeText}>{timeAgo(item.created_at)}</Text>
-        </View>
-
-        {/* Post thumbnail */}
-        {thumb ? (
-          <Image source={{ uri: thumb }} style={styles.postThumb} resizeMode="cover" />
-        ) : null}
-
-        {/* Follow notification hint */}
-        {item.type === 'follow' && (
-          <Ionicons name="chevron-forward" size={16} color="#444" style={{ marginLeft: 4 }} />
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+      <Swipeable
+        ref={swipeRef}
+        friction={2}
+        overshootRight={false}
+        renderRightActions={(progress) => (
+          <DeleteAction progress={progress} onDelete={handleDelete} />
         )}
+      >
+        <TouchableOpacity
+          style={[
+            styles.row,
+            !item.read && styles.rowUnread,
+          ]}
+          onPress={() => onPress(item)}
+          activeOpacity={0.75}
+          disabled={!isActionable}
+        >
+          {/* Left unread accent bar */}
+          {!item.read && <View style={styles.unreadBar} />}
 
-        {/* Unread dot */}
-        {!item.read && <View style={styles.unreadDot} />}
-      </TouchableOpacity>
-    </Swipeable>
+          {/* Avatar + type badge */}
+          <View style={styles.avatarWrap}>
+            {avatar ? (
+              <Image source={{ uri: avatar }} style={styles.avatar} />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Ionicons name="person" size={20} color="#555" />
+              </View>
+            )}
+            <View style={[styles.iconBadge, { backgroundColor: meta.color }]}>
+              <Ionicons name={meta.icon as any} size={10} color="#fff" />
+            </View>
+          </View>
+
+          {/* Text */}
+          <View style={styles.rowBody}>
+            <Text style={styles.rowText} numberOfLines={2}>
+              <Text style={styles.bold}>{actor}</Text>
+              {' '}{meta.label(actor).replace(actor + ' ', '')}
+            </Text>
+            {item.message ? (
+              <Text style={styles.messagePreview} numberOfLines={1}>"{item.message}"</Text>
+            ) : null}
+            <Text style={styles.timeText}>{timeAgo(item.created_at)}</Text>
+          </View>
+
+          {/* Post thumbnail */}
+          {thumb ? (
+            <Image source={{ uri: thumb }} style={styles.postThumb} resizeMode="cover" />
+          ) : null}
+
+          {/* Chevron for tappable items */}
+          {isActionable && (
+            <Ionicons name="chevron-forward" size={14} color="#444" style={{ marginLeft: 4 }} />
+          )}
+
+          {/* Unread dot (right side) */}
+          {!item.read && <View style={styles.unreadDot} />}
+        </TouchableOpacity>
+      </Swipeable>
+    </Animated.View>
   );
 }
 
@@ -263,8 +313,24 @@ export default function NotificationsScreen() {
         actorName:   (n.actor as any)?.username ?? 'User',
         actorAvatar: (n.actor as any)?.avatar_url ?? null,
       });
+    } else if (n.type === 'reply' && n.post_id) {
+      // Navigate to post detail, highlight the specific comment thread
+      router.push({
+        pathname: '/post/[id]',
+        params: {
+          id: n.post_id,
+          ...(n.comment_id ? { comment_id: n.comment_id } : {}),
+        },
+      });
     } else if (n.post_id) {
-      router.push('/(tabs)/feed' as any);
+      // like / comment / mention — navigate to the specific post
+      router.push({
+        pathname: '/post/[id]',
+        params: {
+          id: n.post_id,
+          ...(n.comment_id ? { comment_id: n.comment_id } : {}),
+        },
+      });
     }
   }, [markRead, router]);
 
@@ -273,6 +339,9 @@ export default function NotificationsScreen() {
     setFollowSheet(null);
     router.push({ pathname: '/user/[id]', params: { id: followSheet.actorId } });
   }, [followSheet, router]);
+
+  // ── Group notifications by date ───────────────────────────────────────────
+  const sections = groupByDate(notifications);
 
   if (loading && !notifications.length) {
     return (
@@ -287,23 +356,29 @@ export default function NotificationsScreen() {
 
       {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.title}>Notifications</Text>
+        <View>
+          <Text style={styles.title}>Notifications</Text>
+          {unreadCount > 0 && (
+            <Text style={styles.unreadLabel}>{unreadCount} unread</Text>
+          )}
+        </View>
         <View style={styles.headerActions}>
           {unreadCount > 0 && (
             <TouchableOpacity style={styles.markAllBtn} onPress={markAllRead}>
-              <Text style={styles.markAllText}>Mark all read</Text>
+              <Ionicons name="checkmark-done-outline" size={13} color="#888" style={{ marginRight: 4 }} />
+              <Text style={styles.markAllText}>Mark read</Text>
             </TouchableOpacity>
           )}
           {notifications.length > 0 && (
             <TouchableOpacity style={[styles.markAllBtn, styles.clearAllBtn]} onPress={clearAll}>
-              <Ionicons name="trash-outline" size={13} color="#888" style={{ marginRight: 4 }} />
-              <Text style={styles.markAllText}>Clear all</Text>
+              <Ionicons name="trash-outline" size={13} color="#c0392b" style={{ marginRight: 4 }} />
+              <Text style={[styles.markAllText, { color: '#c0392b' }]}>Clear all</Text>
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* ── Swipe hint ── */}
+      {/* ── Swipe hint (always visible when list is non-empty) ── */}
       {notifications.length > 0 && (
         <View style={styles.swipeHint}>
           <Ionicons name="arrow-back-outline" size={12} color="#555" />
@@ -311,38 +386,46 @@ export default function NotificationsScreen() {
         </View>
       )}
 
-      {/* ── List ── */}
-      <FlatList
-        data={notifications}
-        keyExtractor={n => n.id}
-        renderItem={({ item }) => (
-          <NotifRow
-            item={item}
-            onPress={handlePress}
-            onDelete={deleteNotification}
-          />
-        )}
-        refreshControl={
-          <RefreshControl
-            refreshing={loading}
-            onRefresh={fetchNotifications}
-            tintColor="#ff4500"
-          />
-        }
-        ListEmptyComponent={
+      {/* ── Sectioned List ── */}
+      {sections.length === 0 ? (
+        <View style={styles.emptyContainer}>
           <View style={styles.empty}>
-            <Ionicons name="notifications-off-outline" size={60} color="#333" />
-            <Text style={styles.emptyTitle}>No notifications yet</Text>
+            <Ionicons name="notifications-off-outline" size={64} color="#222" />
+            <Text style={styles.emptyTitle}>All caught up!</Text>
             <Text style={styles.emptySubtitle}>
               When someone likes, comments, or follows you — it shows up here.
             </Text>
           </View>
-        }
-        contentContainerStyle={
-          notifications.length === 0 ? styles.emptyContainer : styles.listContent
-        }
-        showsVerticalScrollIndicator={false}
-      />
+        </View>
+      ) : (
+        <SectionList
+          sections={sections}
+          keyExtractor={n => n.id}
+          renderSectionHeader={({ section: { title } }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionHeaderText}>{title}</Text>
+            </View>
+          )}
+          renderItem={({ item, index }) => (
+            <NotifRow
+              item={item}
+              index={index}
+              onPress={handlePress}
+              onDelete={deleteNotification}
+            />
+          )}
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={fetchNotifications}
+              tintColor="#ff4500"
+            />
+          }
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          stickySectionHeadersEnabled={false}
+        />
+      )}
 
       {/* ── Follow Action Sheet ── */}
       {followSheet && user && (
@@ -366,60 +449,127 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0d0d0d' },
   center:    { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0d0d0d' },
 
-  header:        { paddingTop: 56, paddingBottom: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title:         { color: '#fff', fontSize: 22, fontWeight: '800' },
-  headerActions: { flexDirection: 'row', gap: 8 },
-  markAllBtn:    { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: '#333' },
-  markAllText:   { color: '#888', fontSize: 13 },
-  clearAllBtn:   { borderColor: '#3a1a1a' },
+  header:        {
+    paddingTop: 56, paddingBottom: 14, paddingHorizontal: 16,
+    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
+  },
+  title:         { color: '#fff', fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
+  unreadLabel:   { color: '#ff4500', fontSize: 12, fontWeight: '600', marginTop: 2 },
+  headerActions: { flexDirection: 'row', gap: 8, paddingBottom: 2 },
+  markAllBtn:    {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 14, borderWidth: 1, borderColor: '#2a2a2a',
+    backgroundColor: '#161616',
+  },
+  markAllText:   { color: '#888', fontSize: 12, fontWeight: '500' },
+  clearAllBtn:   { borderColor: '#3a1a1a', backgroundColor: '#1a0a0a' },
 
-  swipeHint:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 16, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#111' },
-  swipeHintText: { color: '#555', fontSize: 11 },
+  swipeHint:     {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 16, paddingVertical: 6,
+    borderBottomWidth: 1, borderBottomColor: '#111',
+  },
+  swipeHintText: { color: '#444', fontSize: 11, fontStyle: 'italic' },
 
-  listContent:    { paddingBottom: 100 },
+  sectionHeader: {
+    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6,
+    backgroundColor: '#0d0d0d',
+  },
+  sectionHeaderText: {
+    color: '#555', fontSize: 12, fontWeight: '700',
+    textTransform: 'uppercase', letterSpacing: 1,
+  },
+
+  listContent:    { paddingBottom: 120 },
   emptyContainer: { flex: 1 },
 
-  row:       { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#111', backgroundColor: '#0d0d0d' },
-  rowUnread: { backgroundColor: '#1a0a00' },
+  // Row
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 13,
+    paddingLeft: 16,
+    paddingRight: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111',
+    backgroundColor: '#0d0d0d',
+  },
+  rowUnread: { backgroundColor: '#110800' },
+
+  // Left unread accent
+  unreadBar: {
+    position: 'absolute',
+    left: 0, top: 0, bottom: 0,
+    width: 3,
+    backgroundColor: '#ff4500',
+    borderRadius: 2,
+  },
+
   rowBody:   { flex: 1, marginHorizontal: 12 },
   rowText:   { color: '#ddd', fontSize: 14, lineHeight: 20 },
   bold:      { fontWeight: '700', color: '#fff' },
-  timeText:  { color: '#666', fontSize: 12, marginTop: 3 },
+  messagePreview: {
+    color: '#666', fontSize: 13, marginTop: 2,
+    fontStyle: 'italic',
+  },
+  timeText:  { color: '#555', fontSize: 12, marginTop: 4 },
 
   avatarWrap:        { position: 'relative' },
-  avatar:            { width: 46, height: 46, borderRadius: 23 },
+  avatar:            { width: 48, height: 48, borderRadius: 24 },
   avatarPlaceholder: { backgroundColor: '#1e1e2e', justifyContent: 'center', alignItems: 'center' },
-  iconBadge:         { position: 'absolute', bottom: -2, right: -2, width: 18, height: 18, borderRadius: 9, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#0d0d0d' },
+  iconBadge: {
+    position: 'absolute', bottom: -2, right: -2,
+    width: 18, height: 18, borderRadius: 9,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#0d0d0d',
+  },
 
-  postThumb:  { width: 46, height: 46, borderRadius: 6 },
+  postThumb:  { width: 48, height: 48, borderRadius: 8 },
   unreadDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ff4500', marginLeft: 8 },
 
   deleteAction:  { width: 90, justifyContent: 'center', alignItems: 'center', backgroundColor: '#c0392b' },
   deleteBtn:     { flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center', gap: 4 },
   deleteBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
 
-  empty:         { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 120, gap: 12 },
-  emptyTitle:    { color: '#fff', fontSize: 18, fontWeight: '700' },
-  emptySubtitle: { color: '#666', fontSize: 14, textAlign: 'center', paddingHorizontal: 40 },
+  empty:         { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 120, gap: 14 },
+  emptyTitle:    { color: '#fff', fontSize: 20, fontWeight: '800' },
+  emptySubtitle: { color: '#555', fontSize: 14, textAlign: 'center', paddingHorizontal: 48, lineHeight: 21 },
 
   // ── Follow Action Sheet ──────────────────────────────────────────────────
-  sheetBackdrop:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
-  sheet:                 { backgroundColor: '#161616', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 40, paddingTop: 8 },
-  sheetUser:             { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 18 },
-  sheetAvatar:           { width: 56, height: 56, borderRadius: 28 },
-  sheetAvatarPlaceholder:{ backgroundColor: '#2a2a3a', justifyContent: 'center', alignItems: 'center' },
-  sheetName:             { color: '#fff', fontSize: 16, fontWeight: '700' },
-  sheetSubtitle:         { color: '#888', fontSize: 13, marginTop: 2 },
-  sheetDivider:          { height: 1, backgroundColor: '#222', marginHorizontal: 20, marginBottom: 8 },
+  sheetBackdrop:          { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet:                  {
+    backgroundColor: '#161616',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingBottom: 44, paddingTop: 6,
+  },
+  sheetUser:              { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 18 },
+  sheetAvatar:            { width: 58, height: 58, borderRadius: 29 },
+  sheetAvatarPlaceholder: { backgroundColor: '#2a2a3a', justifyContent: 'center', alignItems: 'center' },
+  sheetName:              { color: '#fff', fontSize: 17, fontWeight: '700' },
+  sheetSubtitle:          { color: '#888', fontSize: 13, marginTop: 2 },
+  sheetDivider:           { height: 1, backgroundColor: '#222', marginHorizontal: 20, marginBottom: 8 },
 
-  sheetBtn:              { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginTop: 8, paddingVertical: 16, paddingHorizontal: 20, borderRadius: 14, backgroundColor: '#ff4500' },
+  sheetBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: 16, marginTop: 8,
+    paddingVertical: 16, paddingHorizontal: 20,
+    borderRadius: 14, backgroundColor: '#ff4500',
+  },
   sheetBtnFollowing:     { backgroundColor: '#1e1e1e', borderWidth: 1, borderColor: '#333' },
   sheetBtnText:          { color: '#fff', fontSize: 16, fontWeight: '700' },
   sheetBtnTextFollowing: { color: '#888' },
 
-  sheetBtnSecondary:     { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginTop: 10, paddingVertical: 16, paddingHorizontal: 20, borderRadius: 14, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#ff4500' },
+  sheetBtnSecondary: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginHorizontal: 16, marginTop: 10,
+    paddingVertical: 16, paddingHorizontal: 20,
+    borderRadius: 14, backgroundColor: '#1a1a1a',
+    borderWidth: 1, borderColor: '#ff4500',
+  },
   sheetBtnSecondaryText: { color: '#ff4500', fontSize: 16, fontWeight: '600' },
 
   sheetCancel:     { alignItems: 'center', marginTop: 14, paddingVertical: 12 },
-  sheetCancelText: { color: '#666', fontSize: 15 },
+  sheetCancelText: { color: '#555', fontSize: 15 },
 });
