@@ -59,6 +59,7 @@ export function useFollow(profileUserId: string, currentUserId?: string) {
     setToggling(true);
 
     if (isFollowing) {
+      // ── Unfollow ──────────────────────────────────────────────────────────
       await supabase
         .from('follows')
         .delete()
@@ -66,22 +67,53 @@ export function useFollow(profileUserId: string, currentUserId?: string) {
         .eq('following_id', profileUserId);
       setIsFollowing(false);
       setFollowersCount(c => Math.max(0, c - 1));
+
+      // Delete any existing follow notification from this actor so
+      // re-following later generates a fresh one (no ghost duplicates)
+      await supabase
+        .from('notifications')
+        .delete()
+        .eq('user_id',  profileUserId)
+        .eq('actor_id', currentUserId)
+        .eq('type',     'follow');
+
     } else {
+      // ── Follow ────────────────────────────────────────────────────────────
       await supabase
         .from('follows')
         .insert({ follower_id: currentUserId, following_id: profileUserId });
       setIsFollowing(true);
       setFollowersCount(c => c + 1);
 
-      // ── notify the person being followed ─────────────────────────────────
-      await supabase.from('notifications').insert({
-        user_id:    profileUserId,  // recipient
-        actor_id:   currentUserId,  // who followed
-        type:       'follow',
-        post_id:    null,
-        comment_id: null,
-        message:    null,
-      });
+      // ── Anti-spam: only insert a follow notification if one doesn't
+      //    already exist from this actor → recipient pair.
+      //    This prevents "follow → unfollow → follow" spam rows.
+      const { data: existing } = await supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id',  profileUserId)
+        .eq('actor_id', currentUserId)
+        .eq('type',     'follow')
+        .maybeSingle();
+
+      if (!existing) {
+        // No prior follow notification — insert a fresh one
+        await supabase.from('notifications').insert({
+          user_id:    profileUserId,  // recipient
+          actor_id:   currentUserId,  // who followed
+          type:       'follow',
+          post_id:    null,
+          comment_id: null,
+          message:    null,
+        });
+      } else {
+        // Notification already exists — just mark it unread so it
+        // resurfaces at the top without creating a duplicate
+        await supabase
+          .from('notifications')
+          .update({ read: false, created_at: new Date().toISOString() })
+          .eq('id', existing.id);
+      }
     }
 
     setToggling(false);
