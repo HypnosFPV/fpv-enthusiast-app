@@ -1,8 +1,9 @@
 // app/(tabs)/notifications.tsx
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
   Image, ActivityIndicator, RefreshControl, Animated,
+  Modal, Pressable,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../../src/context/AuthContext';
 import { AppNotification } from '../../src/hooks/useNotifications';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
+import { useFollows } from '../../src/hooks/useFollows';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function timeAgo(iso: string): string {
@@ -31,8 +33,109 @@ const TYPE_META: Record<
   mention: { icon: 'at-circle',  color: '#f39c12', label: (a) => `${a} mentioned you`          },
 };
 
+// ─── Follow Action Sheet ───────────────────────────────────────────────────────
+// Shown when tapping a "follow" notification — lets you Follow Back or View Profile
+function FollowActionSheet({
+  visible,
+  actorId,
+  actorName,
+  actorAvatar,
+  currentUserId,
+  onViewProfile,
+  onClose,
+}: {
+  visible:       boolean;
+  actorId:       string;
+  actorName:     string;
+  actorAvatar:   string | null;
+  currentUserId: string;
+  onViewProfile: () => void;
+  onClose:       () => void;
+}) {
+  const { isFollowing, toggling, toggle } = useFollows(currentUserId, actorId);
+
+  const handleFollowBack = async () => {
+    await toggle();
+    // Don't close — let them see the updated state
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.sheetBackdrop} onPress={onClose} />
+      <View style={styles.sheet}>
+        {/* User info */}
+        <View style={styles.sheetUser}>
+          {actorAvatar ? (
+            <Image source={{ uri: actorAvatar }} style={styles.sheetAvatar} />
+          ) : (
+            <View style={[styles.sheetAvatar, styles.sheetAvatarPlaceholder]}>
+              <Ionicons name="person" size={28} color="#555" />
+            </View>
+          )}
+          <View>
+            <Text style={styles.sheetName}>@{actorName}</Text>
+            <Text style={styles.sheetSubtitle}>started following you</Text>
+          </View>
+        </View>
+
+        {/* Divider */}
+        <View style={styles.sheetDivider} />
+
+        {/* Follow Back */}
+        <TouchableOpacity
+          style={[styles.sheetBtn, isFollowing && styles.sheetBtnFollowing]}
+          onPress={handleFollowBack}
+          disabled={toggling}
+          activeOpacity={0.8}
+        >
+          {toggling ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <>
+              <Ionicons
+                name={isFollowing ? 'checkmark-circle' : 'person-add'}
+                size={20}
+                color={isFollowing ? '#aaa' : '#fff'}
+              />
+              <Text style={[styles.sheetBtnText, isFollowing && styles.sheetBtnTextFollowing]}>
+                {isFollowing ? 'Following' : 'Follow Back'}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        {/* View Profile */}
+        <TouchableOpacity
+          style={styles.sheetBtnSecondary}
+          onPress={onViewProfile}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="person-outline" size={20} color="#ff4500" />
+          <Text style={styles.sheetBtnSecondaryText}>View Profile</Text>
+        </TouchableOpacity>
+
+        {/* Cancel */}
+        <TouchableOpacity style={styles.sheetCancel} onPress={onClose} activeOpacity={0.7}>
+          <Text style={styles.sheetCancelText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Swipe-to-delete action ────────────────────────────────────────────────────
-function DeleteAction({ progress, onDelete }: { progress: Animated.AnimatedInterpolation<number>; onDelete: () => void }) {
+function DeleteAction({
+  progress,
+  onDelete,
+}: {
+  progress: Animated.AnimatedInterpolation<number>;
+  onDelete: () => void;
+}) {
   const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] });
   return (
     <Animated.View style={[styles.deleteAction, { transform: [{ scale }] }]}>
@@ -50,8 +153,8 @@ function NotifRow({
   onPress,
   onDelete,
 }: {
-  item: AppNotification;
-  onPress: (n: AppNotification) => void;
+  item:     AppNotification;
+  onPress:  (n: AppNotification) => void;
   onDelete: (id: string) => void;
 }) {
   const swipeRef = useRef<Swipeable>(null);
@@ -102,10 +205,15 @@ function NotifRow({
           <Text style={styles.timeText}>{timeAgo(item.created_at)}</Text>
         </View>
 
-        {/* Post thumbnail if available */}
+        {/* Post thumbnail */}
         {thumb ? (
           <Image source={{ uri: thumb }} style={styles.postThumb} resizeMode="cover" />
         ) : null}
+
+        {/* Follow notification hint */}
+        {item.type === 'follow' && (
+          <Ionicons name="chevron-forward" size={16} color="#444" style={{ marginLeft: 4 }} />
+        )}
 
         {/* Unread dot */}
         {!item.read && <View style={styles.unreadDot} />}
@@ -130,28 +238,41 @@ export default function NotificationsScreen() {
     clearAll,
   } = useNotificationsContext();
 
-  // ── Refresh list when screen is focused; badge reflects real unread count ──
+  // ── Follow action sheet state ─────────────────────────────────────────────
+  const [followSheet, setFollowSheet] = useState<{
+    actorId:     string;
+    actorName:   string;
+    actorAvatar: string | null;
+  } | null>(null);
+
+  // ── Refresh list on focus ─────────────────────────────────────────────────
   useFocusEffect(
     useCallback(() => {
       fetchNotifications();
     }, [fetchNotifications])
   );
 
-  // ── FIX: navigate to user profile by actor_id (not username route) ─────────
+  // ── Handle notification tap ───────────────────────────────────────────────
   const handlePress = useCallback(async (n: AppNotification) => {
     if (!n.read) await markRead(n.id);
 
     if (n.type === 'follow') {
-      const actorId = n.actor_id;
-      if (actorId) {
-        router.push({ pathname: '/user/[id]', params: { id: actorId } });
-      }
+      // Show Follow Back / View Profile action sheet
+      setFollowSheet({
+        actorId:     n.actor_id ?? '',
+        actorName:   (n.actor as any)?.username ?? 'User',
+        actorAvatar: (n.actor as any)?.avatar_url ?? null,
+      });
     } else if (n.post_id) {
-      // like / comment / mention — go to feed
-      // swap for router.push(`/post/${n.post_id}`) when you add a post detail route
       router.push('/(tabs)/feed' as any);
     }
   }, [markRead, router]);
+
+  const handleViewProfile = useCallback(() => {
+    if (!followSheet?.actorId) return;
+    setFollowSheet(null);
+    router.push({ pathname: '/user/[id]', params: { id: followSheet.actorId } });
+  }, [followSheet, router]);
 
   if (loading && !notifications.length) {
     return (
@@ -223,6 +344,19 @@ export default function NotificationsScreen() {
         showsVerticalScrollIndicator={false}
       />
 
+      {/* ── Follow Action Sheet ── */}
+      {followSheet && user && (
+        <FollowActionSheet
+          visible={!!followSheet}
+          actorId={followSheet.actorId}
+          actorName={followSheet.actorName}
+          actorAvatar={followSheet.actorAvatar}
+          currentUserId={user.id}
+          onViewProfile={handleViewProfile}
+          onClose={() => setFollowSheet(null)}
+        />
+      )}
+
     </View>
   );
 }
@@ -260,12 +394,32 @@ const styles = StyleSheet.create({
   postThumb:  { width: 46, height: 46, borderRadius: 6 },
   unreadDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ff4500', marginLeft: 8 },
 
-  // Swipe delete action
-  deleteAction: { width: 90, justifyContent: 'center', alignItems: 'center', backgroundColor: '#c0392b' },
-  deleteBtn:    { flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center', gap: 4 },
-  deleteBtnText:{ color: '#fff', fontSize: 12, fontWeight: '600' },
+  deleteAction:  { width: 90, justifyContent: 'center', alignItems: 'center', backgroundColor: '#c0392b' },
+  deleteBtn:     { flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center', gap: 4 },
+  deleteBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
 
   empty:         { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 120, gap: 12 },
   emptyTitle:    { color: '#fff', fontSize: 18, fontWeight: '700' },
   emptySubtitle: { color: '#666', fontSize: 14, textAlign: 'center', paddingHorizontal: 40 },
+
+  // ── Follow Action Sheet ──────────────────────────────────────────────────
+  sheetBackdrop:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet:                 { backgroundColor: '#161616', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 40, paddingTop: 8 },
+  sheetUser:             { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 18 },
+  sheetAvatar:           { width: 56, height: 56, borderRadius: 28 },
+  sheetAvatarPlaceholder:{ backgroundColor: '#2a2a3a', justifyContent: 'center', alignItems: 'center' },
+  sheetName:             { color: '#fff', fontSize: 16, fontWeight: '700' },
+  sheetSubtitle:         { color: '#888', fontSize: 13, marginTop: 2 },
+  sheetDivider:          { height: 1, backgroundColor: '#222', marginHorizontal: 20, marginBottom: 8 },
+
+  sheetBtn:              { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginTop: 8, paddingVertical: 16, paddingHorizontal: 20, borderRadius: 14, backgroundColor: '#ff4500' },
+  sheetBtnFollowing:     { backgroundColor: '#1e1e1e', borderWidth: 1, borderColor: '#333' },
+  sheetBtnText:          { color: '#fff', fontSize: 16, fontWeight: '700' },
+  sheetBtnTextFollowing: { color: '#888' },
+
+  sheetBtnSecondary:     { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginTop: 10, paddingVertical: 16, paddingHorizontal: 20, borderRadius: 14, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#ff4500' },
+  sheetBtnSecondaryText: { color: '#ff4500', fontSize: 16, fontWeight: '600' },
+
+  sheetCancel:     { alignItems: 'center', marginTop: 14, paddingVertical: 12 },
+  sheetCancelText: { color: '#666', fontSize: 15 },
 });
