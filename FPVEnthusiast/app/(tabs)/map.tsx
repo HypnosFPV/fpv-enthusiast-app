@@ -88,6 +88,16 @@ function daysUntil(iso: string): string {
   return `in ${diff}d`;
 }
 
+// Safe ISO conversion — returns empty string on invalid input
+function safeIso(raw: string): string {
+  if (!raw.trim()) return '';
+  try {
+    const d = new Date(raw.trim());
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString();
+  } catch { return ''; }
+}
+
 // PinMarker replaced by SVG FPVMapPins.tsx components
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
@@ -111,10 +121,8 @@ export default function MapScreen() {
 
   const handleMapMgpSync = React.useCallback(async () => {
     if (!userLocation) return;
-    // Trigger edge function sync
     const result = await triggerMgpSync();
     if (!result.error) {
-      // Refresh map events after sync
       fetchEvents(userLocation.latitude, userLocation.longitude, radiusMiles, [...ALL_EVENT_TYPES]);
       setMgpSyncToastMsg(`🏁 ${result.synced} race${result.synced !== 1 ? 's' : ''} synced to map`);
     } else {
@@ -166,6 +174,13 @@ export default function MapScreen() {
   const [spotTypeFilters,   setSpotTypeFilters]   = useState<string[]>([...ALL_SPOT_TYPES]);
   const [eventTypeFilters,  setEventTypeFilters]  = useState<string[]>([...ALL_EVENT_TYPES]);
   const [showFilterPanel,   setShowFilterPanel]   = useState(false);
+
+  // Address search state
+  const [showAddrSearch,    setShowAddrSearch]    = useState(false);
+  const [addrQuery,         setAddrQuery]         = useState('');
+  const [addrSearching,     setAddrSearching]     = useState(false);
+  const [addrFound,         setAddrFound]         = useState<{ latitude: number; longitude: number } | null>(null);
+  const addrInputRef = useRef<TextInput>(null);
 
   // Events panel state
   const [eventPanelFilter,  setEventPanelFilter]  = useState<'all' | 'race' | 'meetup'>('all');
@@ -293,10 +308,53 @@ export default function MapScreen() {
     const coords = e.nativeEvent.coordinate;
     if (spotPinMode) { setSpotPin(coords); setSpotPinMode(false); setShowAddSpot(true); }
     else if (evtPinMode) { setEvtPin(coords); setEvtPinMode(false); setShowAddEvent(true); }
+    else { setAddrFound(null); }  // dismiss address result on map tap
   };
 
   const toggleSpotType  = (t: string) => setSpotTypeFilters(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
   const toggleEventType = (t: string) => setEventTypeFilters(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
+
+  // ── Address search ────────────────────────────────────────────────────────
+  const handleAddressSearch = useCallback(async () => {
+    const q = addrQuery.trim();
+    if (!q) return;
+    setAddrSearching(true);
+    setAddrFound(null);
+    try {
+      const results = await Location.geocodeAsync(q);
+      if (results.length > 0) {
+        const { latitude, longitude } = results[0];
+        setAddrFound({ latitude, longitude });
+        mapRef.current?.animateToRegion(
+          { latitude, longitude, latitudeDelta: 0.04, longitudeDelta: 0.04 },
+          700,
+        );
+      } else {
+        Alert.alert('Not Found', 'No location found. Try a more specific address.');
+      }
+    } catch {
+      Alert.alert('Search Error', 'Could not geocode that address. Check your connection.');
+    }
+    setAddrSearching(false);
+  }, [addrQuery]);
+
+  const handleDropSpotAtAddr = () => {
+    if (!addrFound) return;
+    setAddrFound(null);
+    setShowAddrSearch(false);
+    setAddrQuery('');
+    setSpotPin(addrFound);
+    setShowAddSpot(true);
+  };
+
+  const handleDropEventAtAddr = () => {
+    if (!addrFound) return;
+    setAddrFound(null);
+    setShowAddrSearch(false);
+    setAddrQuery('');
+    setEvtPin(addrFound);
+    setShowAddEvent(true);
+  };
 
   // ── Submit spot ──────────────────────────────────────────────────────────
   const handleSubmitSpot = async () => {
@@ -319,13 +377,21 @@ export default function MapScreen() {
     if (!evtPin || !evtName.trim() || !evtStart.trim()) {
       Alert.alert('Missing info', 'Name, start time, and map pin are required.'); return;
     }
+    const startIso = safeIso(evtStart);
+    if (!startIso) {
+      Alert.alert('Invalid Date', 'Start time must be in format: YYYY-MM-DD HH:MM\nExample: 2025-08-15 10:00'); return;
+    }
+    const endIso = evtEnd.trim() ? safeIso(evtEnd) : '';
+    if (evtEnd.trim() && !endIso) {
+      Alert.alert('Invalid Date', 'End time must be in format: YYYY-MM-DD HH:MM'); return;
+    }
     setSubmitting(true);
     const { data, error } = await addEvent({
       name: evtName.trim(), description: evtDesc.trim(), event_type: evtType,
       latitude: evtPin.latitude, longitude: evtPin.longitude,
       venue_name: evtVenue.trim(), city: evtCity.trim(), state: evtState.trim(),
-      start_time: new Date(evtStart).toISOString(),
-      end_time: evtEnd.trim() ? new Date(evtEnd).toISOString() : '',
+      start_time: startIso,
+      end_time: endIso,
       max_participants: evtMax, registration_url: evtUrl.trim(),
     });
     setSubmitting(false);
@@ -455,6 +521,11 @@ export default function MapScreen() {
             strokeWidth={3}
           />
         )}
+        {addrFound && (
+          <Marker coordinate={addrFound} tracksViewChanges={false}>
+            <Ionicons name="search-circle" size={40} color="#FFD700" />
+          </Marker>
+        )}
         {visibleSpots.map(spot => {
           const SpotPin = SPOT_PIN_MAP[spot.spot_type] ?? SPOT_PIN_MAP['freestyle'];
           return (
@@ -471,8 +542,8 @@ export default function MapScreen() {
             </Marker>
           );
         })}
-        {spotPin && <Marker coordinate={spotPin}><Ionicons name="add-circle" size={36} color="#ff4500" /></Marker>}
-        {evtPin  && <Marker coordinate={evtPin}><Ionicons name="calendar" size={36} color="#FFD700" /></Marker>}
+        {spotPin && <Marker coordinate={spotPin} tracksViewChanges={false}><Ionicons name="add-circle" size={36} color="#ff4500" /></Marker>}
+        {evtPin  && <Marker coordinate={evtPin}  tracksViewChanges={false}><Ionicons name="calendar" size={36} color="#FFD700" /></Marker>}
       </MapView>
 
       {/* ─── Pin-drop overlay ─────────────────────────────────────────────── */}
@@ -485,6 +556,27 @@ export default function MapScreen() {
           <TouchableOpacity style={styles.pinDropCancel} onPress={() => { setSpotPinMode(false); setEvtPinMode(false); }}>
             <Text style={styles.pinDropCancelText}>Cancel</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ─── Address search result overlay ────────────────────────────────── */}
+      {addrFound && !spotPinMode && !evtPinMode && (
+        <View style={styles.addrResultBar} pointerEvents="box-none">
+          <View style={styles.addrResultInner}>
+            <Ionicons name="location" size={16} color="#FFD700" />
+            <Text style={styles.addrResultText} numberOfLines={1}>{addrQuery}</Text>
+            <TouchableOpacity style={styles.addrPinBtn} onPress={handleDropSpotAtAddr}>
+              <Ionicons name="add-circle-outline" size={14} color="#fff" />
+              <Text style={styles.addrPinBtnText}>Spot Here</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.addrPinBtn, { backgroundColor: '#1a3a5c', borderColor: '#2979FF' }]} onPress={handleDropEventAtAddr}>
+              <Ionicons name="calendar-outline" size={14} color="#fff" />
+              <Text style={styles.addrPinBtnText}>Event Here</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setAddrFound(null)} style={{ padding: 4 }}>
+              <Ionicons name="close" size={16} color="#666" />
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -529,6 +621,18 @@ export default function MapScreen() {
                 }
               </TouchableOpacity>
             )}
+            {/* Address search toggle button */}
+            <TouchableOpacity
+              style={[styles.iconBtn, showAddrSearch && styles.iconBtnSearchActive]}
+              onPress={() => {
+                const next = !showAddrSearch;
+                setShowAddrSearch(next);
+                if (next) setTimeout(() => addrInputRef.current?.focus(), 200);
+                else { setAddrQuery(''); setAddrFound(null); }
+              }}
+            >
+              <Ionicons name="search-outline" size={20} color={showAddrSearch ? '#FFD700' : '#fff'} />
+            </TouchableOpacity>
             <TouchableOpacity style={[styles.iconBtn, isSatellite && styles.iconBtnSatellite]} onPress={() => setIsSatellite(v => !v)}>
               <Ionicons name="layers-outline" size={20} color={isSatellite ? '#FFD700' : '#fff'} />
             </TouchableOpacity>
@@ -540,6 +644,32 @@ export default function MapScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Address search bar — shown when search icon is active */}
+        {showAddrSearch && (
+          <View style={styles.addrSearchRow}>
+            <Ionicons name="search" size={16} color="#888" style={{ marginLeft: 12 }} />
+            <TextInput
+              ref={addrInputRef}
+              style={styles.addrSearchInput}
+              placeholder="Search address or place…"
+              placeholderTextColor="#555"
+              value={addrQuery}
+              onChangeText={setAddrQuery}
+              onSubmitEditing={handleAddressSearch}
+              returnKeyType="search"
+              autoCorrect={false}
+            />
+            {addrSearching
+              ? <ActivityIndicator size="small" color="#ff4500" style={{ marginRight: 10 }} />
+              : (
+                <TouchableOpacity style={styles.addrSearchBtn} onPress={handleAddressSearch}>
+                  <Text style={styles.addrSearchBtnText}>Go</Text>
+                </TouchableOpacity>
+              )
+            }
+          </View>
+        )}
 
         {/* Quick-filter buttons row — clean, no legend clutter */}
         <View style={styles.quickFilterRow}>
@@ -647,6 +777,7 @@ export default function MapScreen() {
             keyExtractor={e => e.id}
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingBottom: 24 }}
+            keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
                 <Ionicons name="calendar-outline" size={44} color="#333" />
@@ -716,7 +847,7 @@ export default function MapScreen() {
 
       {/* ─── Filter panel modal ───────────────────────────────────────────── */}
       <Modal visible={showFilterPanel} transparent animationType="slide" onRequestClose={() => setShowFilterPanel(false)}>
-        <View style={styles.modalWrap}>
+        <View style={styles.modalWrap} pointerEvents="box-none">
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowFilterPanel(false)} />
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
@@ -760,84 +891,98 @@ export default function MapScreen() {
 
       {/* ─── Add Spot modal ───────────────────────────────────────────────── */}
       <Modal visible={showAddSpot} transparent animationType="slide" onRequestClose={() => setShowAddSpot(false)}>
-        <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.modalWrap} pointerEvents="box-none">
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowAddSpot(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>📍 Add FPV Spot</Text>
-            {spotPin && <Text style={styles.coordText}>{spotPin.latitude.toFixed(5)}, {spotPin.longitude.toFixed(5)}</Text>}
-            <TextInput style={styles.input} placeholder="Spot name *" placeholderTextColor="#555" value={spotName} onChangeText={setSpotName} />
-            <TextInput style={[styles.input, { height: 72, textAlignVertical: 'top' }]} placeholder="Description (optional)" placeholderTextColor="#555" value={spotDesc} onChangeText={setSpotDesc} multiline numberOfLines={3} />
-            <Text style={styles.fieldLabel}>Spot Type</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <View style={styles.sheet}>
+              <View style={styles.sheetHandle} />
+              <Text style={styles.sheetTitle}>📍 Add FPV Spot</Text>
+              {spotPin && <Text style={styles.coordText}>{spotPin.latitude.toFixed(5)}, {spotPin.longitude.toFixed(5)}</Text>}
+              <TextInput style={styles.input} placeholder="Spot name *" placeholderTextColor="#555" value={spotName} onChangeText={setSpotName} />
+              <TextInput style={[styles.input, { height: 72, textAlignVertical: 'top' }]} placeholder="Description (optional)" placeholderTextColor="#555" value={spotDesc} onChangeText={setSpotDesc} multiline numberOfLines={3} />
+              <Text style={styles.fieldLabel}>Spot Type</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={styles.chipWrap}>
+                  {ALL_SPOT_TYPES.map(t => { const cfg = SPOT_CONFIG[t];
+                    return <TouchableOpacity key={t} style={[styles.chip, spotType === t ? { backgroundColor: cfg.color } : styles.chipOff]} onPress={() => setSpotType(t as FlySpot['spot_type'])}><Text style={[styles.chipText, spotType !== t && styles.chipTextOff]}>{cfg.label}</Text></TouchableOpacity>;
+                  })}
+                </View>
+              </ScrollView>
+              <Text style={styles.fieldLabel}>Hazard Level</Text>
               <View style={styles.chipWrap}>
-                {ALL_SPOT_TYPES.map(t => { const cfg = SPOT_CONFIG[t];
-                  return <TouchableOpacity key={t} style={[styles.chip, spotType === t ? { backgroundColor: cfg.color } : styles.chipOff]} onPress={() => setSpotType(t as FlySpot['spot_type'])}><Text style={[styles.chipText, spotType !== t && styles.chipTextOff]}>{cfg.label}</Text></TouchableOpacity>;
+                {(['low','medium','high'] as const).map(h => { const col = h === 'low' ? '#00C853' : h === 'medium' ? '#FFD600' : '#FF1744';
+                  return <TouchableOpacity key={h} style={[styles.chip, spotHazard === h ? { backgroundColor: col } : styles.chipOff]} onPress={() => setSpotHazard(h)}><Text style={[styles.chipText, spotHazard !== h && styles.chipTextOff]}>{h.charAt(0).toUpperCase() + h.slice(1)}</Text></TouchableOpacity>;
                 })}
               </View>
-            </ScrollView>
-            <Text style={styles.fieldLabel}>Hazard Level</Text>
-            <View style={styles.chipWrap}>
-              {(['low','medium','high'] as const).map(h => { const col = h === 'low' ? '#00C853' : h === 'medium' ? '#FFD600' : '#FF1744';
-                return <TouchableOpacity key={h} style={[styles.chip, spotHazard === h ? { backgroundColor: col } : styles.chipOff]} onPress={() => setSpotHazard(h)}><Text style={[styles.chipText, spotHazard !== h && styles.chipTextOff]}>{h.charAt(0).toUpperCase() + h.slice(1)}</Text></TouchableOpacity>;
-              })}
+              <TouchableOpacity style={[styles.applyBtn, submitting && { opacity: 0.5 }]} onPress={handleSubmitSpot} disabled={submitting}>
+                {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.applyBtnText}>Save Spot</Text>}
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={[styles.applyBtn, submitting && { opacity: 0.5 }]} onPress={handleSubmitSpot} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.applyBtnText}>Save Spot</Text>}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {/* ─── Add Event modal ──────────────────────────────────────────────── */}
+      {/* NOTE: modalWrap uses pointerEvents="box-none" so backdrop and sheet
+               can both receive touches independently — fixes the freeze bug    */}
       <Modal visible={showAddEvent} transparent animationType="slide" onRequestClose={() => setShowAddEvent(false)}>
-        <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.modalWrap} pointerEvents="box-none">
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowAddEvent(false)} />
-          <ScrollView style={[styles.sheet, { maxHeight: '85%' }]} keyboardShouldPersistTaps="handled">
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>📅 Schedule Event</Text>
-            {evtPin && <Text style={styles.coordText}>📍 {evtPin.latitude.toFixed(5)}, {evtPin.longitude.toFixed(5)}</Text>}
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ width: '100%' }}>
+            <View style={[styles.sheet, { maxHeight: height * 0.85, padding: 0 }]}>
+              <ScrollView
+                contentContainerStyle={{ padding: 16, paddingBottom: 36 }}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.sheetHandle} />
+                <Text style={styles.sheetTitle}>📅 Schedule Event</Text>
+                {evtPin && <Text style={styles.coordText}>📍 {evtPin.latitude.toFixed(5)}, {evtPin.longitude.toFixed(5)}</Text>}
 
-            {/* Event Type as tags — all 6 types as selectable chips */}
-            <Text style={styles.fieldLabel}>EVENT TAG</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {ALL_EVENT_TYPES.map(t => { const cfg = EVENT_CONFIG[t];
-                  return (
-                    <TouchableOpacity
-                      key={t}
-                      style={[styles.chip, evtType === t ? { backgroundColor: cfg.color } : styles.chipOff]}
-                      onPress={() => setEvtType(t as RaceEvent['event_type'])}
-                    >
-                      <Ionicons name={cfg.icon as any} size={12} color={evtType === t ? '#fff' : '#555'} style={{ marginRight: 4 }} />
-                      <Text style={[styles.chipText, evtType !== t && styles.chipTextOff]}>{cfg.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </ScrollView>
+                {/* Event Type as tags — all 6 types as selectable chips */}
+                <Text style={styles.fieldLabel}>EVENT TAG</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {ALL_EVENT_TYPES.map(t => { const cfg = EVENT_CONFIG[t];
+                      return (
+                        <TouchableOpacity
+                          key={t}
+                          style={[styles.chip, evtType === t ? { backgroundColor: cfg.color } : styles.chipOff]}
+                          onPress={() => setEvtType(t as RaceEvent['event_type'])}
+                        >
+                          <Ionicons name={cfg.icon as any} size={12} color={evtType === t ? '#fff' : '#555'} style={{ marginRight: 4 }} />
+                          <Text style={[styles.chipText, evtType !== t && styles.chipTextOff]}>{cfg.label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
 
-            <TextInput style={styles.input} placeholder="Event name *" placeholderTextColor="#555" value={evtName} onChangeText={setEvtName} />
-            <TextInput style={[styles.input, { height: 72, textAlignVertical: 'top' }]} placeholder="Description" placeholderTextColor="#555" value={evtDesc} onChangeText={setEvtDesc} multiline />
-            <TextInput style={styles.input} placeholder="Venue name" placeholderTextColor="#555" value={evtVenue} onChangeText={setEvtVenue} />
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TextInput style={[styles.input, { flex: 1 }]} placeholder="City" placeholderTextColor="#555" value={evtCity} onChangeText={setEvtCity} />
-              <TextInput style={[styles.input, { width: 70 }]} placeholder="State" placeholderTextColor="#555" value={evtState} onChangeText={setEvtState} />
+                <TextInput style={styles.input} placeholder="Event name *" placeholderTextColor="#555" value={evtName} onChangeText={setEvtName} />
+                <TextInput style={[styles.input, { height: 72, textAlignVertical: 'top' }]} placeholder="Description" placeholderTextColor="#555" value={evtDesc} onChangeText={setEvtDesc} multiline />
+                <TextInput style={styles.input} placeholder="Venue name" placeholderTextColor="#555" value={evtVenue} onChangeText={setEvtVenue} />
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TextInput style={[styles.input, { flex: 1 }]} placeholder="City" placeholderTextColor="#555" value={evtCity} onChangeText={setEvtCity} />
+                  <TextInput style={[styles.input, { width: 70 }]} placeholder="State" placeholderTextColor="#555" value={evtState} onChangeText={setEvtState} />
+                </View>
+                <Text style={styles.dateHint}>📅 Format: YYYY-MM-DD HH:MM  (e.g. 2025-08-15 10:00)</Text>
+                <TextInput style={styles.input} placeholder="Start: YYYY-MM-DD HH:MM *" placeholderTextColor="#555" value={evtStart} onChangeText={setEvtStart} />
+                <TextInput style={styles.input} placeholder="End: YYYY-MM-DD HH:MM (optional)" placeholderTextColor="#555" value={evtEnd} onChangeText={setEvtEnd} />
+                <TextInput style={styles.input} placeholder="Max participants" placeholderTextColor="#555" value={evtMax} onChangeText={setEvtMax} keyboardType="numeric" />
+                <TextInput style={styles.input} placeholder="Registration URL (optional)" placeholderTextColor="#555" value={evtUrl} onChangeText={setEvtUrl} autoCapitalize="none" keyboardType="url" />
+                <TouchableOpacity style={[styles.applyBtn, submitting && { opacity: 0.5 }]} onPress={handleSubmitEvent} disabled={submitting}>
+                  {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.applyBtnText}>Publish Event</Text>}
+                </TouchableOpacity>
+              </ScrollView>
             </View>
-            <TextInput style={styles.input} placeholder="Start: YYYY-MM-DD HH:MM *" placeholderTextColor="#555" value={evtStart} onChangeText={setEvtStart} />
-            <TextInput style={styles.input} placeholder="End: YYYY-MM-DD HH:MM (optional)" placeholderTextColor="#555" value={evtEnd} onChangeText={setEvtEnd} />
-            <TextInput style={styles.input} placeholder="Max participants" placeholderTextColor="#555" value={evtMax} onChangeText={setEvtMax} keyboardType="numeric" />
-            <TextInput style={styles.input} placeholder="Registration URL (optional)" placeholderTextColor="#555" value={evtUrl} onChangeText={setEvtUrl} autoCapitalize="none" />
-            <TouchableOpacity style={[styles.applyBtn, submitting && { opacity: 0.5 }, { marginBottom: 32 }]} onPress={handleSubmitEvent} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.applyBtnText}>Publish Event</Text>}
-            </TouchableOpacity>
-          </ScrollView>
-        </KeyboardAvoidingView>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {/* ─── Spot detail modal ────────────────────────────────────────────── */}
       <Modal visible={!!selectedSpot} transparent animationType="slide" onRequestClose={() => setSelectedSpot(null)}>
-        <View style={styles.modalWrap}>
+        <View style={styles.modalWrap} pointerEvents="box-none">
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setSelectedSpot(null)} />
           <View style={[styles.sheet, { maxHeight: '85%' }]}>
             <View style={styles.sheetHandle} />
@@ -908,7 +1053,7 @@ export default function MapScreen() {
 
       {/* ─── Event detail modal ───────────────────────────────────────────── */}
       <Modal visible={!!selectedEvent} transparent animationType="slide" onRequestClose={() => setSelectedEvent(null)}>
-        <View style={styles.modalWrap}>
+        <View style={styles.modalWrap} pointerEvents="box-none">
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setSelectedEvent(null)} />
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
@@ -986,6 +1131,20 @@ const styles = StyleSheet.create({
   iconBtn:          { backgroundColor: 'rgba(0,0,0,0.65)', padding: 8, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
   iconBtnSatellite: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
   iconBtnMgp:       { borderColor: '#2979FF', backgroundColor: 'rgba(41,121,255,0.12)' },
+  iconBtnSearchActive: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
+
+  // Address search bar
+  addrSearchRow:   { flexDirection: 'row', alignItems: 'center', marginHorizontal: 12, marginBottom: 6, backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 14, borderWidth: 1, borderColor: '#FFD700', overflow: 'hidden' },
+  addrSearchInput: { flex: 1, color: '#fff', fontSize: 14, paddingVertical: 10, paddingHorizontal: 8, height: 42 },
+  addrSearchBtn:   { backgroundColor: '#FFD700', paddingHorizontal: 16, paddingVertical: 10, alignSelf: 'stretch', justifyContent: 'center' },
+  addrSearchBtnText: { color: '#000', fontWeight: '800', fontSize: 13 },
+
+  // Address result overlay (shown on map after geocode)
+  addrResultBar:   { position: 'absolute', bottom: 110, left: 12, right: 12, alignItems: 'center' },
+  addrResultInner: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.88)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8, gap: 8, borderWidth: 1, borderColor: '#FFD700', flexWrap: 'wrap' },
+  addrResultText:  { color: '#FFD700', fontSize: 12, fontWeight: '600', flex: 1 },
+  addrPinBtn:      { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,69,0,0.85)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: '#ff4500' },
+  addrPinBtnText:  { color: '#fff', fontSize: 11, fontWeight: '700' },
 
   // Quick filter row (replaces old legend)
   quickFilterRow: { flexDirection: 'row', paddingHorizontal: 12, paddingBottom: 6, gap: 8 },
@@ -1087,6 +1246,7 @@ const styles = StyleSheet.create({
   input:      { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 12, color: '#fff', fontSize: 14, marginBottom: 10, borderWidth: 1, borderColor: '#2a2a2a' },
   coordText:  { color: '#555', fontSize: 11, marginBottom: 10, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
   fieldLabel: { color: '#888', fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 6, marginTop: 4 },
+  dateHint:   { color: '#444', fontSize: 11, marginBottom: 6, fontStyle: 'italic' },
 
   // Spot/Event detail
   detailHeader:        { flexDirection: 'row', gap: 8, marginBottom: 8, alignItems: 'center' },
