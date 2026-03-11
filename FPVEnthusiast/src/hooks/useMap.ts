@@ -213,6 +213,28 @@ export function useMap(userId?: string) {
     }
   }, []);
 
+
+  // ── Chapter owner: push all scheduled races for a specific MultiGP chapter ─
+  // Chapter owners enter their chapter slug (e.g. "atl-fpv") and this pulls
+  // ALL upcoming races via the sync-multigp-chapter Supabase Edge Function,
+  // upserts them into race_events, and returns the count pushed.
+  const syncChapterRaces = useCallback(async (chapterId: string): Promise<number> => {
+    const cleanId = chapterId.trim().toLowerCase();
+    if (!cleanId) throw new Error('Chapter ID is required');
+    const { data, error } = await supabase.functions.invoke('sync-multigp-chapter', {
+      body: { chapter_id: cleanId },
+    });
+    if (error) {
+      throw new Error(error.message ?? 'Chapter sync failed – ensure the sync-multigp-chapter edge function is deployed');
+    }
+    const count: number = data?.synced ?? 0;
+    if (count > 0) {
+      setMgpSyncCount(count);
+      console.log(`[MultiGP Chapter] Pushed ${count} race(s) for chapter "${cleanId}"`);
+    }
+    return count;
+  }, []);
+
   // ── Fetch new nearby events (for push notifications) ──────────────────────
   // Returns events created after `since` that are within radiusMiles of lat/lng
   const fetchNewNearbyEvents = useCallback(async (
@@ -396,7 +418,7 @@ export function useMap(userId?: string) {
     spots, events, comments, loading,
     mgpSyncing, mgpSyncCount,
     fetchSpots, fetchEvents, fetchComments,
-    syncMultiGPEvents,
+    syncMultiGPEvents, syncChapterRaces,
     addSpot, voteSpot, addComment,
     addEvent, toggleRsvp,
     deleteSpot, deleteEvent,
