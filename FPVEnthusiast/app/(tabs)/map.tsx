@@ -1237,21 +1237,37 @@ export default function MapScreen() {
                   )}
                 </View>
                 <Text style={styles.detailName}>{selectedSpot.name}</Text>
-                {/* ── Schedule Race at this Spot ── */}
-                <TouchableOpacity
-                  style={styles.scheduleAtSpotBtn}
-                  onPress={() => {
-                    // Pre-fill event location from this spot, then open Add Event
-                    setEvtPin({ latitude: selectedSpot.latitude, longitude: selectedSpot.longitude });
-                    setEvtVenue(selectedSpot.name);
-                    setEvtLinkedSpotId(selectedSpot.id);
-                    setSelectedSpot(null);
-                    setTimeout(() => setShowAddEvent(true), 320);
-                  }}
-                >
-                  <Ionicons name="calendar-outline" size={15} color="#fff" />
-                  <Text style={styles.scheduleAtSpotBtnText}>📅 Schedule Race at this Spot</Text>
-                </TouchableOpacity>
+                {/* ── Schedule at this Spot — Race OR Meetup ── */}
+                <View style={styles.scheduleAtSpotRow}>
+                  <TouchableOpacity
+                    style={[styles.scheduleAtSpotBtn, { flex: 1 }]}
+                    onPress={() => {
+                      setEvtPin({ latitude: selectedSpot.latitude, longitude: selectedSpot.longitude });
+                      setEvtVenue(selectedSpot.name);
+                      setEvtLinkedSpotId(selectedSpot.id);
+                      setEvtType('race');
+                      setSelectedSpot(null);
+                      setTimeout(() => setShowAddEvent(true), 320);
+                    }}
+                  >
+                    <Ionicons name="trophy-outline" size={15} color="#fff" />
+                    <Text style={styles.scheduleAtSpotBtnText}>Race</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.scheduleAtSpotBtn, styles.scheduleAtSpotBtnMeetup, { flex: 1 }]}
+                    onPress={() => {
+                      setEvtPin({ latitude: selectedSpot.latitude, longitude: selectedSpot.longitude });
+                      setEvtVenue(selectedSpot.name);
+                      setEvtLinkedSpotId(selectedSpot.id);
+                      setEvtType('meetup');
+                      setSelectedSpot(null);
+                      setTimeout(() => setShowAddEvent(true), 320);
+                    }}
+                  >
+                    <Ionicons name="people-outline" size={15} color="#fff" />
+                    <Text style={styles.scheduleAtSpotBtnText}>Meetup</Text>
+                  </TouchableOpacity>
+                </View>
                 {selectedSpot.creator_username && <Text style={styles.detailMeta}>Added by @{selectedSpot.creator_username}</Text>}
                 {selectedSpot.description ? <Text style={styles.detailDesc}>{selectedSpot.description}</Text> : null}
                 <View style={styles.voteRow}>
@@ -1531,13 +1547,19 @@ const styles = StyleSheet.create({
   anonLabel:      { color: '#666', fontSize: 12 },
 
   // Event detail footer
+  scheduleAtSpotRow: {
+    flexDirection: 'row', gap: 8, marginVertical: 8,
+  },
   scheduleAtSpotBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#ff4500', borderRadius: 10, paddingVertical: 10,
-    paddingHorizontal: 16, marginVertical: 8, gap: 6,
+    paddingHorizontal: 12, gap: 5,
+  },
+  scheduleAtSpotBtnMeetup: {
+    backgroundColor: '#FF9100',
   },
   scheduleAtSpotBtnText: {
-    color: '#fff', fontSize: 14, fontWeight: '700',
+    color: '#fff', fontSize: 13, fontWeight: '700',
   },
     multigpBanner:     { backgroundColor: '#1a1a2e', borderRadius: 8, padding: 8, marginBottom: 10, alignItems: 'center', borderWidth: 1, borderColor: '#2979FF' },
   multigpBannerText: { color: '#2979FF', fontWeight: '800', fontSize: 13 },
