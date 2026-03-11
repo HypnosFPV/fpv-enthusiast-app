@@ -796,31 +796,33 @@ export default function ChallengesScreen() {
               </Text>
             </View>
           ) : null}
-          <View style={styles.voteRow}>
-            {canVote ? (
-              <TouchableOpacity
-                style={[styles.voteBtn, e.has_voted && styles.voteBtnActive]}
-                onPress={() => handleVote(e)}
-              >
-                <Ionicons
-                  name={e.has_voted ? 'thumbs-up' : 'thumbs-up-outline'}
-                  size={13}
-                  color={e.has_voted ? C.cyan : C.muted}
-                />
-                <Text style={[styles.voteBtnText, e.has_voted && { color: C.cyan }]}>
-                  {e.vote_count}
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.voteCount}>
-                <Ionicons name="thumbs-up" size={12} color={C.muted} />
-                <Text style={styles.voteCountText}>{e.vote_count}</Text>
-              </View>
-            )}
-            {e.duration_seconds ? (
-              <Text style={styles.entryDur}>{Math.round(e.duration_seconds)}s</Text>
-            ) : null}
-          </View>
+          {/* Duration row */}
+          {e.duration_seconds ? (
+            <Text style={styles.entryDur}>{Math.round(e.duration_seconds)}s</Text>
+          ) : null}
+
+          {/* Vote button — full width when voting is open */}
+          {canVote ? (
+            <TouchableOpacity
+              style={[styles.voteBtnLarge, e.has_voted && styles.voteBtnLargeActive]}
+              onPress={() => handleVote(e)}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={e.has_voted ? 'thumbs-up' : 'thumbs-up-outline'}
+                size={16}
+                color={e.has_voted ? '#fff' : '#00d4ff'}
+              />
+              <Text style={[styles.voteBtnLargeText, e.has_voted && { color: '#fff' }]}>
+                {e.has_voted ? '✓ Voted' : '👍 Vote'} · {e.vote_count}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.voteCount}>
+              <Ionicons name="thumbs-up" size={12} color="#4a5568" />
+              <Text style={styles.voteCountText}>{e.vote_count}</Text>
+            </View>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -1057,16 +1059,15 @@ export default function ChallengesScreen() {
               contentContainerStyle={{ padding: 12, gap: 10 }}
             />
           )}
+          {/* Video player rendered inside this modal so it stacks on top */}
+          {playingEntry?.video_url && (
+            <EntryVideoPlayer
+              uri={playingEntry.video_url}
+              onClose={() => setPlayingEntry(null)}
+            />
+          )}
         </View>
       </Modal>
-
-      {/* ════ Entry Video Player ════ */}
-      {playingEntry?.video_url && (
-        <EntryVideoPlayer
-          uri={playingEntry.video_url}
-          onClose={() => setPlayingEntry(null)}
-        />
-      )}
 
       {/* ════ Submit Entry Modal ════ */}
       <Modal visible={submitVisible} animationType="slide" transparent
@@ -1542,6 +1543,29 @@ const styles = StyleSheet.create({
   seasonChipTextActive: { color: C.orange, fontWeight: '800' },
 
   // Entry card
+  voteBtnLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,212,255,0.5)',
+    backgroundColor: 'rgba(0,212,255,0.08)',
+  },
+  voteBtnLargeActive: {
+    backgroundColor: '#00d4ff',
+    borderColor: '#00d4ff',
+  },
+  voteBtnLargeText: {
+    color: '#00d4ff',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   entriesHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
