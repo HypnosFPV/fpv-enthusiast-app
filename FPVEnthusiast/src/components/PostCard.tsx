@@ -97,6 +97,8 @@ function injectCmd(ref: React.RefObject<WebView | null>, cmd: string): void {
   );
 }
 
+const PC_TAG_COLORS = ['#ff4500','#00d4ff','#9c27b0','#ff9100','#00e676','#e91e63','#2979FF','#ffcc00'];
+
 interface PostData {
   id: string;
   user_id?: string | null;
@@ -107,6 +109,7 @@ interface PostData {
   platform?: string | null;
   thumbnail_url?: string | null;
   caption?: string | null;
+  tags?: string[] | null;
   created_at?: string | null;
   isLiked?: boolean;
   like_count?: number;
@@ -908,6 +911,20 @@ export default function PostCard(props: Props) {
         ? <View style={styles.captionWrap}><MentionText text={post.caption ?? ''} style={styles.caption} /></View>
         : null}
 
+      {/* ── Tags ─────────────────────────────────────────────────────────── */}
+      {post.tags && post.tags.length > 0 && (
+        <View style={styles.postTagsRow}>
+          {post.tags.map(tag => {
+            const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % PC_TAG_COLORS.length];
+            return (
+              <View key={tag} style={[styles.postTag, { backgroundColor: TC + '1a', borderColor: TC + '55' }]}>
+                <Text style={[styles.postTagText, { color: TC }]}>{tag}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {/* ── Action bar ──────────────────────────────────────────────────── */}
       <View style={styles.actions}>
         <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
@@ -1133,4 +1150,25 @@ const styles = StyleSheet.create({
   editCommentBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: '#ff4500' },
   cancelEditBtn: { backgroundColor: '#252540' },
   editCommentBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+
+  // tags
+  postTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  postTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  postTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
 });
