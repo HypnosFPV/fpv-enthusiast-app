@@ -323,6 +323,7 @@ export default function MapScreen() {
   const [evtEndMin,     setEvtEndMin]     = useState(0);
   const [evtUseExistingPin, setEvtUseExistingPin] = useState(false);
   const [showExistingPinPicker, setShowExistingPinPicker] = useState(false);
+  const [evtLinkedSpotId, setEvtLinkedSpotId] = useState<string | null>(null); // spot this event is anchored to
 
   // ── Location + initial fetch ─────────────────────────────────────────────
   useEffect(() => {
@@ -501,6 +502,7 @@ export default function MapScreen() {
       start_time: startIso,
       end_time: endIso,
       max_participants: evtMax, registration_url: evtUrl.trim(),
+      fly_spot_id: evtLinkedSpotId ?? undefined,
     });
     setSubmitting(false);
     if (error) { Alert.alert('Error', 'Could not publish event.'); return; }
@@ -508,7 +510,7 @@ export default function MapScreen() {
     // Reset all event form state
     setEvtName(''); setEvtDesc(''); setEvtVenue(''); setEvtCity(''); setEvtState('');
     setEvtMax(''); setEvtUrl(''); setEvtPin(null);
-    setEvtHasEnd(false); setEvtUseExistingPin(false);
+    setEvtHasEnd(false); setEvtUseExistingPin(false); setEvtLinkedSpotId(null);
     const now = new Date();
     setEvtStartYear(now.getFullYear()); setEvtStartMonth(now.getMonth()+1); setEvtStartDay(now.getDate());
     setEvtStartHour(10); setEvtStartMin(0);
@@ -585,6 +587,14 @@ export default function MapScreen() {
   const visibleEvents = showEvents ? events.filter(e => eventTypeFilters.includes(e.event_type)) : [];
 
   // Events panel list (filtered by panel tab + distance)
+  
+  // Spots that have ≥1 upcoming event (for badge on pin)
+  const spotEventIds = useMemo(() => {
+    const ids = new Set<string>();
+    events.forEach(e => { if (e.fly_spot_id) ids.add(e.fly_spot_id); });
+    return ids;
+  }, [events]);
+
   const panelEvents = useMemo(() => {
     const typeFilter =
       eventPanelFilter === 'race'   ? RACE_TYPES :
@@ -644,7 +654,7 @@ export default function MapScreen() {
           const SpotPin = SPOT_PIN_MAP[spot.spot_type] ?? SPOT_PIN_MAP['freestyle'];
           return (
             <Marker key={spot.id} coordinate={{ latitude: spot.latitude, longitude: spot.longitude }} onPress={() => openSpot(spot)} tracksViewChanges={false}>
-              <SpotPin size={44} />
+              <SpotPin size={44} hasEvent={spotEventIds.has(spot.id)} />
             </Marker>
           );
         })}
@@ -657,7 +667,7 @@ export default function MapScreen() {
           );
         })}
         {spotPin && <Marker coordinate={spotPin} tracksViewChanges={false}><Ionicons name="add-circle" size={36} color="#ff4500" /></Marker>}
-        {evtPin  && <Marker coordinate={evtPin}  tracksViewChanges={false}><Ionicons name="calendar" size={36} color="#FFD700" /></Marker>}
+        {evtPin && !showAddEvent && <Marker coordinate={evtPin} tracksViewChanges={false}><Ionicons name="calendar" size={36} color="#FFD700" /></Marker>}
       </MapView>
 
       {/* ─── Pin-drop overlay ─────────────────────────────────────────────── */}
@@ -1037,9 +1047,9 @@ export default function MapScreen() {
       </Modal>
 
       {/* ─── Add Event modal ─────────────────────────────────────────────── */}
-      <Modal visible={showAddEvent} transparent animationType="slide" onRequestClose={() => setShowAddEvent(false)}>
+      <Modal visible={showAddEvent} transparent animationType="slide" onRequestClose={() => { setShowAddEvent(false); setEvtPin(null); setEvtLinkedSpotId(null); }}>
         <View style={styles.modalWrap} pointerEvents="box-none">
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowAddEvent(false)} />
+          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => { setShowAddEvent(false); setEvtPin(null); setEvtLinkedSpotId(null); }} />
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ width: '100%' }}>
             <View style={[styles.sheet, { maxHeight: height * 0.9, padding: 0 }]}>
               <ScrollView
@@ -1227,6 +1237,21 @@ export default function MapScreen() {
                   )}
                 </View>
                 <Text style={styles.detailName}>{selectedSpot.name}</Text>
+                {/* ── Schedule Race at this Spot ── */}
+                <TouchableOpacity
+                  style={styles.scheduleAtSpotBtn}
+                  onPress={() => {
+                    // Pre-fill event location from this spot, then open Add Event
+                    setEvtPin({ latitude: selectedSpot.latitude, longitude: selectedSpot.longitude });
+                    setEvtVenue(selectedSpot.name);
+                    setEvtLinkedSpotId(selectedSpot.id);
+                    setSelectedSpot(null);
+                    setTimeout(() => setShowAddEvent(true), 320);
+                  }}
+                >
+                  <Ionicons name="calendar-outline" size={15} color="#fff" />
+                  <Text style={styles.scheduleAtSpotBtnText}>📅 Schedule Race at this Spot</Text>
+                </TouchableOpacity>
                 {selectedSpot.creator_username && <Text style={styles.detailMeta}>Added by @{selectedSpot.creator_username}</Text>}
                 {selectedSpot.description ? <Text style={styles.detailDesc}>{selectedSpot.description}</Text> : null}
                 <View style={styles.voteRow}>
@@ -1506,7 +1531,15 @@ const styles = StyleSheet.create({
   anonLabel:      { color: '#666', fontSize: 12 },
 
   // Event detail footer
-  multigpBanner:     { backgroundColor: '#1a1a2e', borderRadius: 8, padding: 8, marginBottom: 10, alignItems: 'center', borderWidth: 1, borderColor: '#2979FF' },
+  scheduleAtSpotBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#ff4500', borderRadius: 10, paddingVertical: 10,
+    paddingHorizontal: 16, marginVertical: 8, gap: 6,
+  },
+  scheduleAtSpotBtnText: {
+    color: '#fff', fontSize: 14, fontWeight: '700',
+  },
+    multigpBanner:     { backgroundColor: '#1a1a2e', borderRadius: 8, padding: 8, marginBottom: 10, alignItems: 'center', borderWidth: 1, borderColor: '#2979FF' },
   multigpBannerText: { color: '#2979FF', fontWeight: '800', fontSize: 13 },
   eventDetailFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
   rsvpCountWrap:     { alignItems: 'center' },
