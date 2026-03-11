@@ -43,6 +43,7 @@ export interface RaceEvent {
   created_at: string;
   organizer_username?: string;
   user_rsvpd?: boolean;
+  fly_spot_id?: string | null;  // linked FPV spot pin
 }
 
 export interface SpotComment {
@@ -77,6 +78,7 @@ export interface NewEventData {
   end_time: string;
   max_participants: string;
   registration_url: string;
+  fly_spot_id?: string;  // optional: link to an existing FPV spot pin
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -366,6 +368,7 @@ export function useMap(userId?: string) {
         end_time:         evt.end_time || null,
         max_participants: evt.max_participants ? parseInt(evt.max_participants) : null,
         registration_url: evt.registration_url || null,
+        fly_spot_id: evt.fly_spot_id ?? null,
       })
       .select()
       .single();
