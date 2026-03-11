@@ -131,15 +131,16 @@ export default function ChallengesScreen() {
 
   const currentPhase = weeklyChallenge ? getChallengePhase(weeklyChallenge) : null;
 
-  // ── Load entries when detail opens ────────────────────────────────────────
+  // ── Load entries (this week inline OR archive detail modal) ───────────────
   useEffect(() => {
-    if (!detailChallenge) { setEntries([]); return; }
-    const phase = getChallengePhase(detailChallenge);
+    const ch = detailChallenge ?? (chalSubTab === 'this_week' ? weeklyChallenge : null);
+    if (!ch) { setEntries([]); return; }
+    const phase = getChallengePhase(ch);
     setEntriesLoading(true);
-    loadEntries(detailChallenge.id, phase)
+    loadEntries(ch.id, phase)
       .then(setEntries)
       .finally(() => setEntriesLoading(false));
-  }, [detailChallenge]);
+  }, [detailChallenge, chalSubTab, weeklyChallenge?.id]);
 
   // ── Load suggestions for this week's challenge (suggest sub-tab) ──────────
   useEffect(() => {
