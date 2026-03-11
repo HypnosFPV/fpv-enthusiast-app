@@ -58,6 +58,7 @@ export default function ChallengesScreen() {
     loadChallenges, submitEntry, loadEntries,
     vote, loadLeaderboard,
     loadSuggestions, submitSuggestion, voteSuggestion,
+    checkThumbnail,
   } = useChallenges(user?.id);
 
   // ── Screen / sub tabs ─────────────────────────────────────────────────────
@@ -79,6 +80,8 @@ export default function ChallengesScreen() {
   const [entryDuration, setEntryDuration] = useState<number>(0);
   const [thumbLoading,  setThumbLoading]  = useState(false);
   const [submitting,    setSubmitting]    = useState(false);
+  const [checking,      setChecking]      = useState(false);   // AI content check in progress
+  const [checkResult,   setCheckResult]   = useState<{ approved: boolean; issues: string[] } | null>(null);
 
   // ── Suggestion form ───────────────────────────────────────────────────────
   const [sugTitle,      setSugTitle]      = useState('');
@@ -182,6 +185,7 @@ export default function ChallengesScreen() {
     }
     setEntryUri(asset.uri);
     setEntryDuration(dur);
+    setCheckResult(null); // reset check when video changes
     setThumbLoading(true);
     setEntryFrames([]); setEntryThumb(null);
     try {
@@ -204,6 +208,21 @@ export default function ChallengesScreen() {
 
   const handleSubmitEntry = async () => {
     if (!submitTarget || !entryUri) { Alert.alert('Pick a video first'); return; }
+
+    // Step 1: AI content check on thumbnail
+    if (entryThumb) {
+      setChecking(true);
+      setCheckResult(null);
+      const result = await checkThumbnail(entryThumb);
+      setChecking(false);
+      setCheckResult(result);
+      if (!result.approved) {
+        // Don't submit — show rejection reason
+        return;
+      }
+    }
+
+    // Step 2: Upload
     setSubmitting(true);
     try {
       const ext  = entryUri.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'mp4';
@@ -241,11 +260,12 @@ export default function ChallengesScreen() {
 
       if (entry) {
         setSubmitVisible(false);
+        setCheckResult(null);
         setEntryUri(null); setEntryThumb(null);
         setEntryFrames([]); setEntryCaption(''); setEntryDuration(0);
         Alert.alert(
           '✅ Entry submitted!',
-          'Your video is anonymous until voting ends. You must cast a vote during the voting period (Sat–Sun) to be eligible to win.',
+          'Your video is anonymous until voting ends. Remember to vote on Sat–Sun to be eligible to win.',
           [{ text: 'Got it' }]
         );
       } else {
@@ -565,15 +585,20 @@ export default function ChallengesScreen() {
         </Text>
       </View>
 
-      {weeklyChallenge && (
-        <TouchableOpacity
-          style={styles.addSugBtn}
-          onPress={() => { setSuggestTarget(weeklyChallenge); setSuggestVisible(true); }}
-        >
-          <Ionicons name="add-circle-outline" size={16} color={C.purple} />
-          <Text style={styles.addSugBtnText}>Suggest an idea</Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity
+        style={styles.addSugBtn}
+        onPress={() => {
+          // Target the active/voting challenge, or any challenge available
+          const target = challenges.find(c => getChallengePhase(c) !== 'completed') ?? challenges[0] ?? null;
+          if (!target) { Alert.alert('No active challenge', 'Suggestions open when a challenge is running.'); return; }
+          if (!user)   { Alert.alert('Sign in', 'You need to be signed in to suggest a theme.'); return; }
+          setSuggestTarget(target);
+          setSuggestVisible(true);
+        }}
+      >
+        <Ionicons name="add-circle-outline" size={16} color={C.purple} />
+        <Text style={styles.addSugBtnText}>+ Suggest an idea</Text>
+      </TouchableOpacity>
 
       {sugsLoading ? (
         <ActivityIndicator color={C.orange} style={{ marginTop: 30 }} />
@@ -896,6 +921,7 @@ export default function ChallengesScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Anonymous notice */}
               <View style={styles.infoBox}>
                 <Ionicons name="eye-off-outline" size={14} color={C.cyan} />
                 <Text style={styles.infoText}>
@@ -903,6 +929,60 @@ export default function ChallengesScreen() {
                   You must cast a vote during Sat–Sun to be eligible to win.
                 </Text>
               </View>
+
+              {/* Compliance rules */}
+              <View style={[styles.infoBox, styles.infoBoxWarning]}>
+                <Ionicons name="shield-checkmark-outline" size={14} color={C.gold} />
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Text style={[styles.infoText, { color: C.gold, fontWeight: '700' }]}>
+                    Submission Rules
+                  </Text>
+                  <Text style={styles.infoText}>
+                    • Direct video upload only — no links accepted{'
+'}
+                    • No visible faces or people{'
+'}
+                    • No logos, branding, or watermarks{'
+'}
+                    • FPV footage only — skill over identity{'
+'}
+                    • Violations are auto-detected and rejected
+                  </Text>
+                </View>
+              </View>
+
+              {/* AI check result banner */}
+              {checking && (
+                <View style={[styles.infoBox, { borderColor: C.cyan + '44' }]}>
+                  <ActivityIndicator size="small" color={C.cyan} />
+                  <Text style={[styles.infoText, { color: C.cyan }]}>
+                    Scanning for faces & logos…
+                  </Text>
+                </View>
+              )}
+              {checkResult && !checkResult.approved && (
+                <View style={[styles.infoBox, styles.infoBoxRejected]}>
+                  <Ionicons name="close-circle-outline" size={16} color="#fc8181" />
+                  <View style={{ flex: 1, gap: 4 }}>
+                    <Text style={[styles.infoText, { color: '#fc8181', fontWeight: '800' }]}>
+                      Video rejected — please choose a different clip
+                    </Text>
+                    {checkResult.issues.map((issue, i) => (
+                      <Text key={i} style={[styles.infoText, { color: '#fc8181' }]}>
+                        ⚠️ {issue}
+                      </Text>
+                    ))}
+                  </View>
+                </View>
+              )}
+              {checkResult?.approved && (
+                <View style={[styles.infoBox, styles.infoBoxApproved]}>
+                  <Ionicons name="checkmark-circle-outline" size={16} color={C.green} />
+                  <Text style={[styles.infoText, { color: C.green }]}>
+                    Video passed content check ✓
+                  </Text>
+                </View>
+              )}
 
               {/* Video picker */}
               <TouchableOpacity style={styles.videoPicker} onPress={handlePickVideo}>
@@ -978,17 +1058,35 @@ export default function ChallengesScreen() {
               </View>
 
               <TouchableOpacity
-                style={[styles.primaryBtn, (submitting || !entryUri) && styles.primaryBtnDisabled]}
+                style={[
+                  styles.primaryBtn,
+                  (submitting || checking || !entryUri || (checkResult && !checkResult.approved))
+                    && styles.primaryBtnDisabled
+                ]}
                 onPress={handleSubmitEntry}
-                disabled={submitting || !entryUri}
+                disabled={submitting || checking || !entryUri || (checkResult != null && !checkResult.approved)}
               >
-                {submitting
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <>
-                      <Ionicons name="eye-off-outline" size={16} color="#fff" />
-                      <Text style={styles.primaryBtnText}>Submit Anonymously</Text>
-                    </>
-                }
+                {checking ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.primaryBtnText}>Checking content…</Text>
+                  </>
+                ) : submitting ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.primaryBtnText}>Uploading…</Text>
+                  </>
+                ) : checkResult && !checkResult.approved ? (
+                  <>
+                    <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                    <Text style={styles.primaryBtnText}>Pick a different video</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="eye-off-outline" size={16} color="#fff" />
+                    <Text style={styles.primaryBtnText}>Submit Anonymously</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -1332,6 +1430,9 @@ const styles = StyleSheet.create({
     backgroundColor: C.cyan + '15', borderRadius: 10, padding: 10, marginTop: 4,
     borderWidth: 1, borderColor: C.cyan + '33' },
   infoText: { color: C.subtext, fontSize: 12, flex: 1, lineHeight: 17 },
+  infoBoxWarning:  { borderColor: C.gold  + '44', backgroundColor: C.gold  + '10' },
+  infoBoxRejected: { borderColor: '#fc818144', backgroundColor: '#fc818110', alignItems: 'flex-start' },
+  infoBoxApproved: { borderColor: C.green + '44', backgroundColor: C.green + '10' },
 
   rulesBox:  { backgroundColor: '#0a0f1a', borderRadius: 10, padding: 10,
     borderWidth: 1, borderColor: C.border },
