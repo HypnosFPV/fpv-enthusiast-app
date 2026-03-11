@@ -17,6 +17,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
 import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
+import PropIcon from '../../src/components/icons/PropIcon';
 import {
   useChallenges,
   Challenge, ChallengeEntry, ChallengeSuggestion,
@@ -488,7 +489,7 @@ export default function ChallengesScreen() {
   const renderThisWeek = () => {
     if (!weeklyChallenge) return (
       <View style={styles.empty}>
-        <Ionicons name="trophy-outline" size={56} color="#222" />
+        <PropIcon size={56} color="#222" />
         <Text style={styles.emptyTitle}>No active challenge</Text>
         <Text style={styles.emptySub}>Check back Monday for this week's challenge!</Text>
       </View>
@@ -559,7 +560,7 @@ export default function ChallengesScreen() {
             </View>
             <View style={styles.timelineConnector} />
             <View style={[styles.timelineStep, phase === 'completed' && styles.timelineStepActive]}>
-              <Ionicons name="trophy-outline" size={14}
+              <PropIcon size={14}
                 color={phase === 'completed' ? C.gold : C.muted} />
               <View>
                 <Text style={[styles.timelineLabel, phase === 'completed' && { color: C.gold }]}>
@@ -916,11 +917,10 @@ export default function ChallengesScreen() {
             style={[styles.tabBtn, screenTab === t && styles.tabBtnActive]}
             onPress={() => setScreenTab(t)}
           >
-            <Ionicons
-              name={t === 'challenges' ? 'trophy-outline' : 'podium-outline'}
-              size={15}
-              color={screenTab === t ? C.orange : C.muted}
-            />
+            {t === 'challenges'
+              ? <PropIcon size={15} color={screenTab === t ? C.orange : C.muted} />
+              : <Ionicons name="podium-outline" size={15} color={screenTab === t ? C.orange : C.muted} />
+            }
             <Text style={[styles.tabBtnText, screenTab === t && styles.tabBtnTextActive]}>
               {t === 'challenges' ? 'Challenges' : 'Leaderboard'}
             </Text>
