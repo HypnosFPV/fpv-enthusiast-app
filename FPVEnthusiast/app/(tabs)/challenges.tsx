@@ -938,15 +938,7 @@ export default function ChallengesScreen() {
                     Submission Rules
                   </Text>
                   <Text style={styles.infoText}>
-                    • Direct video upload only — no links accepted{'
-'}
-                    • No visible faces or people{'
-'}
-                    • No logos, branding, or watermarks{'
-'}
-                    • FPV footage only — skill over identity{'
-'}
-                    • Violations are auto-detected and rejected
+                    {'• Direct video upload only — no links accepted\n• No visible faces or people\n• No logos, branding, or watermarks\n• FPV footage only — skill over identity\n• Violations auto-detected & rejected'}
                   </Text>
                 </View>
               </View>
