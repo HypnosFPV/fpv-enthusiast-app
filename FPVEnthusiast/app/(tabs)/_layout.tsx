@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet } from 'react-native';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
 import DroneIcon from '../../src/components/icons/DroneIcon';
+import PropIcon  from '../../src/components/icons/PropIcon';
 
 export default function TabLayout() {
   // ── FIX: use shared context instead of a separate hook instance ──────────
@@ -38,8 +39,8 @@ export default function TabLayout() {
         name="challenges"
         options={{
           title: 'Challenges',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="trophy-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <PropIcon size={size} color={color} focused={focused} />
           ),
         }}
       />
