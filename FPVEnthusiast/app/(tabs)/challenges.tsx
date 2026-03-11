@@ -1,5 +1,5 @@
 // app/(tabs)/challenges.tsx
-// Full FPV Challenge & Leaderboard screen
+// FPV Weekly Challenges — anonymous submissions, must-vote, suggestions
 
 import React, {
   useState, useCallback, useEffect, useRef, useMemo,
@@ -11,88 +11,94 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
 import {
   useChallenges,
-  Challenge, ChallengeEntry, LeaderboardEntry,
-  LeaderboardScope, Season,
-  timeLeft, propsForPlace,
+  Challenge, ChallengeEntry, ChallengeSuggestion,
+  LeaderboardEntry, LeaderboardScope, Season,
+  getChallengePhase, timeLeft, propsForPlace,
 } from '../../src/hooks/useChallenges';
 
 const { width: W } = Dimensions.get('window');
 
 // ─── Colour palette ───────────────────────────────────────────────────────────
 const C = {
-  bg:       '#070710',
-  card:     '#0d0d1f',
-  border:   '#1e2a3a',
-  orange:   '#ff4500',
-  cyan:     '#00d4ff',
-  gold:     '#ffd700',
-  silver:   '#c0c0c0',
-  bronze:   '#cd7f32',
-  muted:    '#4a5568',
-  text:     '#e2e8f0',
-  subtext:  '#718096',
+  bg:      '#070710',
+  card:    '#0d0d1f',
+  border:  '#1e2a3a',
+  orange:  '#ff4500',
+  cyan:    '#00d4ff',
+  gold:    '#ffd700',
+  silver:  '#c0c0c0',
+  bronze:  '#cd7f32',
+  muted:   '#4a5568',
+  text:    '#e2e8f0',
+  subtext: '#718096',
+  green:   '#48bb78',
+  purple:  '#9f7aea',
 };
 
 const PLACE_COLOURS = ['', C.gold, C.silver, C.bronze];
 const PLACE_LABELS  = ['', '🥇 1st', '🥈 2nd', '🥉 3rd'];
 
-// ─── Screen Tabs ─────────────────────────────────────────────────────────────
 type ScreenTab = 'challenges' | 'leaderboard';
 type LeadTab   = LeaderboardScope;
+type ChallengeSubTab = 'this_week' | 'archive' | 'suggest';
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ChallengesScreen() {
-  const router   = useRouter();
   const { user } = useAuth();
 
   const {
     seasons, activeSeason, setActiveSeason,
     challenges, loading,
-    loadChallenges, createChallenge, submitEntry,
-    loadEntries, vote, loadLeaderboard,
+    loadChallenges, submitEntry, loadEntries,
+    vote, loadLeaderboard,
+    loadSuggestions, submitSuggestion, voteSuggestion,
   } = useChallenges(user?.id);
 
-  // ── Top-level tab ─────────────────────────────────────────────────────────
-  const [screenTab, setScreenTab] = useState<ScreenTab>('challenges');
+  // ── Screen / sub tabs ─────────────────────────────────────────────────────
+  const [screenTab,  setScreenTab]  = useState<ScreenTab>('challenges');
+  const [chalSubTab, setChalSubTab] = useState<ChallengeSubTab>('this_week');
 
   // ── Modals ────────────────────────────────────────────────────────────────
-  const [createVisible,  setCreateVisible]  = useState(false);
   const [detailChallenge, setDetailChallenge] = useState<Challenge | null>(null);
-  const [submitVisible,  setSubmitVisible]  = useState(false);
-  const [submitTarget,   setSubmitTarget]   = useState<Challenge | null>(null);
-
-  // ── Create form ───────────────────────────────────────────────────────────
-  const [newTitle, setNewTitle]   = useState('');
-  const [newDesc,  setNewDesc]    = useState('');
-  const [newRules, setNewRules]   = useState('');
-  const [saving,   setSaving]     = useState(false);
+  const [submitVisible,   setSubmitVisible]   = useState(false);
+  const [submitTarget,    setSubmitTarget]    = useState<Challenge | null>(null);
+  const [suggestVisible,  setSuggestVisible]  = useState(false);
+  const [suggestTarget,   setSuggestTarget]   = useState<Challenge | null>(null);
 
   // ── Submit entry form ─────────────────────────────────────────────────────
-  const [entryUri,    setEntryUri]    = useState<string | null>(null);
-  const [entryThumb,  setEntryThumb]  = useState<string | null>(null);
-  const [entryFrames, setEntryFrames] = useState<string[]>([]);
-  const [entryCaption, setEntryCaption] = useState('');
+  const [entryUri,      setEntryUri]      = useState<string | null>(null);
+  const [entryThumb,    setEntryThumb]    = useState<string | null>(null);
+  const [entryFrames,   setEntryFrames]   = useState<string[]>([]);
+  const [entryCaption,  setEntryCaption]  = useState('');
   const [entryDuration, setEntryDuration] = useState<number>(0);
   const [thumbLoading,  setThumbLoading]  = useState(false);
   const [submitting,    setSubmitting]    = useState(false);
 
-  // ── Detail / voting ───────────────────────────────────────────────────────
-  const [entries,       setEntries]       = useState<ChallengeEntry[]>([]);
+  // ── Suggestion form ───────────────────────────────────────────────────────
+  const [sugTitle,      setSugTitle]      = useState('');
+  const [sugDesc,       setSugDesc]       = useState('');
+  const [savingSug,     setSavingSug]     = useState(false);
+
+  // ── Entries / voting ──────────────────────────────────────────────────────
+  const [entries,        setEntries]        = useState<ChallengeEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
-  const [refreshing,    setRefreshing]    = useState(false);
+  const [refreshing,     setRefreshing]     = useState(false);
+
+  // ── Suggestions list ──────────────────────────────────────────────────────
+  const [suggestions,    setSuggestions]    = useState<ChallengeSuggestion[]>([]);
+  const [sugsLoading,    setSugsLoading]    = useState(false);
 
   // ── Leaderboard ───────────────────────────────────────────────────────────
   const [leadTab,    setLeadTab]    = useState<LeadTab>('global');
   const [leadRows,   setLeadRows]   = useState<LeaderboardEntry[]>([]);
   const [leadLoad,   setLeadLoad]   = useState(false);
-  const [leadSeason, setLeadSeason] = useState<Season | null>(activeSeason);
+  const [leadSeason, setLeadSeason] = useState<Season | null>(null);
 
   // ── Season picker ─────────────────────────────────────────────────────────
   const [seasonPickerVisible, setSeasonPickerVisible] = useState(false);
@@ -105,24 +111,43 @@ export default function ChallengesScreen() {
     ).start();
   }, []);
   const headerColor = headerAnim.interpolate({
-    inputRange: [0, 0.33, 0.66, 1],
-    outputRange: [C.orange, '#ff8c00', C.orange, '#ff6600'],
+    inputRange:  [0, 0.5, 1],
+    outputRange: [C.orange, '#ff8c00', C.orange],
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Load entries when detail modal opens
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const weeklyChallenge = useMemo(() =>
+    challenges.find(c => c.is_weekly) ?? challenges[0] ?? null,
+    [challenges]
+  );
+
+  const archivedChallenges = useMemo(() =>
+    challenges.filter(c => getChallengePhase(c) === 'completed'),
+    [challenges]
+  );
+
+  const currentPhase = weeklyChallenge ? getChallengePhase(weeklyChallenge) : null;
+
+  // ── Load entries when detail opens ────────────────────────────────────────
   useEffect(() => {
-    if (!detailChallenge) return;
-    const done = detailChallenge.status === 'completed' ||
-                 new Date(detailChallenge.voting_ends) < new Date();
+    if (!detailChallenge) { setEntries([]); return; }
+    const phase = getChallengePhase(detailChallenge);
     setEntriesLoading(true);
-    loadEntries(detailChallenge.id, done)
+    loadEntries(detailChallenge.id, phase)
       .then(setEntries)
       .finally(() => setEntriesLoading(false));
   }, [detailChallenge]);
 
-  // Load leaderboard when tab / season changes
+  // ── Load suggestions for this week's challenge (suggest sub-tab) ──────────
+  useEffect(() => {
+    if (chalSubTab !== 'suggest' || !weeklyChallenge) return;
+    setSugsLoading(true);
+    loadSuggestions(weeklyChallenge.id)
+      .then(setSuggestions)
+      .finally(() => setSugsLoading(false));
+  }, [chalSubTab, weeklyChallenge?.id]);
+
+  // ── Load leaderboard ──────────────────────────────────────────────────────
   useEffect(() => {
     if (screenTab !== 'leaderboard') return;
     setLeadLoad(true);
@@ -132,50 +157,41 @@ export default function ChallengesScreen() {
       .finally(() => setLeadLoad(false));
   }, [screenTab, leadTab, leadSeason]);
 
+  // ── Sync leadSeason default ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!leadSeason && activeSeason) setLeadSeason(activeSeason);
+  }, [activeSeason]);
+
   // ─────────────────────────────────────────────────────────────────────────
   // Handlers
   // ─────────────────────────────────────────────────────────────────────────
-
-  const handleCreate = async () => {
-    if (!newTitle.trim()) { Alert.alert('Title required'); return; }
-    setSaving(true);
-    const ch = await createChallenge({ title: newTitle.trim(), description: newDesc, rules: newRules });
-    setSaving(false);
-    if (ch) {
-      setCreateVisible(false);
-      setNewTitle(''); setNewDesc(''); setNewRules('');
-    } else {
-      Alert.alert('Error', 'Could not create challenge.');
-    }
-  };
 
   const handlePickVideo = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission required'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-      quality: 0.7,
+      quality: 0.8,
     });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
-    // Validate duration
     const dur = (asset.duration ?? 0) / 1000;
     if (dur > 120) {
-      Alert.alert('Too long', 'Max 2 minutes per entry. Your video is ' + Math.ceil(dur) + 's.');
+      Alert.alert('Too long', `Max 2 minutes. Your video is ${Math.ceil(dur)}s.`);
       return;
     }
     setEntryUri(asset.uri);
     setEntryDuration(dur);
-    // Generate thumbnail frames
     setThumbLoading(true);
     setEntryFrames([]); setEntryThumb(null);
     try {
-      const durationMs = (asset.duration ?? 5000);
+      const dMs = asset.duration ?? 5000;
       const frames: string[] = [];
       for (let i = 0; i < 8; i++) {
-        const time = Math.floor(durationMs * (i / 7));
         try {
-          const { uri } = await VideoThumbnails.getThumbnailAsync(asset.uri, { time });
+          const { uri } = await VideoThumbnails.getThumbnailAsync(
+            asset.uri, { time: Math.floor(dMs * (i / 7)) }
+          );
           frames.push(uri);
         } catch { /* skip */ }
       }
@@ -190,8 +206,7 @@ export default function ChallengesScreen() {
     if (!submitTarget || !entryUri) { Alert.alert('Pick a video first'); return; }
     setSubmitting(true);
     try {
-      // Upload video
-      const ext = entryUri.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'mp4';
+      const ext  = entryUri.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'mp4';
       const mime = ext === 'mov' ? 'video/quicktime' : 'video/mp4';
       const resp = await fetch(entryUri);
       const buf  = await resp.arrayBuffer();
@@ -200,9 +215,7 @@ export default function ChallengesScreen() {
         .from('posts').upload(path, buf, { contentType: mime, upsert: false });
       if (upErr) { Alert.alert('Upload failed', upErr.message); return; }
       const { data: urlData } = supabase.storage.from('posts').getPublicUrl(path);
-      const videoUrl = urlData.publicUrl;
 
-      // Upload thumbnail
       let thumbUrl: string | undefined;
       if (entryThumb) {
         try {
@@ -220,7 +233,7 @@ export default function ChallengesScreen() {
 
       const entry = await submitEntry({
         challengeId: submitTarget.id,
-        videoUrl,
+        videoUrl: urlData.publicUrl,
         thumbnailUrl: thumbUrl,
         durationS: entryDuration,
         caption: entryCaption,
@@ -228,11 +241,15 @@ export default function ChallengesScreen() {
 
       if (entry) {
         setSubmitVisible(false);
-        setEntryUri(null); setEntryThumb(null); setEntryFrames([]);
-        setEntryCaption(''); setEntryDuration(0);
-        Alert.alert('✅ Entry submitted!', 'Your video has been submitted anonymously. Good luck!');
+        setEntryUri(null); setEntryThumb(null);
+        setEntryFrames([]); setEntryCaption(''); setEntryDuration(0);
+        Alert.alert(
+          '✅ Entry submitted!',
+          'Your video is anonymous until voting ends. You must cast a vote during the voting period (Sat–Sun) to be eligible to win.',
+          [{ text: 'Got it' }]
+        );
       } else {
-        Alert.alert('Error', 'Submission failed. You may have already entered.');
+        Alert.alert('Error', 'Submission failed. You may have already entered this challenge.');
       }
     } finally {
       setSubmitting(false);
@@ -241,19 +258,72 @@ export default function ChallengesScreen() {
 
   const handleVote = async (entry: ChallengeEntry) => {
     if (!user) { Alert.alert('Sign in to vote'); return; }
-    if (entry.user_id === user.id) { Alert.alert('Cannot vote for your own entry'); return; }
-    const newEntries = entries.map(e => {
-      if (e.id === entry.id) {
-        const wasVoted = e.has_voted ?? false;
-        return { ...e, has_voted: !wasVoted, vote_count: e.vote_count + (wasVoted ? -1 : 1) };
-      }
-      return e;
-    });
-    setEntries(newEntries);
-    await vote(entry.id, entry.has_voted ?? false);
+
+    // Must have submitted to vote
+    const ch = detailChallenge;
+    if (!ch?.my_entry) {
+      Alert.alert(
+        'Entry Required',
+        'You must submit an entry to be eligible to vote.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Cannot self-vote
+    if (entry.user_id === user.id) {
+      Alert.alert('Not allowed', 'You cannot vote for your own entry.');
+      return;
+    }
+
+    const result = await vote(entry.id, entry.user_id, entry.has_voted ?? false);
+    if (!result.success) {
+      if (result.reason === 'self_vote') Alert.alert('Not allowed', 'Cannot vote for yourself.');
+      return;
+    }
+
+    setEntries(prev => prev.map(e => {
+      if (e.id !== entry.id) return e;
+      const was = e.has_voted ?? false;
+      return { ...e, has_voted: !was, vote_count: e.vote_count + (was ? -1 : 1) };
+    }));
+
+    // Mark challenge as voted
+    loadChallenges(activeSeason?.id);
   };
 
-  const onRefreshChallenges = async () => {
+  const handleSubmitSuggestion = async () => {
+    if (!suggestTarget || !sugTitle.trim()) { Alert.alert('Title required'); return; }
+    setSavingSug(true);
+    const sug = await submitSuggestion({
+      challengeId: suggestTarget.id,
+      title: sugTitle.trim(),
+      description: sugDesc || undefined,
+    });
+    setSavingSug(false);
+    if (sug) {
+      setSuggestVisible(false);
+      setSugTitle(''); setSugDesc('');
+      setSuggestions(prev => [{ ...sug, has_voted: false, vote_count: 0 }, ...prev]);
+      Alert.alert('✅ Suggestion submitted!', 'Others can now vote on your idea!');
+    } else {
+      Alert.alert('Error', 'Could not submit suggestion. You may have already submitted one.');
+    }
+  };
+
+  const handleVoteSuggestion = async (sug: ChallengeSuggestion) => {
+    if (!user) { Alert.alert('Sign in to vote'); return; }
+    const ok = await voteSuggestion(sug.id, sug.has_voted ?? false);
+    if (ok) {
+      setSuggestions(prev => prev.map(s => {
+        if (s.id !== sug.id) return s;
+        const was = s.has_voted ?? false;
+        return { ...s, has_voted: !was, vote_count: s.vote_count + (was ? -1 : 1) };
+      }));
+    }
+  };
+
+  const onRefresh = async () => {
     setRefreshing(true);
     await loadChallenges(activeSeason?.id);
     setRefreshing(false);
@@ -263,133 +333,324 @@ export default function ChallengesScreen() {
   // Sub-renders
   // ─────────────────────────────────────────────────────────────────────────
 
-  const renderStatusBadge = (ch: Challenge) => {
-    const now = new Date();
-    const subEnd  = new Date(ch.submission_ends);
-    const voteEnd = new Date(ch.voting_ends);
-    const isDone  = ch.status === 'completed' || voteEnd < now;
-    const isVoting = !isDone && subEnd < now;
-
-    if (isDone) return <View style={[styles.badge, styles.badgeDone]}><Text style={styles.badgeText}>Completed</Text></View>;
-    if (isVoting) return (
+  const renderPhaseBadge = (ch: Challenge) => {
+    const phase = getChallengePhase(ch);
+    if (phase === 'completed') return (
+      <View style={[styles.badge, styles.badgeDone]}>
+        <Text style={styles.badgeText}>Results In</Text>
+      </View>
+    );
+    if (phase === 'voting') return (
       <View style={[styles.badge, styles.badgeVoting]}>
         <Ionicons name="thumbs-up-outline" size={10} color={C.cyan} />
-        <Text style={[styles.badgeText, { color: C.cyan }]}>Voting · {timeLeft(ch.voting_ends)}</Text>
+        <Text style={[styles.badgeText, { color: C.cyan }]}>
+          Voting · {timeLeft(ch.voting_ends)}
+        </Text>
       </View>
     );
     return (
       <View style={[styles.badge, styles.badgeActive]}>
         <Ionicons name="videocam-outline" size={10} color={C.orange} />
-        <Text style={[styles.badgeText, { color: C.orange }]}>Open · {timeLeft(ch.submission_ends)}</Text>
+        <Text style={[styles.badgeText, { color: C.orange }]}>
+          Submit · {timeLeft(ch.submission_ends)}
+        </Text>
       </View>
     );
   };
 
-  const renderChallengeCard = ({ item: ch }: { item: Challenge }) => {
-    const now     = new Date();
-    const isDone  = ch.status === 'completed' || new Date(ch.voting_ends) < now;
-    const isVoting = !isDone && new Date(ch.submission_ends) < now;
-    const canSubmit = !isDone && !isVoting && !ch.my_entry && !!user;
+  // ── This Week's Challenge ─────────────────────────────────────────────────
+  const renderThisWeek = () => {
+    if (!weeklyChallenge) return (
+      <View style={styles.empty}>
+        <Ionicons name="trophy-outline" size={56} color="#222" />
+        <Text style={styles.emptyTitle}>No active challenge</Text>
+        <Text style={styles.emptySub}>Check back Monday for this week's challenge!</Text>
+      </View>
+    );
+
+    const phase = getChallengePhase(weeklyChallenge);
+    const canSubmit = phase === 'submission' && !weeklyChallenge.my_entry && !!user;
+    const canVote   = phase === 'voting';
+    const hasVoted  = weeklyChallenge.has_voted ?? false;
+    const hasEntry  = !!weeklyChallenge.my_entry;
 
     return (
-      <TouchableOpacity
-        style={styles.challengeCard}
-        onPress={() => setDetailChallenge(ch)}
-        activeOpacity={0.85}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.orange} />}
+        contentContainerStyle={{ padding: 16, gap: 14 }}
       >
-        <View style={styles.cardTop}>
-          {renderStatusBadge(ch)}
-          <Text style={styles.entryCount}>{ch.entry_count ?? 0} entries</Text>
-        </View>
-        <Text style={styles.challengeTitle}>{ch.title}</Text>
-        {ch.description ? (
-          <Text style={styles.challengeDesc} numberOfLines={2}>{ch.description}</Text>
-        ) : null}
-        <View style={styles.cardFooter}>
-          <View style={styles.cardFooterLeft}>
-            <Ionicons name="calendar-outline" size={12} color={C.muted} />
-            <Text style={styles.cardMetaText}>
-              {isDone ? 'Results in' : isVoting ? 'Results' : 'Voting'} {timeLeft(ch.voting_ends)}
-            </Text>
+        {/* Hero card */}
+        <LinearGradient
+          colors={['#1a0a00', '#0d0d1f']}
+          style={styles.heroCard}
+        >
+          <View style={styles.heroTop}>
+            {renderPhaseBadge(weeklyChallenge)}
+            <View style={styles.weekTag}>
+              <Ionicons name="calendar-outline" size={11} color={C.muted} />
+              <Text style={styles.weekTagText}>
+                Week #{weeklyChallenge.week_number ?? '—'}
+              </Text>
+            </View>
           </View>
+          <Text style={styles.heroTitle}>{weeklyChallenge.title}</Text>
+          {weeklyChallenge.description ? (
+            <Text style={styles.heroDesc}>{weeklyChallenge.description}</Text>
+          ) : null}
+          {weeklyChallenge.rules ? (
+            <View style={styles.rulesBox}>
+              <Text style={styles.rulesLabel}>RULES</Text>
+              <Text style={styles.rulesText}>{weeklyChallenge.rules}</Text>
+            </View>
+          ) : null}
+
+          {/* Timeline */}
+          <View style={styles.timelineRow}>
+            <View style={[styles.timelineStep, phase === 'submission' && styles.timelineStepActive]}>
+              <Ionicons name="videocam-outline" size={14}
+                color={phase === 'submission' ? C.orange : C.muted} />
+              <View>
+                <Text style={[styles.timelineLabel, phase === 'submission' && { color: C.orange }]}>
+                  MON–FRI
+                </Text>
+                <Text style={styles.timelineSub}>Submit</Text>
+              </View>
+            </View>
+            <View style={styles.timelineConnector} />
+            <View style={[styles.timelineStep, phase === 'voting' && styles.timelineStepActive]}>
+              <Ionicons name="thumbs-up-outline" size={14}
+                color={phase === 'voting' ? C.cyan : C.muted} />
+              <View>
+                <Text style={[styles.timelineLabel, phase === 'voting' && { color: C.cyan }]}>
+                  SAT–SUN
+                </Text>
+                <Text style={styles.timelineSub}>Vote</Text>
+              </View>
+            </View>
+            <View style={styles.timelineConnector} />
+            <View style={[styles.timelineStep, phase === 'completed' && styles.timelineStepActive]}>
+              <Ionicons name="trophy-outline" size={14}
+                color={phase === 'completed' ? C.gold : C.muted} />
+              <View>
+                <Text style={[styles.timelineLabel, phase === 'completed' && { color: C.gold }]}>
+                  MONDAY
+                </Text>
+                <Text style={styles.timelineSub}>Results</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Entry count */}
+          <Text style={styles.entryCountText}>
+            {weeklyChallenge.entry_count ?? 0} submissions
+          </Text>
+
+          {/* CTA */}
           {canSubmit && (
             <TouchableOpacity
-              style={styles.submitBtn}
-              onPress={() => { setSubmitTarget(ch); setSubmitVisible(true); }}
+              style={styles.heroCTA}
+              onPress={() => { setSubmitTarget(weeklyChallenge); setSubmitVisible(true); }}
             >
-              <Ionicons name="cloud-upload-outline" size={13} color="#fff" />
-              <Text style={styles.submitBtnText}>Submit</Text>
+              <Ionicons name="cloud-upload-outline" size={16} color="#fff" />
+              <Text style={styles.heroCTAText}>Submit My Entry</Text>
             </TouchableOpacity>
           )}
-          {ch.my_entry && (
-            <View style={styles.enteredBadge}>
-              <Ionicons name="checkmark-circle" size={13} color={C.cyan} />
-              <Text style={styles.enteredText}>Entered</Text>
+
+          {/* Voting rules info */}
+          {canVote && (
+            <View style={styles.infoBox}>
+              <Ionicons name="information-circle-outline" size={15} color={C.cyan} />
+              <Text style={styles.infoText}>
+                {hasEntry
+                  ? hasVoted
+                    ? '✅ You\'ve voted! Winners revealed Monday.'
+                    : '⚠️ You must cast a vote to be eligible to win. Entries stay anonymous until voting closes.'
+                  : '🎭 Entries are anonymous. Only participants who submitted can vote.'}
+              </Text>
             </View>
           )}
-        </View>
-      </TouchableOpacity>
-    );
-  };
 
-  const renderLeaderRow = ({ item, index }: { item: LeaderboardEntry; index: number }) => {
-    const isTop3 = item.rank <= 3;
-    const rankColor = PLACE_COLOURS[item.rank] || C.text;
-    return (
-      <View style={[styles.leaderRow, isTop3 && styles.leaderRowTop]}>
-        <View style={[styles.rankBadge, { borderColor: rankColor + '66', backgroundColor: rankColor + '15' }]}>
-          <Text style={[styles.rankText, { color: rankColor }]}>#{item.rank}</Text>
+          {hasEntry && phase === 'submission' && (
+            <View style={[styles.infoBox, { borderColor: C.green + '44', backgroundColor: C.green + '10' }]}>
+              <Ionicons name="checkmark-circle-outline" size={15} color={C.green} />
+              <Text style={[styles.infoText, { color: C.green }]}>
+                Entry submitted anonymously! Come back Sat–Sun to vote.
+              </Text>
+            </View>
+          )}
+        </LinearGradient>
+
+        {/* Prize card */}
+        <View style={styles.prizeCard}>
+          <Text style={styles.sectionLabel}>PRIZES</Text>
+          <View style={styles.prizesRow}>
+            {[
+              { place: 1, label: '🥇 1st', colour: C.gold,   props: 100 },
+              { place: 2, label: '🥈 2nd', colour: C.silver, props: 60  },
+              { place: 3, label: '🥉 3rd', colour: C.bronze, props: 30  },
+            ].map(p => (
+              <View key={p.place} style={[styles.prizeChip,
+                { borderColor: p.colour + '44', backgroundColor: p.colour + '12' }]}>
+                <Text style={[styles.prizeEmoji]}>{p.label}</Text>
+                <Text style={[styles.prizeProps, { color: p.colour }]}>+{p.props} Props</Text>
+              </View>
+            ))}
+          </View>
         </View>
-        <Image
-          source={{ uri: item.avatar_url ?? undefined }}
-          style={styles.leaderAvatar}
-          defaultSource={require('../../assets/icon.png') as any}
-        />
-        <View style={styles.leaderInfo}>
-          <Text style={styles.leaderName}>{item.username ?? 'Pilot'}</Text>
-          {(item.location_label || item.city) && (
-            <Text style={styles.leaderLocation}>
-              <Ionicons name="location-outline" size={10} color={C.muted} />
-              {' '}{item.location_label ?? item.city}
-            </Text>
+
+        {/* Entries / voting section */}
+        <View>
+          <View style={styles.sectionRow}>
+            <Text style={styles.sectionLabel}>ENTRIES ({entries.length})</Text>
+            {phase === 'submission' && (
+              <Text style={styles.anonNote}>🎭 Anonymous until voting ends</Text>
+            )}
+          </View>
+          {entriesLoading ? (
+            <ActivityIndicator color={C.orange} style={{ marginTop: 20 }} />
+          ) : entries.length === 0 ? (
+            <View style={[styles.empty, { paddingTop: 20 }]}>
+              <Text style={styles.emptySub}>No entries yet — be first!</Text>
+            </View>
+          ) : (
+            entries.map(e => renderEntry(e, phase))
           )}
         </View>
-        <View style={styles.propsDisplay}>
-          <Text style={[styles.propsValue, { color: isTop3 ? rankColor : C.gold }]}>
-            {item.earned_props}
-          </Text>
-          <Text style={styles.propsLabel}>PROPS</Text>
-        </View>
-      </View>
+      </ScrollView>
     );
   };
 
-  const renderEntry = ({ item: e }: { item: ChallengeEntry }) => {
-    const isCompleted = detailChallenge?.status === 'completed' ||
-      (detailChallenge && new Date(detailChallenge.voting_ends) < new Date());
-    const canVote = !isCompleted &&
-      detailChallenge?.status !== 'active' &&
-      user?.id !== e.user_id;
+  // ── Archive ───────────────────────────────────────────────────────────────
+  const renderArchive = () => (
+    <FlatList
+      data={archivedChallenges}
+      keyExtractor={c => c.id}
+      renderItem={({ item: ch }) => (
+        <TouchableOpacity
+          style={styles.archiveCard}
+          onPress={() => setDetailChallenge(ch)}
+          activeOpacity={0.85}
+        >
+          <View style={styles.archiveLeft}>
+            <Text style={styles.archiveWeek}>Week #{ch.week_number ?? '—'}</Text>
+            <Text style={styles.archiveTitle}>{ch.title}</Text>
+            <Text style={styles.archiveMeta}>
+              {ch.entry_count ?? 0} entries ·{' '}
+              {new Date(ch.voting_ends).toLocaleDateString()}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={C.muted} />
+        </TouchableOpacity>
+      )}
+      contentContainerStyle={{ padding: 12, gap: 10 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.orange} />}
+      ListEmptyComponent={
+        <View style={styles.empty}>
+          <Ionicons name="archive-outline" size={48} color="#222" />
+          <Text style={styles.emptyTitle}>No past challenges yet</Text>
+        </View>
+      }
+    />
+  );
+
+  // ── Suggestions ───────────────────────────────────────────────────────────
+  const renderSuggestions = () => (
+    <View style={{ flex: 1 }}>
+      {/* Info banner */}
+      <View style={styles.suggestBanner}>
+        <Ionicons name="bulb-outline" size={16} color={C.purple} />
+        <Text style={styles.suggestBannerText}>
+          Suggest the next challenge theme! The most-voted suggestion is revealed at the start of voting (Saturday) as next week's challenge.
+        </Text>
+      </View>
+
+      {weeklyChallenge && (
+        <TouchableOpacity
+          style={styles.addSugBtn}
+          onPress={() => { setSuggestTarget(weeklyChallenge); setSuggestVisible(true); }}
+        >
+          <Ionicons name="add-circle-outline" size={16} color={C.purple} />
+          <Text style={styles.addSugBtnText}>Suggest an idea</Text>
+        </TouchableOpacity>
+      )}
+
+      {sugsLoading ? (
+        <ActivityIndicator color={C.orange} style={{ marginTop: 30 }} />
+      ) : (
+        <FlatList
+          data={suggestions}
+          keyExtractor={s => s.id}
+          renderItem={({ item: s }) => (
+            <View style={styles.sugCard}>
+              <View style={styles.sugLeft}>
+                <Text style={styles.sugTitle}>{s.title}</Text>
+                {s.description ? (
+                  <Text style={styles.sugDesc} numberOfLines={2}>{s.description}</Text>
+                ) : null}
+                {s.user?.username ? (
+                  <Text style={styles.sugAuthor}>by @{s.user.username}</Text>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                style={[styles.sugVoteBtn, s.has_voted && styles.sugVoteBtnActive]}
+                onPress={() => handleVoteSuggestion(s)}
+              >
+                <Ionicons
+                  name={s.has_voted ? 'arrow-up-circle' : 'arrow-up-circle-outline'}
+                  size={18}
+                  color={s.has_voted ? C.purple : C.muted}
+                />
+                <Text style={[styles.sugVoteCount, s.has_voted && { color: C.purple }]}>
+                  {s.vote_count}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          contentContainerStyle={{ padding: 12, gap: 10 }}
+          ListEmptyComponent={
+            <View style={[styles.empty, { paddingTop: 30 }]}>
+              <Ionicons name="bulb-outline" size={48} color="#222" />
+              <Text style={styles.emptyTitle}>No suggestions yet</Text>
+              <Text style={styles.emptySub}>Be the first to suggest a theme!</Text>
+            </View>
+          }
+        />
+      )}
+    </View>
+  );
+
+  // ── Entry card ────────────────────────────────────────────────────────────
+  const renderEntry = (e: ChallengeEntry, phase: 'submission' | 'voting' | 'completed') => {
+    const isRevealed = phase === 'completed';
+    const canVote    = phase === 'voting' &&
+                       !!weeklyChallenge?.my_entry &&
+                       e.user_id !== user?.id;
+    const isSelf     = e.user_id === user?.id;
 
     return (
-      <View style={styles.entryCard}>
+      <View key={e.id} style={styles.entryCard}>
         {e.thumbnail_url ? (
           <Image source={{ uri: e.thumbnail_url }} style={styles.entryThumb} resizeMode="cover" />
         ) : (
           <View style={[styles.entryThumb, styles.entryThumbPlaceholder]}>
-            <Ionicons name="videocam-outline" size={28} color={C.muted} />
+            <Ionicons name="videocam-outline" size={24} color={C.muted} />
           </View>
         )}
         <View style={styles.entryInfo}>
-          {/* Anonymous until voting done */}
-          {isCompleted && e.user?.username ? (
+          {isRevealed && e.user?.username ? (
             <Text style={styles.entryAuthor}>@{e.user.username}</Text>
+          ) : isSelf ? (
+            <Text style={[styles.entryAnon, { color: C.green }]}>🎭 Your entry</Text>
           ) : (
-            <Text style={styles.entryAnon}>🎭 Anonymous</Text>
+            <Text style={styles.entryAnon}>🎭 Anonymous Pilot</Text>
           )}
-          {e.caption ? <Text style={styles.entryCaption} numberOfLines={2}>{e.caption}</Text> : null}
+          {e.caption ? (
+            <Text style={styles.entryCaption} numberOfLines={2}>{e.caption}</Text>
+          ) : null}
           {e.is_winner && e.place ? (
-            <View style={[styles.winnerBadge, { backgroundColor: (PLACE_COLOURS[e.place] ?? C.gold) + '22' }]}>
+            <View style={[styles.winnerBadge,
+              { backgroundColor: (PLACE_COLOURS[e.place] ?? C.gold) + '22' }]}>
               <Text style={[styles.winnerText, { color: PLACE_COLOURS[e.place] ?? C.gold }]}>
                 {PLACE_LABELS[e.place]} · +{propsForPlace(e.place)} Props
               </Text>
@@ -403,7 +664,7 @@ export default function ChallengesScreen() {
               >
                 <Ionicons
                   name={e.has_voted ? 'thumbs-up' : 'thumbs-up-outline'}
-                  size={14}
+                  size={13}
                   color={e.has_voted ? C.cyan : C.muted}
                 />
                 <Text style={[styles.voteBtnText, e.has_voted && { color: C.cyan }]}>
@@ -412,7 +673,7 @@ export default function ChallengesScreen() {
               </TouchableOpacity>
             ) : (
               <View style={styles.voteCount}>
-                <Ionicons name="thumbs-up" size={13} color={C.muted} />
+                <Ionicons name="thumbs-up" size={12} color={C.muted} />
                 <Text style={styles.voteCountText}>{e.vote_count}</Text>
               </View>
             )}
@@ -420,6 +681,39 @@ export default function ChallengesScreen() {
               <Text style={styles.entryDur}>{Math.round(e.duration_s)}s</Text>
             ) : null}
           </View>
+        </View>
+      </View>
+    );
+  };
+
+  // ── Leaderboard rows ──────────────────────────────────────────────────────
+  const renderLeaderRow = ({ item, index }: { item: LeaderboardEntry; index: number }) => {
+    const isTop3    = item.rank <= 3;
+    const rankColor = PLACE_COLOURS[item.rank] || C.text;
+    return (
+      <View style={[styles.leaderRow, isTop3 && styles.leaderRowTop]}>
+        <View style={[styles.rankBadge,
+          { borderColor: rankColor + '66', backgroundColor: rankColor + '15' }]}>
+          <Text style={[styles.rankText, { color: rankColor }]}>#{item.rank}</Text>
+        </View>
+        <Image
+          source={{ uri: item.avatar_url ?? undefined }}
+          style={styles.leaderAvatar}
+          defaultSource={require('../../assets/icon.png') as any}
+        />
+        <View style={styles.leaderInfo}>
+          <Text style={styles.leaderName}>{item.username ?? 'Pilot'}</Text>
+          {(item.location_label || item.city) && (
+            <Text style={styles.leaderLocation}>
+              📍 {item.location_label ?? item.city}
+            </Text>
+          )}
+        </View>
+        <View style={styles.propsDisplay}>
+          <Text style={[styles.propsValue, { color: isTop3 ? rankColor : C.gold }]}>
+            {item.earned_props}
+          </Text>
+          <Text style={styles.propsLabel}>PROPS</Text>
         </View>
       </View>
     );
@@ -447,15 +741,9 @@ export default function ChallengesScreen() {
             <Ionicons name="chevron-down" size={11} color={C.muted} />
           </TouchableOpacity>
         </View>
-        {screenTab === 'challenges' && (
-          <TouchableOpacity style={styles.createBtn} onPress={() => setCreateVisible(true)}>
-            <Ionicons name="add" size={18} color="#fff" />
-            <Text style={styles.createBtnText}>New</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
-      {/* ── Top Tab Bar ── */}
+      {/* ── Top Screen Tab Bar ── */}
       <View style={styles.tabRow}>
         {(['challenges', 'leaderboard'] as ScreenTab[]).map(t => (
           <TouchableOpacity
@@ -476,47 +764,55 @@ export default function ChallengesScreen() {
         ))}
       </View>
 
-      {/* ── Challenges List ── */}
+      {/* ── Challenges Content ── */}
       {screenTab === 'challenges' && (
-        loading && challenges.length === 0 ? (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" color={C.orange} />
+        <View style={{ flex: 1 }}>
+          {/* Sub-tab bar */}
+          <View style={styles.subTabRow}>
+            {([
+              { key: 'this_week', label: '📅 This Week' },
+              { key: 'archive',   label: '📁 Archive'   },
+              { key: 'suggest',   label: '💡 Suggest'   },
+            ] as { key: ChallengeSubTab; label: string }[]).map(t => (
+              <TouchableOpacity
+                key={t.key}
+                style={[styles.subTab, chalSubTab === t.key && styles.subTabActive]}
+                onPress={() => setChalSubTab(t.key)}
+              >
+                <Text style={[styles.subTabText, chalSubTab === t.key && styles.subTabTextActive]}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        ) : (
-          <FlatList
-            data={challenges}
-            keyExtractor={c => c.id}
-            renderItem={renderChallengeCard}
-            contentContainerStyle={styles.listContent}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefreshChallenges} tintColor={C.orange} />
-            }
-            ListEmptyComponent={
-              <View style={styles.empty}>
-                <Ionicons name="trophy-outline" size={56} color="#222" />
-                <Text style={styles.emptyTitle}>No challenges yet</Text>
-                <Text style={styles.emptySub}>Be the first to start one!</Text>
-              </View>
-            }
-          />
-        )
+
+          {loading && challenges.length === 0 ? (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color={C.orange} />
+            </View>
+          ) : (
+            <>
+              {chalSubTab === 'this_week' && renderThisWeek()}
+              {chalSubTab === 'archive'   && renderArchive()}
+              {chalSubTab === 'suggest'   && renderSuggestions()}
+            </>
+          )}
+        </View>
       )}
 
-      {/* ── Leaderboard ── */}
+      {/* ── Leaderboard Content ── */}
       {screenTab === 'leaderboard' && (
         <View style={{ flex: 1 }}>
-          {/* Sub-tabs */}
           <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
+            horizontal showsHorizontalScrollIndicator={false}
             style={styles.leadTabScroll}
             contentContainerStyle={styles.leadTabRow}
           >
             {([
-              { key: 'global',  label: '🌍 Global',  icon: 'earth-outline'   },
-              { key: 'local',   label: '📍 Local',   icon: 'location-outline' },
-              { key: 'season',  label: '🗓 Season',  icon: 'layers-outline'   },
-            ] as { key: LeadTab; label: string; icon: string }[]).map(t => (
+              { key: 'global', label: '🌍 Global'  },
+              { key: 'local',  label: '📍 Local'   },
+              { key: 'season', label: '🗓 Season'   },
+            ] as { key: LeadTab; label: string }[]).map(t => (
               <TouchableOpacity
                 key={t.key}
                 style={[styles.leadTab, leadTab === t.key && styles.leadTabActive]}
@@ -529,11 +825,9 @@ export default function ChallengesScreen() {
             ))}
           </ScrollView>
 
-          {/* Season selector for season tab */}
           {leadTab === 'season' && (
             <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
+              horizontal showsHorizontalScrollIndicator={false}
               style={styles.seasonRow}
               contentContainerStyle={{ paddingHorizontal: 12, gap: 8, flexDirection: 'row' }}
             >
@@ -552,9 +846,7 @@ export default function ChallengesScreen() {
           )}
 
           {leadLoad ? (
-            <View style={styles.centered}>
-              <ActivityIndicator color={C.orange} />
-            </View>
+            <View style={styles.centered}><ActivityIndicator color={C.orange} /></View>
           ) : (
             <FlatList
               data={leadRows}
@@ -564,12 +856,12 @@ export default function ChallengesScreen() {
               ListHeaderComponent={
                 <View style={styles.leaderHeader}>
                   <Text style={styles.leaderHeaderText}>
-                    {leadTab === 'global'  ? '🌍 All-Time Global'
-                   : leadTab === 'local'   ? '📍 Local Pilots'
+                    {leadTab === 'global' ? '🌍 All-Time Global'
+                   : leadTab === 'local'  ? '📍 Local Pilots'
                    : `🗓 ${leadSeason?.name ?? 'Season'} Rankings`}
                   </Text>
                   <Text style={styles.leaderHeaderSub}>
-                    Ranked by props earned — spending props doesn't affect rank
+                    Ranked by props earned — spending never affects rank
                   </Text>
                 </View>
               }
@@ -585,83 +877,7 @@ export default function ChallengesScreen() {
         </View>
       )}
 
-      {/* ════════════════════════════════════════════════════════
-          ── Create Challenge Modal ──
-      ════════════════════════════════════════════════════════ */}
-      <Modal visible={createVisible} animationType="slide" transparent
-        onRequestClose={() => setCreateVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>New Challenge</Text>
-              <TouchableOpacity onPress={() => setCreateVisible(false)}>
-                <Ionicons name="close" size={22} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.fieldLabel}>Title *</Text>
-              <TextInput
-                style={styles.fieldInput}
-                placeholder="e.g. Best Bando Line"
-                placeholderTextColor={C.muted}
-                value={newTitle}
-                onChangeText={setNewTitle}
-                maxLength={80}
-              />
-              <Text style={styles.fieldLabel}>Description</Text>
-              <TextInput
-                style={[styles.fieldInput, styles.fieldTextarea]}
-                placeholder="What's the challenge about?"
-                placeholderTextColor={C.muted}
-                value={newDesc}
-                onChangeText={setNewDesc}
-                multiline
-                maxLength={500}
-              />
-              <Text style={styles.fieldLabel}>Rules</Text>
-              <TextInput
-                style={[styles.fieldInput, styles.fieldTextarea]}
-                placeholder="Any specific rules for entries?"
-                placeholderTextColor={C.muted}
-                value={newRules}
-                onChangeText={setNewRules}
-                multiline
-                maxLength={500}
-              />
-              {/* Info box */}
-              <View style={styles.infoBox}>
-                <Ionicons name="information-circle-outline" size={16} color={C.cyan} />
-                <Text style={styles.infoText}>
-                  Submissions open for 5 days · Voting for 2 days · Max 2 min videos · Anonymous entries
-                </Text>
-              </View>
-              {/* Props prizes */}
-              <View style={styles.prizesRow}>
-                {[1,2,3].map(p => (
-                  <View key={p} style={[styles.prizeChip, { borderColor: (PLACE_COLOURS[p] ?? C.gold) + '66' }]}>
-                    <Text style={[styles.prizePlace, { color: PLACE_COLOURS[p] }]}>{PLACE_LABELS[p]}</Text>
-                    <Text style={[styles.prizeProps, { color: PLACE_COLOURS[p] }]}>+{propsForPlace(p)} Props</Text>
-                  </View>
-                ))}
-              </View>
-              <TouchableOpacity
-                style={[styles.primaryBtn, saving && styles.primaryBtnDisabled]}
-                onPress={handleCreate}
-                disabled={saving}
-              >
-                {saving
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={styles.primaryBtnText}>Start Challenge</Text>
-                }
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ════════════════════════════════════════════════════════
-          ── Submit Entry Modal ──
-      ════════════════════════════════════════════════════════ */}
+      {/* ════ Submit Entry Modal ════ */}
       <Modal visible={submitVisible} animationType="slide" transparent
         onRequestClose={() => setSubmitVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -673,29 +889,48 @@ export default function ChallengesScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.challengeNameLabel}>{submitTarget?.title}</Text>
+              <View style={styles.infoBox}>
+                <Ionicons name="eye-off-outline" size={14} color={C.cyan} />
+                <Text style={styles.infoText}>
+                  Your identity stays 100% anonymous until voting ends Sunday night.
+                  You must cast a vote during Sat–Sun to be eligible to win.
+                </Text>
+              </View>
+
               {/* Video picker */}
               <TouchableOpacity style={styles.videoPicker} onPress={handlePickVideo}>
-                {entryThumb ? (
-                  <Image source={{ uri: entryThumb }} style={styles.videoPreview} resizeMode="cover" />
+                {entryUri ? (
+                  <View style={styles.videoPreview}>
+                    {entryThumb ? (
+                      <Image source={{ uri: entryThumb }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                    ) : null}
+                    <View style={styles.videoOverlay}>
+                      <Ionicons name="checkmark-circle" size={32} color={C.green} />
+                      <Text style={styles.videoOverlayText}>{Math.round(entryDuration)}s · Tap to change</Text>
+                    </View>
+                  </View>
                 ) : (
                   <View style={styles.videoPlaceholder}>
-                    <Ionicons name="cloud-upload-outline" size={40} color={C.muted} />
-                    <Text style={styles.videoPlaceholderText}>Tap to select video (max 2 min)</Text>
+                    <Ionicons name="cloud-upload-outline" size={36} color={C.muted} />
+                    <Text style={styles.videoPlaceholderText}>Tap to pick video (max 2 min)</Text>
                   </View>
                 )}
               </TouchableOpacity>
-              {/* Thumbnail picker */}
+
+              {/* Thumbnail selector */}
               {entryFrames.length > 0 && (
                 <View style={styles.thumbPickerWrap}>
                   <Text style={styles.fieldLabel}>Choose thumbnail</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 8 }}>
-                    {entryFrames.map((uri, i) => (
-                      <TouchableOpacity key={i} onPress={() => setEntryThumb(uri)}
-                        style={[styles.thumbFrame, entryThumb === uri && styles.thumbFrameSelected]}>
-                        <Image source={{ uri }} style={styles.thumbFrameImg} />
-                        {entryThumb === uri && (
+                    contentContainerStyle={{ gap: 8, flexDirection: 'row' }}>
+                    {entryFrames.map((f, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        style={[styles.thumbFrame, entryThumb === f && styles.thumbFrameSelected]}
+                        onPress={() => setEntryThumb(f)}
+                      >
+                        <Image source={{ uri: f }} style={styles.thumbFrameImg} />
+                        {entryThumb === f && (
                           <View style={styles.thumbCheck}>
                             <Ionicons name="checkmark-circle" size={18} color={C.orange} />
                           </View>
@@ -711,21 +946,30 @@ export default function ChallengesScreen() {
                   <Text style={styles.thumbLoadText}>Generating frames…</Text>
                 </View>
               )}
+
               <Text style={styles.fieldLabel}>Caption (optional)</Text>
               <TextInput
                 style={styles.fieldInput}
-                placeholder="Describe your entry…"
+                placeholder="Describe your flight…"
                 placeholderTextColor={C.muted}
                 value={entryCaption}
                 onChangeText={setEntryCaption}
                 maxLength={200}
               />
-              <View style={styles.infoBox}>
-                <Ionicons name="eye-off-outline" size={14} color={C.cyan} />
-                <Text style={styles.infoText}>
-                  Your identity stays anonymous until voting ends.
-                </Text>
+
+              {/* Prizes reminder */}
+              <View style={styles.prizesRow}>
+                {[{ p: 1, l: '🥇', c: C.gold, v: 100 },
+                  { p: 2, l: '🥈', c: C.silver, v: 60 },
+                  { p: 3, l: '🥉', c: C.bronze, v: 30 }].map(x => (
+                  <View key={x.p} style={[styles.prizeChip,
+                    { borderColor: x.c + '44', backgroundColor: x.c + '12' }]}>
+                    <Text style={styles.prizeEmoji}>{x.l}</Text>
+                    <Text style={[styles.prizeProps, { color: x.c }]}>+{x.v}</Text>
+                  </View>
+                ))}
               </View>
+
               <TouchableOpacity
                 style={[styles.primaryBtn, (submitting || !entryUri) && styles.primaryBtnDisabled]}
                 onPress={handleSubmitEntry}
@@ -733,7 +977,10 @@ export default function ChallengesScreen() {
               >
                 {submitting
                   ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={styles.primaryBtnText}>Submit Anonymously</Text>
+                  : <>
+                      <Ionicons name="eye-off-outline" size={16} color="#fff" />
+                      <Text style={styles.primaryBtnText}>Submit Anonymously</Text>
+                    </>
                 }
               </TouchableOpacity>
             </ScrollView>
@@ -741,13 +988,64 @@ export default function ChallengesScreen() {
         </View>
       </Modal>
 
-      {/* ════════════════════════════════════════════════════════
-          ── Challenge Detail Modal ──
-      ════════════════════════════════════════════════════════ */}
+      {/* ════ Suggest Modal ════ */}
+      <Modal visible={suggestVisible} animationType="slide" transparent
+        onRequestClose={() => setSuggestVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>💡 Suggest a Theme</Text>
+              <TouchableOpacity onPress={() => setSuggestVisible(false)}>
+                <Ionicons name="close" size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={[styles.infoBox, { borderColor: C.purple + '44', backgroundColor: C.purple + '10' }]}>
+                <Ionicons name="bulb-outline" size={14} color={C.purple} />
+                <Text style={[styles.infoText, { color: C.subtext }]}>
+                  The most-voted suggestion each week becomes the following week's challenge, announced Saturday at voting time.
+                </Text>
+              </View>
+              <Text style={styles.fieldLabel}>Theme Title *</Text>
+              <TextInput
+                style={styles.fieldInput}
+                placeholder="e.g. Best Night Flight, Slowest Roll…"
+                placeholderTextColor={C.muted}
+                value={sugTitle}
+                onChangeText={setSugTitle}
+                maxLength={80}
+              />
+              <Text style={styles.fieldLabel}>Details (optional)</Text>
+              <TextInput
+                style={[styles.fieldInput, styles.fieldTextarea]}
+                placeholder="Describe the theme or any rules you'd like…"
+                placeholderTextColor={C.muted}
+                value={sugDesc}
+                onChangeText={setSugDesc}
+                multiline
+                maxLength={400}
+              />
+              <TouchableOpacity
+                style={[styles.primaryBtn,
+                  { backgroundColor: C.purple },
+                  (!sugTitle.trim() || savingSug) && styles.primaryBtnDisabled]}
+                onPress={handleSubmitSuggestion}
+                disabled={!sugTitle.trim() || savingSug}
+              >
+                {savingSug
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.primaryBtnText}>Submit Suggestion</Text>
+                }
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ════ Archive Detail Modal ════ */}
       <Modal
-        visible={!!detailChallenge}
-        animationType="slide"
-        transparent
+        visible={!!detailChallenge && getChallengePhase(detailChallenge) === 'completed'}
+        animationType="slide" transparent
         onRequestClose={() => { setDetailChallenge(null); setEntries([]); }}
       >
         <View style={styles.modalOverlay}>
@@ -760,89 +1058,40 @@ export default function ChallengesScreen() {
                 <Ionicons name="close" size={22} color="#fff" />
               </TouchableOpacity>
             </View>
-
-            {detailChallenge && renderStatusBadge(detailChallenge)}
-
-            {/* Timeline pills */}
             {detailChallenge && (
-              <View style={styles.timelinePills}>
-                <View style={styles.timelinePill}>
-                  <Ionicons name="videocam-outline" size={11} color={C.orange} />
-                  <Text style={styles.timelinePillText}>
-                    Submit by {new Date(detailChallenge.submission_ends).toLocaleDateString()}
-                  </Text>
-                </View>
-                <View style={styles.timelinePill}>
-                  <Ionicons name="thumbs-up-outline" size={11} color={C.cyan} />
-                  <Text style={styles.timelinePillText}>
-                    Vote by {new Date(detailChallenge.voting_ends).toLocaleDateString()}
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {detailChallenge?.description ? (
-              <Text style={styles.detailDesc}>{detailChallenge.description}</Text>
-            ) : null}
-            {detailChallenge?.rules ? (
-              <View style={styles.rulesBox}>
-                <Text style={styles.rulesLabel}>Rules</Text>
-                <Text style={styles.rulesText}>{detailChallenge.rules}</Text>
-              </View>
-            ) : null}
-
-            <Text style={styles.sectionTitle}>
-              Entries ({entries.length})
-              {detailChallenge && detailChallenge.status === 'active' &&
-                new Date(detailChallenge.submission_ends) > new Date() &&
-                '  · Anonymous until voting ends'}
-            </Text>
-
-            {entriesLoading ? (
-              <View style={styles.centered}><ActivityIndicator color={C.orange} /></View>
-            ) : (
-              <FlatList
-                data={entries}
-                keyExtractor={e => e.id}
-                renderItem={renderEntry}
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 40 }}
-                ListEmptyComponent={
-                  <View style={styles.empty}>
-                    <Ionicons name="videocam-outline" size={48} color="#222" />
-                    <Text style={styles.emptyTitle}>No entries yet</Text>
-                    {detailChallenge?.status === 'active' && (
-                      <Text style={styles.emptySub}>Be the first to submit!</Text>
-                    )}
-                  </View>
-                }
-              />
-            )}
-
-            {/* Submit from detail */}
-            {detailChallenge && !detailChallenge.my_entry &&
-              detailChallenge.status === 'active' &&
-              new Date(detailChallenge.submission_ends) > new Date() && (
-              <TouchableOpacity
-                style={[styles.primaryBtn, { marginHorizontal: 0, marginTop: 8 }]}
-                onPress={() => {
-                  setDetailChallenge(null);
-                  setSubmitTarget(detailChallenge);
-                  setSubmitVisible(true);
-                }}
-              >
-                <Ionicons name="cloud-upload-outline" size={16} color="#fff" />
-                <Text style={styles.primaryBtnText}>Submit My Entry</Text>
-              </TouchableOpacity>
+              <>
+                <Text style={styles.archiveMeta}>
+                  Week #{detailChallenge.week_number ?? '—'} ·{' '}
+                  Ended {new Date(detailChallenge.voting_ends).toLocaleDateString()}
+                </Text>
+                <Text style={styles.sectionLabel}>RESULTS</Text>
+                {entriesLoading ? (
+                  <ActivityIndicator color={C.orange} />
+                ) : (
+                  <FlatList
+                    data={entries}
+                    keyExtractor={e => e.id}
+                    renderItem={({ item: e }) => renderEntry(e, 'completed')}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ paddingBottom: 40 }}
+                    ListEmptyComponent={
+                      <View style={styles.empty}>
+                        <Text style={styles.emptySub}>No entries recorded.</Text>
+                      </View>
+                    }
+                  />
+                )}
+              </>
             )}
           </View>
         </View>
       </Modal>
 
-      {/* ── Season Picker Modal ── */}
+      {/* ════ Season Picker Modal ════ */}
       <Modal visible={seasonPickerVisible} animationType="fade" transparent
         onRequestClose={() => setSeasonPickerVisible(false)}>
-        <TouchableOpacity style={styles.seasonPickerOverlay} onPress={() => setSeasonPickerVisible(false)}>
+        <TouchableOpacity style={styles.seasonPickerOverlay}
+          onPress={() => setSeasonPickerVisible(false)}>
           <View style={styles.seasonPickerSheet}>
             <Text style={styles.seasonPickerTitle}>Select Season</Text>
             {seasons.map(s => (
@@ -852,7 +1101,7 @@ export default function ChallengesScreen() {
                 onPress={() => { setActiveSeason(s); setSeasonPickerVisible(false); loadChallenges(s.id); }}
               >
                 <Text style={[styles.seasonPickerRowText, activeSeason?.id === s.id && { color: C.orange }]}>
-                  {s.name} {s.is_active ? '· Active' : ''}
+                  {s.name}{s.is_active ? ' · Active' : ''}
                 </Text>
                 {activeSeason?.id === s.id && <Ionicons name="checkmark" size={16} color={C.orange} />}
               </TouchableOpacity>
@@ -860,19 +1109,15 @@ export default function ChallengesScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
-
     </View>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   centered:  { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
 
-  // Header
   header: {
     flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 54, paddingBottom: 10,
@@ -885,18 +1130,9 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.border,
   },
   seasonPillText: { color: C.cyan, fontSize: 11, fontWeight: '600' },
-  createBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: C.orange, borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 8,
-  },
-  createBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
-  // Tab bar
-  tabRow: {
-    flexDirection: 'row', backgroundColor: C.bg,
-    borderBottomWidth: 1, borderBottomColor: C.border,
-  },
+  // Screen tabs
+  tabRow: { flexDirection: 'row', backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.border },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 12, gap: 6, position: 'relative' },
   tabBtnActive: {},
@@ -905,32 +1141,102 @@ const styles = StyleSheet.create({
   tabUnderline: { position: 'absolute', bottom: 0, left: 20, right: 20, height: 2,
     borderRadius: 2, backgroundColor: C.orange },
 
-  // List
+  // Sub-tabs
+  subTabRow: {
+    flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: C.border,
+    backgroundColor: C.bg,
+  },
+  subTab: { flex: 1, alignItems: 'center', paddingVertical: 10 },
+  subTabActive: { borderBottomWidth: 2, borderBottomColor: C.orange },
+  subTabText: { color: C.muted, fontSize: 12, fontWeight: '600' },
+  subTabTextActive: { color: C.text, fontWeight: '800' },
+
   listContent: { padding: 12, gap: 12 } as any,
   empty:       { alignItems: 'center', paddingTop: 60, gap: 10 },
   emptyTitle:  { color: C.text, fontSize: 18, fontWeight: '700' },
   emptySub:    { color: C.muted, fontSize: 13 },
 
-  // Challenge card
-  challengeCard: {
-    backgroundColor: C.card, borderRadius: 16,
-    borderWidth: 1, borderColor: C.border, padding: 14, gap: 8,
+  // Hero card
+  heroCard: {
+    borderRadius: 20, padding: 18, gap: 12,
+    borderWidth: 1, borderColor: C.border,
   },
-  cardTop:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  challengeTitle:  { color: C.text, fontSize: 17, fontWeight: '800' },
-  challengeDesc:   { color: C.subtext, fontSize: 13, lineHeight: 18 },
-  cardFooter:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
-  cardFooterLeft:  { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  cardMetaText:    { color: C.muted, fontSize: 11 },
-  entryCount:      { color: C.muted, fontSize: 11 },
-  submitBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: C.orange, borderRadius: 14,
-    paddingHorizontal: 12, paddingVertical: 6,
+  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  heroTitle: { color: C.text, fontSize: 22, fontWeight: '900', letterSpacing: 0.5 },
+  heroDesc:  { color: C.subtext, fontSize: 14, lineHeight: 20 },
+  weekTag:   { flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: C.card, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4,
+    borderWidth: 1, borderColor: C.border },
+  weekTagText: { color: C.muted, fontSize: 11, fontWeight: '600' },
+
+  // Timeline
+  timelineRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 4 },
+  timelineStep: { alignItems: 'center', gap: 4, flex: 1, opacity: 0.45 },
+  timelineStepActive: { opacity: 1 },
+  timelineLabel: { color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  timelineSub:   { color: C.muted, fontSize: 10 },
+  timelineConnector: { width: 20, height: 1, backgroundColor: C.border },
+
+  entryCountText: { color: C.muted, fontSize: 12 },
+
+  heroCTA: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: C.orange, borderRadius: 14, paddingVertical: 13,
   },
-  submitBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  enteredBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  enteredText:  { color: C.cyan, fontSize: 12, fontWeight: '600' },
+  heroCTAText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+
+  // Prize card
+  prizeCard: { backgroundColor: C.card, borderRadius: 16, padding: 14, gap: 10,
+    borderWidth: 1, borderColor: C.border },
+  prizesRow: { flexDirection: 'row', gap: 8 } as any,
+  prizeChip: { flex: 1, alignItems: 'center', borderRadius: 12, padding: 10,
+    borderWidth: 1 },
+  prizeEmoji: { fontSize: 15, fontWeight: '800' },
+  prizeProps: { fontSize: 12, fontWeight: '700', marginTop: 3 },
+
+  // Section
+  sectionRow:  { flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 8 },
+  sectionLabel: { color: C.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
+  anonNote:     { color: C.muted, fontSize: 11, fontStyle: 'italic' },
+
+  // Archive
+  archiveCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: C.card, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: C.border,
+  },
+  archiveLeft:  { flex: 1, gap: 3 },
+  archiveWeek:  { color: C.muted, fontSize: 11, fontWeight: '600' },
+  archiveTitle: { color: C.text, fontSize: 15, fontWeight: '700' },
+  archiveMeta:  { color: C.muted, fontSize: 11, marginTop: 2 },
+
+  // Suggestions
+  suggestBanner: {
+    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
+    backgroundColor: C.purple + '12', padding: 12, margin: 12, borderRadius: 12,
+    borderWidth: 1, borderColor: C.purple + '33',
+  },
+  suggestBannerText: { flex: 1, color: C.subtext, fontSize: 12, lineHeight: 17 },
+  addSugBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
+    marginHorizontal: 12, marginBottom: 4, paddingVertical: 10,
+    backgroundColor: C.purple + '15', borderRadius: 12,
+    borderWidth: 1, borderColor: C.purple + '44',
+  },
+  addSugBtnText: { color: C.purple, fontSize: 14, fontWeight: '700' },
+  sugCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: C.card, borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: C.border,
+  },
+  sugLeft:      { flex: 1, gap: 3 },
+  sugTitle:     { color: C.text, fontSize: 14, fontWeight: '700' },
+  sugDesc:      { color: C.subtext, fontSize: 12, lineHeight: 16 },
+  sugAuthor:    { color: C.muted, fontSize: 11 },
+  sugVoteBtn:   { alignItems: 'center', gap: 2, padding: 6 },
+  sugVoteBtnActive: {},
+  sugVoteCount: { color: C.muted, fontSize: 12, fontWeight: '700' },
 
   // Status badges
   badge: { flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -938,137 +1244,124 @@ const styles = StyleSheet.create({
   badgeText:   { fontSize: 10, fontWeight: '700' },
   badgeActive: { borderColor: C.orange + '44', backgroundColor: C.orange + '15' },
   badgeVoting: { borderColor: C.cyan   + '44', backgroundColor: C.cyan   + '15' },
-  badgeDone:   { borderColor: '#333',           backgroundColor: '#1a1a1a'       },
+  badgeDone:   { borderColor: '#333',           backgroundColor: '#1a1a1a' },
 
   // Leaderboard
-  leadTabScroll:   { flexGrow: 0, borderBottomWidth: 1, borderBottomColor: C.border },
-  leadTabRow:      { paddingHorizontal: 12, paddingVertical: 8, gap: 8, flexDirection: 'row' } as any,
-  leadTab:         { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+  leadTabScroll: { flexGrow: 0, borderBottomWidth: 1, borderBottomColor: C.border },
+  leadTabRow:    { paddingHorizontal: 12, paddingVertical: 8, gap: 8, flexDirection: 'row' } as any,
+  leadTab:       { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
     backgroundColor: C.card, borderWidth: 1, borderColor: C.border },
-  leadTabActive:   { borderColor: C.orange, backgroundColor: C.orange + '20' },
-  leadTabText:     { color: C.muted, fontSize: 13, fontWeight: '600' },
+  leadTabActive: { borderColor: C.orange, backgroundColor: C.orange + '20' },
+  leadTabText:   { color: C.muted, fontSize: 13, fontWeight: '600' },
   leadTabTextActive: { color: C.orange, fontWeight: '800' },
-  leaderHeader:    { padding: 16, paddingBottom: 4 },
-  leaderHeaderText:{ color: C.text, fontSize: 16, fontWeight: '800' },
-  leaderHeaderSub: { color: C.muted, fontSize: 11, marginTop: 3 },
+  leaderHeader:  { padding: 16, paddingBottom: 4 },
+  leaderHeaderText: { color: C.text, fontSize: 16, fontWeight: '800' },
+  leaderHeaderSub:  { color: C.muted, fontSize: 11, marginTop: 3 },
   leaderRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 16, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: C.border,
   },
   leaderRowTop: { backgroundColor: '#0f1520' },
-  rankBadge: { width: 38, height: 38, borderRadius: 10, borderWidth: 1,
+  rankBadge:    { width: 38, height: 38, borderRadius: 10, borderWidth: 1,
     justifyContent: 'center', alignItems: 'center' },
-  rankText:    { fontSize: 13, fontWeight: '800' },
-  leaderAvatar:{ width: 40, height: 40, borderRadius: 20, backgroundColor: C.card },
-  leaderInfo:  { flex: 1 },
-  leaderName:  { color: C.text, fontSize: 14, fontWeight: '700' },
+  rankText:     { fontSize: 13, fontWeight: '800' },
+  leaderAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.card },
+  leaderInfo:   { flex: 1 },
+  leaderName:   { color: C.text, fontSize: 14, fontWeight: '700' },
   leaderLocation: { color: C.muted, fontSize: 11, marginTop: 2 },
-  propsDisplay:{ alignItems: 'flex-end' },
-  propsValue:  { fontSize: 18, fontWeight: '900' },
-  propsLabel:  { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
-  seasonRow:   { flexGrow: 0, paddingVertical: 8 },
-  seasonChip:  { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
+  propsDisplay: { alignItems: 'flex-end' },
+  propsValue:   { fontSize: 18, fontWeight: '900' },
+  propsLabel:   { color: C.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
+  seasonRow:    { flexGrow: 0, paddingVertical: 8 },
+  seasonChip:   { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
     backgroundColor: C.card, borderWidth: 1, borderColor: C.border },
   seasonChipActive: { borderColor: C.orange, backgroundColor: C.orange + '20' },
   seasonChipText:     { color: C.muted, fontSize: 12, fontWeight: '600' },
   seasonChipTextActive: { color: C.orange, fontWeight: '800' },
 
   // Entry card
-  entryCard: {
-    flexDirection: 'row', gap: 12,
-    padding: 12, borderBottomWidth: 1, borderBottomColor: C.border,
-  },
-  entryThumb:           { width: 80, height: 56, borderRadius: 10, backgroundColor: C.card },
-  entryThumbPlaceholder:{ justifyContent: 'center', alignItems: 'center' },
-  entryInfo:  { flex: 1, gap: 4 },
-  entryAuthor:{ color: C.cyan, fontSize: 13, fontWeight: '700' },
-  entryAnon:  { color: C.muted, fontSize: 12, fontStyle: 'italic' },
-  entryCaption:{ color: C.subtext, fontSize: 12 },
-  winnerBadge:{ alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
-  winnerText: { fontSize: 11, fontWeight: '800' },
-  voteRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
-  voteBtn:    { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10,
+  entryCard: { flexDirection: 'row', gap: 12, padding: 12,
+    borderBottomWidth: 1, borderBottomColor: C.border },
+  entryThumb: { width: 80, height: 56, borderRadius: 10, backgroundColor: C.card },
+  entryThumbPlaceholder: { justifyContent: 'center', alignItems: 'center' },
+  entryInfo:    { flex: 1, gap: 4 },
+  entryAuthor:  { color: C.cyan, fontSize: 13, fontWeight: '700' },
+  entryAnon:    { color: C.muted, fontSize: 12, fontStyle: 'italic' },
+  entryCaption: { color: C.subtext, fontSize: 12 },
+  winnerBadge:  { alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
+  winnerText:   { fontSize: 11, fontWeight: '800' },
+  voteRow:      { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
+  voteBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10,
     paddingVertical: 5, borderRadius: 12, backgroundColor: '#1a2030',
     borderWidth: 1, borderColor: C.border },
-  voteBtnActive: { borderColor: C.cyan + '66', backgroundColor: C.cyan + '15' },
-  voteBtnText:   { color: C.muted, fontSize: 12, fontWeight: '600' },
-  voteCount:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  voteCountText: { color: C.muted, fontSize: 12 },
-  entryDur:      { color: C.muted, fontSize: 11 },
+  voteBtnActive:  { borderColor: C.cyan + '66', backgroundColor: C.cyan + '15' },
+  voteBtnText:    { color: C.muted, fontSize: 12, fontWeight: '600' },
+  voteCount:      { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  voteCountText:  { color: C.muted, fontSize: 12 },
+  entryDur:       { color: C.muted, fontSize: 11 },
 
   // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
   modalSheet: {
     backgroundColor: C.card,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    maxHeight: '85%', padding: 20, paddingBottom: 40,
+    maxHeight: '88%', padding: 20, paddingBottom: 40,
   },
   modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: 16 },
-  modalTitle:  { color: C.text, fontSize: 18, fontWeight: '800', flex: 1, marginRight: 12 },
+  modalTitle: { color: C.text, fontSize: 18, fontWeight: '800', flex: 1, marginRight: 12 },
 
   // Form
-  challengeNameLabel: { color: C.cyan, fontSize: 14, fontWeight: '700', marginBottom: 12 },
   fieldLabel:   { color: C.muted, fontSize: 12, fontWeight: '600',
     letterSpacing: 0.5, marginBottom: 6, marginTop: 12 },
   fieldInput:   { backgroundColor: '#0a0f1a', borderRadius: 12, borderWidth: 1,
     borderColor: C.border, padding: 12, color: C.text, fontSize: 14 },
-  fieldTextarea:{ minHeight: 80, textAlignVertical: 'top' },
+  fieldTextarea: { minHeight: 80, textAlignVertical: 'top' },
+
   infoBox: { flexDirection: 'row', gap: 8, alignItems: 'flex-start',
-    backgroundColor: C.cyan + '15', borderRadius: 10, padding: 10, marginTop: 16,
+    backgroundColor: C.cyan + '15', borderRadius: 10, padding: 10, marginTop: 4,
     borderWidth: 1, borderColor: C.cyan + '33' },
-  infoText:    { color: C.subtext, fontSize: 12, flex: 1, lineHeight: 17 },
-  prizesRow:   { flexDirection: 'row', gap: 8, marginTop: 14 },
-  prizeChip:   { flex: 1, alignItems: 'center', borderRadius: 12, padding: 10,
-    backgroundColor: '#0a0f1a', borderWidth: 1 },
-  prizePlace:  { fontSize: 13, fontWeight: '800' },
-  prizeProps:  { fontSize: 11, fontWeight: '700', marginTop: 3 },
+  infoText: { color: C.subtext, fontSize: 12, flex: 1, lineHeight: 17 },
+
+  rulesBox:  { backgroundColor: '#0a0f1a', borderRadius: 10, padding: 10,
+    borderWidth: 1, borderColor: C.border },
+  rulesLabel: { color: C.orange, fontSize: 11, fontWeight: '700',
+    letterSpacing: 0.5, marginBottom: 4 },
+  rulesText:  { color: C.subtext, fontSize: 12, lineHeight: 17 },
+
   primaryBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: C.orange, borderRadius: 14, paddingVertical: 14, marginTop: 16,
   },
   primaryBtnDisabled: { opacity: 0.45 },
-  primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  primaryBtnText:     { color: '#fff', fontSize: 15, fontWeight: '800' },
 
-  // Video picker
-  videoPicker:        { backgroundColor: '#0a0f1a', borderRadius: 14, overflow: 'hidden',
+  videoPicker: { backgroundColor: '#0a0f1a', borderRadius: 14, overflow: 'hidden',
     height: 170, marginBottom: 12, borderWidth: 1, borderColor: C.border },
-  videoPreview:       { width: '100%', height: '100%' },
-  videoPlaceholder:   { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
+  videoPreview: { width: '100%', height: '100%' },
+  videoOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center', alignItems: 'center', gap: 6 },
+  videoOverlayText: { color: '#fff', fontSize: 12 },
+  videoPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
   videoPlaceholderText: { color: C.muted, fontSize: 13 },
-  thumbPickerWrap:    { marginBottom: 12 },
-  thumbFrame:         { width: 72, height: 50, borderRadius: 8, overflow: 'hidden',
+
+  thumbPickerWrap: { marginBottom: 12 },
+  thumbFrame:      { width: 72, height: 50, borderRadius: 8, overflow: 'hidden',
     borderWidth: 2, borderColor: 'transparent' },
   thumbFrameSelected: { borderColor: C.orange },
-  thumbFrameImg:      { width: '100%', height: '100%', resizeMode: 'cover' },
-  thumbCheck:         { position: 'absolute', bottom: 2, right: 2,
+  thumbFrameImg:   { width: '100%', height: '100%', resizeMode: 'cover' },
+  thumbCheck:      { position: 'absolute', bottom: 2, right: 2,
     backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 9 },
-  thumbLoadRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 } as any,
-  thumbLoadText:      { color: C.muted, fontSize: 12 },
+  thumbLoadRow:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 } as any,
+  thumbLoadText:   { color: C.muted, fontSize: 12 },
 
-  // Detail
-  timelinePills: { flexDirection: 'row', gap: 8, marginTop: 8, marginBottom: 4 } as any,
-  timelinePill:  { flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: '#0a0f1a', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5,
-    borderWidth: 1, borderColor: C.border },
-  timelinePillText: { color: C.subtext, fontSize: 11 },
-  detailDesc:    { color: C.subtext, fontSize: 13, lineHeight: 19, marginVertical: 8 },
-  rulesBox:      { backgroundColor: '#0a0f1a', borderRadius: 10, padding: 10,
-    borderWidth: 1, borderColor: C.border, marginBottom: 8 },
-  rulesLabel:    { color: C.orange, fontSize: 11, fontWeight: '700',
-    letterSpacing: 0.5, marginBottom: 4 },
-  rulesText:     { color: C.subtext, fontSize: 12, lineHeight: 17 },
-  sectionTitle:  { color: C.muted, fontSize: 12, fontWeight: '700',
-    letterSpacing: 0.6, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
-
-  // Season picker
-  seasonPickerOverlay:  { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.7)' },
-  seasonPickerSheet:    { backgroundColor: C.card, borderTopLeftRadius: 20,
+  seasonPickerOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.7)' },
+  seasonPickerSheet:   { backgroundColor: C.card, borderTopLeftRadius: 20,
     borderTopRightRadius: 20, padding: 20, paddingBottom: 40 },
-  seasonPickerTitle:    { color: C.text, fontSize: 16, fontWeight: '800', marginBottom: 14 },
-  seasonPickerRow:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  seasonPickerTitle:   { color: C.text, fontSize: 16, fontWeight: '800', marginBottom: 14 },
+  seasonPickerRow:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border },
-  seasonPickerRowActive:{},
-  seasonPickerRowText:  { color: C.subtext, fontSize: 14 },
+  seasonPickerRowActive: {},
+  seasonPickerRowText:   { color: C.subtext, fontSize: 14 },
 });
