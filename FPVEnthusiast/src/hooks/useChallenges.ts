@@ -272,9 +272,10 @@ export function useChallenges(currentUserId?: string) {
       if (error) return { success: false, reason: error.message };
     }
 
+    const voteDelta = isCurrentlyVoted ? -1 : 1;
     await supabase.rpc('increment_vote', {
       p_entry_id: entryId,
-      p_delta: isCurrentlyVoted ? -1 : 1,
+      p_delta: voteDelta,
     }).catch(() => null);
 
     return { success: true };
@@ -341,9 +342,10 @@ export function useChallenges(currentUserId?: string) {
         .insert({ suggestion_id: suggestionId, voter_id: currentUserId });
       if (error) return false;
     }
+    const sugDelta = isCurrentlyVoted ? -1 : 1;
     await supabase.rpc('increment_suggestion_vote', {
       p_suggestion_id: suggestionId,
-      p_delta: isCurrentlyVoted ? -1 : 1,
+      p_delta: sugDelta,
     }).catch(() => null);
     return true;
   }, [currentUserId]);
