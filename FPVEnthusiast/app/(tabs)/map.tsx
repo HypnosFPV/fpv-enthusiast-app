@@ -758,13 +758,13 @@ export default function MapScreen() {
               <Ionicons name="search-outline" size={20} color={showAddrSearch ? '#FFD700' : '#fff'} />
             </TouchableOpacity>
             <TouchableOpacity style={[styles.iconBtn, isSatellite && styles.iconBtnSatellite]} onPress={() => setIsSatellite(v => !v)}>
-              <Ionicons name="layers-outline" size={20} color={isSatellite ? '#FFD700' : '#fff'} />
+              <Ionicons name={isSatellite ? "earth" : "earth-outline"} size={20} color={isSatellite ? '#FFD700' : '#fff'} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => setShowFilterPanel(true)}>
-              <Ionicons name="options-outline" size={20} color="#fff" />
+            <TouchableOpacity style={[styles.iconBtn, showFilterPanel && styles.iconBtnActive]} onPress={() => setShowFilterPanel(true)}>
+              <Ionicons name={showFilterPanel ? "funnel" : "funnel-outline"} size={20} color={showFilterPanel ? '#FFD700' : '#fff'} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn} onPress={() => { if (userLocation) mapRef.current?.animateToRegion({ ...userLocation, latitudeDelta: 0.3, longitudeDelta: 0.3 }, 600); }}>
-              <Ionicons name="locate-outline" size={20} color="#fff" />
+              <Ionicons name="navigate" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
         </View>
