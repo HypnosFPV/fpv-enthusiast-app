@@ -22,13 +22,21 @@ export interface Challenge {
   description?: string | null;
   rules?: string | null;
   created_by?: string | null;
-  submission_ends: string;
-  voting_ends: string;
+  submission_opens_at: string;
+  submission_closes_at: string;
+  voting_opens_at: string;
+  voting_closes_at: string;
   status: 'active' | 'voting' | 'completed' | 'cancelled';
-  max_duration_s: number;
+  max_duration_seconds: number;
+  prize_first_props: number;
+  prize_second_props: number;
+  prize_third_props: number;
+  is_featured: boolean;
   created_at: string;
+  updated_at: string;
   is_weekly: boolean;
   week_number?: number | null;
+  category_id?: string | null;
   // Joined
   entry_count?: number;
   my_entry?: ChallengeEntry | null;
@@ -84,8 +92,8 @@ export type LeaderboardScope = 'global' | 'local' | 'season';
 
 export function getChallengePhase(ch: Challenge): 'submission' | 'voting' | 'completed' {
   const now = new Date();
-  if (ch.status === 'completed' || new Date(ch.voting_ends) < now) return 'completed';
-  if (new Date(ch.submission_ends) < now) return 'voting';
+  if (ch.status === 'completed' || new Date(ch.voting_closes_at) < now) return 'completed';
+  if (new Date(ch.submission_closes_at) < now) return 'voting';
   return 'submission';
 }
 
@@ -164,8 +172,8 @@ export function useChallenges(currentUserId?: string) {
     const now = new Date();
     const list = (data ?? []).map((c: any) => {
       let status = c.status;
-      if (status === 'active' && new Date(c.submission_ends) < now) status = 'voting';
-      if (status === 'voting' && new Date(c.voting_ends) < now)     status = 'completed';
+      if (status === 'active' && new Date(c.submission_closes_at) < now) status = 'voting';
+      if (status === 'voting' && new Date(c.voting_closes_at) < now)     status = 'completed';
       return {
         ...c,
         status,
