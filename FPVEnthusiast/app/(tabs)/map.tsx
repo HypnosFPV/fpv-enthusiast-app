@@ -369,6 +369,7 @@ export default function MapScreen() {
   const [locationGranted,   setLocationGranted]   = useState<boolean | null>(null);
   const [isSatellite,       setIsSatellite]       = useState(false);
   const [showAirspace,      setShowAirspace]      = useState(false);
+  const [showAirspaceLegend, setShowAirspaceLegend] = useState(false);
   const [airspaceZones,     setAirspaceZones]     = useState<AirspaceZone[]>([]);
   const [airspaceLoading,   setAirspaceLoading]   = useState(false);
   const [radiusMiles,       setRadiusMiles]       = useState(50);
@@ -870,6 +871,54 @@ export default function MapScreen() {
         </View>
       )}
 
+      
+      {/* ── FAA Airspace: floating pill ────────────────────────────── */}
+      {showAirspace && !airspaceLoading && (
+        <TouchableOpacity
+          style={styles.airspaceLegendBtn}
+          onPress={() => setShowAirspaceLegend(v => !v)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="warning" size={14} color="#ff4500" />
+          <Text style={styles.airspaceLegendBtnText}>{airspaceZones.length} zones</Text>
+          <Ionicons name={showAirspaceLegend ? "chevron-down" : "chevron-up"} size={13} color="#aaa" />
+        </TouchableOpacity>
+      )}
+
+      {/* ── FAA Airspace Legend panel ─────────────────────────────── */}
+      {showAirspace && showAirspaceLegend && (
+        <View style={styles.airspaceLegendPanel} pointerEvents="box-none">
+          <View style={styles.airspaceLegendHeader}>
+            <Ionicons name="shield-checkmark-outline" size={14} color="#ff4500" />
+            <Text style={styles.airspaceLegendTitle}>FAA Airspace Legend</Text>
+            <TouchableOpacity onPress={() => setShowAirspaceLegend(false)} hitSlop={{top:8,bottom:8,left:8,right:8}}>
+              <Ionicons name="close" size={16} color="#666" />
+            </TouchableOpacity>
+          </View>
+          {[
+            { color: 'rgba(0,100,255,0.85)',   label: 'Class B', desc: 'Major airports – LAANC auth required' },
+            { color: 'rgba(180,0,220,0.85)',   label: 'Class C', desc: 'Regional airports – LAANC auth required' },
+            { color: 'rgba(0,130,255,0.75)',   label: 'Class D', desc: 'Towered airports – LAANC auth required' },
+            { color: 'rgba(100,180,255,0.55)', label: 'Class E', desc: 'Controlled airspace – check altitude rules' },
+            { color: 'rgba(180,0,220,0.40)',   label: 'Mode C',  desc: 'Transponder veil – notify ATC' },
+            { color: 'rgba(0,200,100,0.70)',   label: 'LAANC',   desc: 'UAS facility – altitude ceiling noted' },
+          ].map(({ color, label, desc }) => (
+            <View key={label} style={styles.airspaceLegendRow}>
+              <View style={[styles.airspaceLegendSwatch, { backgroundColor: color }]} />
+              <View style={styles.airspaceLegendRowText}>
+                <Text style={styles.airspaceLegendLabel}>{label}</Text>
+                <Text style={styles.airspaceLegendDesc}>{desc}</Text>
+              </View>
+            </View>
+          ))}
+          <Text style={styles.airspaceLegendFooter}>
+            {'Data: FAA UDDS · Always verify at '}
+            <Text style={styles.airspaceLegendLink}>b4ufly.faa.gov</Text>
+            {' before flying'}
+          </Text>
+        </View>
+      )}
+
       {/* ─── Header ──────────────────────────────────────────────────────── */}
       <SafeAreaView style={styles.headerSafe} pointerEvents="box-none">
         {/* Title row */}
@@ -922,22 +971,11 @@ export default function MapScreen() {
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* ── Airspace legend banner ──────────────────────────────────────── */}
-        {showAirspace && (
-          <View style={styles.airspaceBanner}>
-            {airspaceLoading
-              ? <ActivityIndicator size="small" color="#ff4500" />
-              : <Ionicons name="warning" size={13} color="#ff4500" />
-            }
-            <Text style={styles.airspaceBannerText}>
-              {airspaceLoading
-                ? 'Loading FAA airspace data…'
-                : `FAA airspace shown (${airspaceZones.length} zones) · Verify at `
-              }
-              {!airspaceLoading && <Text style={styles.airspaceBannerLink}>b4ufly.faa.gov</Text>}
-              {!airspaceLoading && ' before flying'}
-            </Text>
+        {/* ── Airspace: slim loading badge (top-right, unobtrusive) ─────── */}
+        {showAirspace && airspaceLoading && (
+          <View style={styles.airspaceLoadingBadge} pointerEvents="none">
+            <ActivityIndicator size="small" color="#ff4500" />
+            <Text style={styles.airspaceLoadingText}>Loading airspace…</Text>
           </View>
         )}
 
@@ -1564,15 +1602,42 @@ const styles = StyleSheet.create({
   iconBtn:          { backgroundColor: 'rgba(0,0,0,0.65)', padding: 8, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
   iconBtnSatellite: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
   iconBtnAirspace:  { borderColor: '#ff4500', backgroundColor: 'rgba(255,69,0,0.18)' },
-  airspaceBanner: {
-    position: 'absolute', top: 100, left: 12, right: 12,
-    backgroundColor: 'rgba(0,0,0,0.78)',
-    borderRadius: 8, borderWidth: 1, borderColor: '#ff4500',
-    paddingHorizontal: 10, paddingVertical: 6,
-    flexDirection: 'row', alignItems: 'center', gap: 6, zIndex: 20,
+  // ── Airspace overlay UI ───────────────────────────────────────────────────────
+  airspaceLoadingBadge: {
+    position: 'absolute', top: 110, right: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1, borderColor: '#ff4500', zIndex: 20,
   },
-  airspaceBannerText: { color: '#ccc', fontSize: 11, flex: 1, flexWrap: 'wrap' },
-  airspaceBannerLink: { color: '#ff4500', textDecorationLine: 'underline' },
+  airspaceLoadingText:   { color: '#ccc', fontSize: 11 },
+  airspaceLegendBtn: {
+    position: 'absolute', bottom: 178, right: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(10,10,20,0.90)',
+    borderRadius: 20, paddingHorizontal: 11, paddingVertical: 7,
+    borderWidth: 1.5, borderColor: '#ff4500',
+    elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.45, shadowRadius: 6, zIndex: 25,
+  },
+  airspaceLegendBtnText: { color: '#ff4500', fontSize: 12, fontWeight: '700' },
+  airspaceLegendPanel: {
+    position: 'absolute', bottom: 222, right: 14, width: 262,
+    backgroundColor: 'rgba(8,12,24,0.97)',
+    borderRadius: 14, borderWidth: 1.5, borderColor: '#ff4500',
+    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 14,
+    elevation: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.6, shadowRadius: 10, zIndex: 24,
+  },
+  airspaceLegendHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  airspaceLegendTitle:  { flex: 1, color: '#fff', fontSize: 13, fontWeight: '700' },
+  airspaceLegendRow:    { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  airspaceLegendSwatch: { width: 14, height: 14, borderRadius: 3 },
+  airspaceLegendRowText: { flex: 1 },
+  airspaceLegendLabel:  { color: '#fff', fontSize: 12, fontWeight: '600' },
+  airspaceLegendDesc:   { color: '#888', fontSize: 10, marginTop: 1 },
+  airspaceLegendFooter: { color: '#555', fontSize: 10, marginTop: 6, lineHeight: 14 },
+  airspaceLegendLink:   { color: '#ff4500', textDecorationLine: 'underline' },
   iconBtnMgp:       { borderColor: '#2979FF', backgroundColor: 'rgba(41,121,255,0.12)' },
   iconBtnSearchActive: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
 
