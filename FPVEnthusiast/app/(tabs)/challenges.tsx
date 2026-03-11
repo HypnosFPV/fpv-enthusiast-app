@@ -229,29 +229,28 @@ export default function ChallengesScreen() {
       const mime = ext === 'mov' ? 'video/quicktime' : 'video/mp4';
       const resp = await fetch(entryUri);
       const buf  = await resp.arrayBuffer();
-      const path = `challenges/${submitTarget.id}/${user!.id}_${Date.now()}.${ext}`;
+      const s3Path = `challenges/${submitTarget.id}/${user!.id}_${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage
-        .from('posts').upload(path, buf, { contentType: mime, upsert: false });
+        .from('posts').upload(s3Path, buf, { contentType: mime, upsert: false });
       if (upErr) {
         let errMsg = upErr.message ?? '';
         let userMsg = '';
         if (errMsg.includes('row-level security') || errMsg.includes('policy')) {
-          userMsg = 'Video upload was blocked. This usually means:\n\n• Your account session expired — try signing out and back in\n• The storage bucket does not allow uploads from your account\n\nIf this keeps happening, contact support.';
+          userMsg = 'Video upload was blocked.\n\n• Your session may have expired — sign out and back in\n• Storage permissions may need to be configured by admin';
         } else if (errMsg.includes('Duplicate') || errMsg.includes('already exists')) {
           userMsg = 'You already have a submission for this challenge.';
         } else if (errMsg.includes('size') || errMsg.includes('too large')) {
-          userMsg = 'Video file is too large. Please trim it to under 2 minutes and try again.';
+          userMsg = 'Video file is too large. Please trim to under 2 minutes.';
         } else if (errMsg.includes('mime') || errMsg.includes('type')) {
-          userMsg = 'Unsupported video format. Please use MP4 or MOV.';
+          userMsg = 'Unsupported format. Please use MP4 or MOV.';
         } else {
-          userMsg = 'Upload failed. Please check your connection and try again.\n\nDetails: ' + errMsg;
+          userMsg = 'Upload failed. Check your connection and try again.\n\nDetails: ' + errMsg;
         }
         Alert.alert('Upload Failed', userMsg);
         return;
       }
-      const { data: urlData } = supabase.storage.from('posts').getPublicUrl(path);
 
-      let thumbUrl: string | undefined;
+      let thumbS3Key: string | undefined;
       if (entryThumb) {
         try {
           const tr = await fetch(entryThumb);
@@ -259,19 +258,20 @@ export default function ChallengesScreen() {
           const tp = `challenges/${submitTarget.id}/${user!.id}_thumb_${Date.now()}.jpg`;
           const { error: tErr } = await supabase.storage
             .from('posts').upload(tp, tb, { contentType: 'image/jpeg', upsert: false });
-          if (!tErr) {
-            const { data: td } = supabase.storage.from('posts').getPublicUrl(tp);
-            thumbUrl = td.publicUrl;
-          }
+          if (!tErr) thumbS3Key = tp;
         } catch { /* skip */ }
       }
 
+      // Get file size from buffer
+      const fileSizeBytes = buf.byteLength;
+
       const entry = await submitEntry({
-        challengeId: submitTarget.id,
-        videoUrl: urlData.publicUrl,
-        thumbnailUrl: thumbUrl,
-        durationS: entryDuration,
-        caption: entryCaption,
+        challengeId:    submitTarget.id,
+        s3UploadKey:    s3Path,
+        thumbnailS3Key: thumbS3Key,
+        durationSeconds: entryDuration ? Math.round(entryDuration) : undefined,
+        originalFilename: entryUri.split('/').pop()?.split('?')[0],
+        fileSizeBytes,
       });
 
       if (entry) {
@@ -311,8 +311,8 @@ export default function ChallengesScreen() {
           onPress: async () => {
             const ok = await deleteEntry(
               myEntry.id,
-              myEntry.video_url,
-              myEntry.thumbnail_url,
+              myEntry.s3_upload_key,
+              myEntry.thumbnail_s3_key,
             );
             if (ok) {
               Alert.alert('Entry Deleted', 'You can now submit a new entry.');
@@ -340,12 +340,12 @@ export default function ChallengesScreen() {
     }
 
     // Cannot self-vote
-    if (entry.user_id === user.id) {
+    if (entry.pilot_id === user.id) {
       Alert.alert('Not allowed', 'You cannot vote for your own entry.');
       return;
     }
 
-    const result = await vote(entry.id, entry.user_id, entry.has_voted ?? false);
+    const result = await vote(entry.id, entry.pilot_id, entry.has_voted ?? false);
     if (!result.success) {
       if (result.reason === 'self_vote') Alert.alert('Not allowed', 'Cannot vote for yourself.');
       return;
@@ -706,8 +706,8 @@ export default function ChallengesScreen() {
     const isRevealed = phase === 'completed';
     const canVote    = phase === 'voting' &&
                        !!weeklyChallenge?.my_entry &&
-                       e.user_id !== user?.id;
-    const isSelf     = e.user_id === user?.id;
+                       e.pilot_id !== user?.id;
+    const isSelf     = e.pilot_id === user?.id;
 
     return (
       <View key={e.id} style={styles.entryCard}>
@@ -729,11 +729,11 @@ export default function ChallengesScreen() {
           {e.caption ? (
             <Text style={styles.entryCaption} numberOfLines={2}>{e.caption}</Text>
           ) : null}
-          {e.is_winner && e.place ? (
+          {e.final_rank != null && e.final_rank <= 3 && e.final_rank ? (
             <View style={[styles.winnerBadge,
-              { backgroundColor: (PLACE_COLOURS[e.place] ?? C.gold) + '22' }]}>
-              <Text style={[styles.winnerText, { color: PLACE_COLOURS[e.place] ?? C.gold }]}>
-                {PLACE_LABELS[e.place]} · +{propsForPlace(e.place)} Props
+              { backgroundColor: (PLACE_COLOURS[e.final_rank] ?? C.gold) + '22' }]}>
+              <Text style={[styles.winnerText, { color: PLACE_COLOURS[e.final_rank] ?? C.gold }]}>
+                {PLACE_LABELS[e.final_rank]} · +{propsForPlace(e.final_rank)} Props
               </Text>
             </View>
           ) : null}
@@ -758,8 +758,8 @@ export default function ChallengesScreen() {
                 <Text style={styles.voteCountText}>{e.vote_count}</Text>
               </View>
             )}
-            {e.duration_s ? (
-              <Text style={styles.entryDur}>{Math.round(e.duration_s)}s</Text>
+            {e.duration_seconds ? (
+              <Text style={styles.entryDur}>{Math.round(e.duration_seconds)}s</Text>
             ) : null}
           </View>
         </View>
