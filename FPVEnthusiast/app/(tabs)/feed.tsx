@@ -16,6 +16,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { useProfile } from '../../src/hooks/useProfile';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
 import { useMute } from '../../src/hooks/useMute';
+import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
 import { detectPlatform } from '../../src/utils/socialMedia';
 import { supabase } from '../../src/services/supabase';
 import PostCard from '../../src/components/PostCard';
@@ -114,6 +115,9 @@ export default function FeedScreen() {
     createPost, createSocialPost, deletePost,
     followingIds,
   } = useFeed(user?.id, feedMode, interestProfile);
+
+  // ── Props award hook ────────────────────────────────────────────────────────
+  const propsToast = usePropsToast();
   const { unreadCount } = useNotificationsContext();
   const { mutedIds } = useMute(user?.id);
 
@@ -272,6 +276,15 @@ export default function FeedScreen() {
           mediaBase64,
           thumbnailUrl: mediaType === 'video' ? selectedThumb : null,
         });
+        // Award first-post props (dedup-safe via UNIQUE constraint)
+        if (newPost && user?.id) {
+          supabase.from('props_log').insert({
+            user_id: user.id, amount: 50,
+            reason: 'first_post', reference_id: user.id,
+          }).then(({ error }) => {
+            if (!error) propsToast.show('+50 Props! First post bonus 🎉');
+          });
+        }
       }
 
       if (user?.id) {
@@ -789,6 +802,8 @@ export default function FeedScreen() {
           </ScrollView>
         </View>
       </Modal>
+    {/* ── Props award toast ─────────────────────────────────────────── */}
+    <PropsToast toast={propsToast} />
     </View>
   );
 }
