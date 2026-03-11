@@ -389,11 +389,45 @@ export function useChallenges(currentUserId?: string) {
     if (activeSeason) loadChallenges(activeSeason.id);
   }, [activeSeason?.id, currentUserId]);
 
+
+  // ── AI content check ─────────────────────────────────────────────────────
+  // Sends the thumbnail base64 to our edge function which calls Google Vision.
+  // Returns { approved, issues } where issues is a string[] of problems found.
+  const checkThumbnail = useCallback(async (
+    thumbnailUri: string,
+  ): Promise<{ approved: boolean; issues: string[] }> => {
+    try {
+      // Read thumbnail as base64
+      const resp = await fetch(thumbnailUri);
+      const blob = await resp.blob();
+      const reader: any = new FileReader();
+      const base64: string = await new Promise((resolve, reject) => {
+        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+        reader.onerror  = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      const { data, error } = await supabase.functions.invoke('check-video-content', {
+        body: { thumbnailBase64: base64 },
+      });
+
+      if (error) {
+        console.warn('[checkThumbnail] edge fn error:', error.message);
+        return { approved: true, issues: [] }; // fail open — don't block on API errors
+      }
+      return { approved: data.approved ?? true, issues: data.issues ?? [] };
+    } catch (err) {
+      console.warn('[checkThumbnail] unexpected error:', err);
+      return { approved: true, issues: [] }; // fail open
+    }
+  }, []);
+
   return {
     seasons, activeSeason, setActiveSeason,
     challenges, loading, creating,
     loadChallenges, submitEntry, loadEntries,
     vote, loadLeaderboard, loadUserProps,
     loadSuggestions, submitSuggestion, voteSuggestion,
+    checkThumbnail,
   };
 }
