@@ -51,7 +51,16 @@ type ChallengeSubTab = 'this_week' | 'archive' | 'suggest';
 
 // ─── Entry Video Player ──────────────────────────────────────────────────────
 function EntryVideoPlayer({ uri, onClose }: { uri: string; onClose: () => void }) {
+  const [buffering, setBuffering] = React.useState(true);
   const player = useVideoPlayer(uri, p => { p.loop = false; p.play(); });
+
+  React.useEffect(() => {
+    const sub = player.addListener('statusChange', ({ status }: { status: string }) => {
+      setBuffering(status === 'loading' || status === 'idle');
+    });
+    return () => sub.remove();
+  }, [player]);
+
   return (
     <Modal visible animationType="fade" transparent={false} onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
@@ -69,6 +78,11 @@ function EntryVideoPlayer({ uri, onClose }: { uri: string; onClose: () => void }
           allowsPictureInPicture
           contentFit="contain"
         />
+        {buffering && (
+          <View style={{ position: 'absolute', justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color="#ff4500" />
+          </View>
+        )}
       </View>
     </Modal>
   );
@@ -609,13 +623,17 @@ export default function ChallengesScreen() {
 
         {/* Entries / voting section */}
         <View>
-          <TouchableOpacity style={styles.sectionRow} onPress={() => setEntriesModalVisible(true)} activeOpacity={0.7}>
-            <Text style={styles.sectionLabel}>ENTRIES ({entries.length})</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <TouchableOpacity style={styles.entriesHeaderBtn} onPress={() => setEntriesModalVisible(true)} activeOpacity={0.75}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="videocam-outline" size={15} color="#ff4500" />
+              <Text style={[styles.sectionLabel, { color: '#ff4500' }]}>ENTRIES ({entries.length})</Text>
               {phase === 'submission' && (
                 <Text style={styles.anonNote}>🎭 Anonymous</Text>
               )}
-              <Ionicons name="chevron-forward" size={14} color="#4a5568" />
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={{ color: '#ff4500', fontSize: 12, fontWeight: '600' }}>View all</Text>
+              <Ionicons name="chevron-forward" size={14} color="#ff4500" />
             </View>
           </TouchableOpacity>
           {entriesLoading ? (
@@ -1013,7 +1031,7 @@ export default function ChallengesScreen() {
         transparent={false}
         onRequestClose={() => setEntriesModalVisible(false)}
       >
-        <View style={{ flex: 1, backgroundColor: '#070710' }}>
+        <View style={{ flex: 1, backgroundColor: '#070710', paddingTop: 52 }}>
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalTitle}>
               Entries ({entries.length})
@@ -1524,6 +1542,18 @@ const styles = StyleSheet.create({
   seasonChipTextActive: { color: C.orange, fontWeight: '800' },
 
   // Entry card
+  entriesHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,69,0,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,69,0,0.3)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
   entryPlayOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
