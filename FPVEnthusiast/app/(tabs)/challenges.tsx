@@ -696,11 +696,18 @@ export default function ChallengesScreen() {
           { borderColor: rankColor + '66', backgroundColor: rankColor + '15' }]}>
           <Text style={[styles.rankText, { color: rankColor }]}>#{item.rank}</Text>
         </View>
-        <Image
-          source={{ uri: item.avatar_url ?? undefined }}
-          style={styles.leaderAvatar}
-          defaultSource={require('../../assets/icon.png') as any}
-        />
+        {item.avatar_url ? (
+          <Image
+            source={{ uri: item.avatar_url }}
+            style={styles.leaderAvatar}
+          />
+        ) : (
+          <View style={[styles.leaderAvatar, styles.leaderAvatarFallback]}>
+            <Text style={styles.leaderAvatarInitial}>
+              {(item.username ?? 'P')[0].toUpperCase()}
+            </Text>
+          </View>
+        )}
         <View style={styles.leaderInfo}>
           <Text style={styles.leaderName}>{item.username ?? 'Pilot'}</Text>
           {(item.location_label || item.city) && (
@@ -1266,7 +1273,9 @@ const styles = StyleSheet.create({
   rankBadge:    { width: 38, height: 38, borderRadius: 10, borderWidth: 1,
     justifyContent: 'center', alignItems: 'center' },
   rankText:     { fontSize: 13, fontWeight: '800' },
-  leaderAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.card },
+  leaderAvatar:        { width: 40, height: 40, borderRadius: 20, backgroundColor: C.card },
+  leaderAvatarFallback:{ justifyContent: 'center', alignItems: 'center', backgroundColor: '#1a2540' },
+  leaderAvatarInitial: { color: C.cyan, fontSize: 16, fontWeight: '800' },
   leaderInfo:   { flex: 1 },
   leaderName:   { color: C.text, fontSize: 14, fontWeight: '700' },
   leaderLocation: { color: C.muted, fontSize: 11, marginTop: 2 },
