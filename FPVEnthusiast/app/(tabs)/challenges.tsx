@@ -1111,6 +1111,7 @@ export default function ChallengesScreen() {
                 value={sugTitle}
                 onChangeText={setSugTitle}
                 maxLength={80}
+                color={C.text}
               />
               <Text style={styles.fieldLabel}>Details (optional)</Text>
               <TextInput
@@ -1121,6 +1122,7 @@ export default function ChallengesScreen() {
                 onChangeText={setSugDesc}
                 multiline
                 maxLength={400}
+                color={C.text}
               />
               <TouchableOpacity
                 style={[styles.primaryBtn,
