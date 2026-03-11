@@ -319,6 +319,9 @@ export default function ProfileScreen() {
   const [showMuteList,    setShowMuteList]    = useState(false);
   const [showMultiGP,     setShowMultiGP]     = useState(false);
   const [followModal,     setFollowModal]     = useState<'followers' | 'following' | null>(null);
+  const [showPropsLog,    setShowPropsLog]    = useState(false);
+  const [propsLog,        setPropsLog]        = useState<{ id: string; amount: number; reason: string; created_at: string }[]>([]);
+  const [propsLogLoading, setPropsLogLoading] = useState(false);
 
   // ── Stats card animations ──────────────────────────────────────────────────
   // Shared count-up progress values (0 → 1, driven together)
@@ -445,6 +448,19 @@ export default function ProfileScreen() {
   }, [profile]);
 
   // ── Data loaders ──────────────────────────────────────────────────────────
+  const loadPropsLog = useCallback(async () => {
+    if (!user?.id) return;
+    setPropsLogLoading(true);
+    const { data } = await supabase
+      .from('props_log')
+      .select('id, amount, reason, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    setPropsLog((data ?? []) as any[]);
+    setPropsLogLoading(false);
+  }, [user?.id]);
+
   const loadMyPosts = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await supabase
@@ -795,14 +811,20 @@ export default function ProfileScreen() {
             </TouchableOpacity>
             <View style={styles.statDivider} />
 
-            {/* Props — count-up, no pulse */}
-            <StatBox
-              displayValue={profile?.total_props ?? 0}
-              label="Props"
-              accentColor="#ffd700"
-              animatedValue={countProps}
-              renderIcon={(c) => <PropIcon size={15} color={c} focused />}
-            />
+            {/* Props — count-up, tappable → history modal */}
+            <TouchableOpacity
+              onPress={() => { setShowPropsLog(true); loadPropsLog(); }}
+              activeOpacity={0.75}
+              style={{ flex: 1, alignItems: 'center' }}
+            >
+              <StatBox
+                displayValue={profile?.total_props ?? 0}
+                label="Props"
+                accentColor="#ffd700"
+                animatedValue={countProps}
+                renderIcon={(c) => <PropIcon size={15} color={c} focused />}
+              />
+            </TouchableOpacity>
           </Animated.View>
           <View style={styles.socialRow}>
             {([
@@ -1187,6 +1209,70 @@ export default function ProfileScreen() {
       {/* ── FOLLOW / MUTE MODALS ──────────────────────────────────────────── */}
       {user && <FollowListModal visible={followModal !== null} type={followModal ?? 'followers'} profileUserId={user.id} currentUserId={user.id} onClose={() => setFollowModal(null)} />}
       <MuteListModal visible={showMuteList} onClose={() => setShowMuteList(false)} mutedUsers={mutedUsers} loading={muteLoading} onUnmute={async (userId) => { await unmuteUser(userId); }} />
+      {/* ── Props History Modal ──────────────────────────────────────────── */}
+      <Modal
+        visible={showPropsLog}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowPropsLog(false)}
+      >
+        <View style={styles.plOverlay}>
+          <View style={styles.plSheet}>
+            {/* Header */}
+            <View style={styles.plHeader}>
+              <PropIcon size={18} color="#ffd700" focused />
+              <Text style={styles.plTitle}>Props History</Text>
+              <TouchableOpacity onPress={() => setShowPropsLog(false)} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
+                <Ionicons name="close" size={22} color="#aaa" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.plTotal}>Total: {profile?.total_props ?? 0} props</Text>
+            {/* List */}
+            {propsLogLoading ? (
+              <ActivityIndicator color="#ffd700" style={{ marginTop: 24 }} />
+            ) : propsLog.length === 0 ? (
+              <View style={styles.plEmpty}>
+                <PropIcon size={36} color="#333" />
+                <Text style={styles.plEmptyText}>No props earned yet.{`\n`}Complete actions to earn props!</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={propsLog}
+                keyExtractor={item => item.id}
+                contentContainerStyle={{ paddingBottom: 24 }}
+                renderItem={({ item }) => {
+                  const label = ({
+                    first_post:            'First post',
+                    easter_egg:            'Easter egg found',
+                    first_challenge_entry: 'First challenge entry',
+                    profile_complete:      'Profile complete',
+                    follower_10:           '10 followers milestone',
+                    follower_50:           '50 followers milestone',
+                    follower_100:          '100 followers milestone',
+                    post_votes_10:         '10 votes on a post',
+                    post_votes_50:         '50 votes on a post',
+                    post_votes_100:        '100 votes on a post',
+                    challenge_winner_1:    'Challenge 1st place 🥇',
+                    challenge_winner_2:    'Challenge 2nd place 🥈',
+                    challenge_winner_3:    'Challenge 3rd place 🥉',
+                  } as Record<string,string>)[item.reason] ?? item.reason.replace(/_/g,' ');
+                  const date = new Date(item.created_at).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+                  return (
+                    <View style={styles.plRow}>
+                      <View style={styles.plRowLeft}>
+                        <Text style={styles.plRowLabel}>{label}</Text>
+                        <Text style={styles.plRowDate}>{date}</Text>
+                      </View>
+                      <Text style={styles.plRowAmount}>+{item.amount}</Text>
+                    </View>
+                  );
+                }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* Props award toast */}
       <PropsToast toast={propsToast} />
 
@@ -1462,5 +1548,80 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#000',
     letterSpacing: 0.5,
+  },
+
+  // ── Props History Modal ────────────────────────────────────────────────────
+  plOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'flex-end',
+  },
+  plSheet: {
+    backgroundColor: '#0f1520',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1.5,
+    borderColor: '#ffd700',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 40,
+    maxHeight: '70%',
+  },
+  plHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
+  },
+  plTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+  plTotal: {
+    fontSize: 13,
+    color: '#ffd700',
+    marginBottom: 16,
+    marginLeft: 28,
+  },
+  plRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a2030',
+  },
+  plRowLeft: {
+    flex: 1,
+  },
+  plRowLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#e0e8f0',
+  },
+  plRowDate: {
+    fontSize: 11,
+    color: '#556677',
+    marginTop: 2,
+  },
+  plRowAmount: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#ffd700',
+    minWidth: 50,
+    textAlign: 'right',
+  },
+  plEmpty: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    gap: 14,
+  },
+  plEmptyText: {
+    fontSize: 13,
+    color: '#445566',
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
