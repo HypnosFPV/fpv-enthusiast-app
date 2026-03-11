@@ -16,6 +16,7 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
+import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
 import {
   useChallenges,
   Challenge, ChallengeEntry, ChallengeSuggestion,
@@ -91,6 +92,9 @@ function EntryVideoPlayer({ uri, onClose }: { uri: string; onClose: () => void }
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ChallengesScreen() {
   const { user } = useAuth();
+
+  // ── Props award hook ─────────────────────────────────────────────────────────
+  const propsToast = usePropsToast();
 
   const {
     seasons, activeSeason, setActiveSeason,
@@ -323,6 +327,15 @@ export default function ChallengesScreen() {
         setCheckResult(null);
         setEntryUri(null); setEntryThumb(null);
         setEntryFrames([]); setEntryCaption(''); setEntryDuration(0);
+        // ── Props award: first challenge entry (dedup-safe) ───────────────────
+        if (user?.id) {
+          supabase.from('props_log').insert({
+            user_id: user.id, amount: 25,
+            reason: 'first_challenge_entry', reference_id: user.id,
+          }).then(({ error }) => {
+            if (!error) propsToast.show('+25 Props! First challenge entry 🏁');
+          });
+        }
         Alert.alert(
           '✅ Entry submitted!',
           'Your video is anonymous until voting ends. Remember to vote on Sat–Sun to be eligible to win.',
@@ -1372,6 +1385,8 @@ export default function ChallengesScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+      {/* ── Props award toast ─────────────────────────────────────── */}
+      <PropsToast toast={propsToast} />
     </View>
   );
 }
