@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
 import {
@@ -47,6 +48,31 @@ const PLACE_LABELS  = ['', '🥇 1st', '🥈 2nd', '🥉 3rd'];
 type ScreenTab = 'challenges' | 'leaderboard';
 type LeadTab   = LeaderboardScope;
 type ChallengeSubTab = 'this_week' | 'archive' | 'suggest';
+
+// ─── Entry Video Player ──────────────────────────────────────────────────────
+function EntryVideoPlayer({ uri, onClose }: { uri: string; onClose: () => void }) {
+  const player = useVideoPlayer(uri, p => { p.loop = false; p.play(); });
+  return (
+    <Modal visible animationType="fade" transparent={false} onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+        <TouchableOpacity
+          style={{ position: 'absolute', top: 52, right: 20, zIndex: 10, padding: 8,
+            backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20 }}
+          onPress={onClose}
+        >
+          <Ionicons name="close" size={26} color="#fff" />
+        </TouchableOpacity>
+        <VideoView
+          player={player}
+          style={{ width: W, height: W * (16 / 9) > 600 ? 600 : W * (16 / 9) }}
+          allowsFullscreen
+          allowsPictureInPicture
+          contentFit="contain"
+        />
+      </View>
+    </Modal>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ChallengesScreen() {
@@ -92,6 +118,9 @@ export default function ChallengesScreen() {
   const [entries,        setEntries]        = useState<ChallengeEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [refreshing,     setRefreshing]     = useState(false);
+
+  const [entriesModalVisible, setEntriesModalVisible] = useState(false);
+  const [playingEntry,        setPlayingEntry]        = useState<ChallengeEntry | null>(null);
 
   // ── Suggestions list ──────────────────────────────────────────────────────
   const [suggestions,    setSuggestions]    = useState<ChallengeSuggestion[]>([]);
@@ -580,12 +609,15 @@ export default function ChallengesScreen() {
 
         {/* Entries / voting section */}
         <View>
-          <View style={styles.sectionRow}>
+          <TouchableOpacity style={styles.sectionRow} onPress={() => setEntriesModalVisible(true)} activeOpacity={0.7}>
             <Text style={styles.sectionLabel}>ENTRIES ({entries.length})</Text>
-            {phase === 'submission' && (
-              <Text style={styles.anonNote}>🎭 Anonymous until voting ends</Text>
-            )}
-          </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {phase === 'submission' && (
+                <Text style={styles.anonNote}>🎭 Anonymous</Text>
+              )}
+              <Ionicons name="chevron-forward" size={14} color="#4a5568" />
+            </View>
+          </TouchableOpacity>
           {entriesLoading ? (
             <ActivityIndicator color={C.orange} style={{ marginTop: 20 }} />
           ) : entries.length === 0 ? (
@@ -711,9 +743,17 @@ export default function ChallengesScreen() {
     const isSelf     = e.pilot_id === user?.id;
 
     return (
-      <View key={e.id} style={styles.entryCard}>
+      <TouchableOpacity key={e.id} style={styles.entryCard} activeOpacity={0.85}
+        onPress={() => e.video_url ? setPlayingEntry(e) : null}>
         {e.thumbnail_url ? (
-          <Image source={{ uri: e.thumbnail_url }} style={styles.entryThumb} resizeMode="cover" />
+          <View>
+            <Image source={{ uri: e.thumbnail_url }} style={styles.entryThumb} resizeMode="cover" />
+            {e.video_url && (
+              <View style={styles.entryPlayOverlay}>
+                <Ionicons name="play-circle" size={28} color="rgba(255,255,255,0.85)" />
+              </View>
+            )}
+          </View>
         ) : (
           <View style={[styles.entryThumb, styles.entryThumbPlaceholder]}>
             <Ionicons name="videocam-outline" size={24} color={C.muted} />
@@ -764,7 +804,7 @@ export default function ChallengesScreen() {
             ) : null}
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -964,6 +1004,50 @@ export default function ChallengesScreen() {
             />
           )}
         </View>
+      )}
+
+      {/* ════ Entries List Modal ════ */}
+      <Modal
+        visible={entriesModalVisible}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setEntriesModalVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: '#070710' }}>
+          <View style={styles.modalHeaderRow}>
+            <Text style={styles.modalTitle}>
+              Entries ({entries.length})
+              {currentPhase === 'submission' ? '  🎭 Anonymous' : ''}
+            </Text>
+            <TouchableOpacity onPress={() => setEntriesModalVisible(false)}>
+              <Ionicons name="close" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          {entriesLoading ? (
+            <ActivityIndicator color="#ff4500" style={{ marginTop: 40 }} />
+          ) : entries.length === 0 ? (
+            <View style={styles.empty}>
+              <Ionicons name="videocam-outline" size={56} color="#222" />
+              <Text style={styles.emptyTitle}>No entries yet</Text>
+              <Text style={styles.emptySub}>Be the first to submit!</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={entries}
+              keyExtractor={e => e.id}
+              renderItem={({ item: e }) => renderEntry(e, currentPhase ?? 'submission')}
+              contentContainerStyle={{ padding: 12, gap: 10 }}
+            />
+          )}
+        </View>
+      </Modal>
+
+      {/* ════ Entry Video Player ════ */}
+      {playingEntry?.video_url && (
+        <EntryVideoPlayer
+          uri={playingEntry.video_url}
+          onClose={() => setPlayingEntry(null)}
+        />
       )}
 
       {/* ════ Submit Entry Modal ════ */}
@@ -1440,6 +1524,14 @@ const styles = StyleSheet.create({
   seasonChipTextActive: { color: C.orange, fontWeight: '800' },
 
   // Entry card
+  entryPlayOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    borderRadius: 8,
+  },
   entryCard: { flexDirection: 'row', gap: 12, padding: 12,
     borderBottomWidth: 1, borderBottomColor: C.border },
   entryThumb: { width: 80, height: 56, borderRadius: 10, backgroundColor: C.card },
