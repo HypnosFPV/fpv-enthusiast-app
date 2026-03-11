@@ -1,7 +1,10 @@
-// src/hooks/useFeed.ts
+// src/hooks/useFeed.ts  — with personalised feed modes
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { decode } from 'base64-arraybuffer';
+import { rankPosts, InterestProfile } from './useFeedAlgorithm';
+
+export type FeedMode = 'for_you' | 'following' | 'recent';
 
 export interface FeedPost {
   id: string;
@@ -42,7 +45,8 @@ interface CreateSocialPostParams {
   tags?: string[];
 }
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE    = 10;
+const POOL_SIZE    = 60;   // For You: fetch this many, then rank & trim
 
 const SELECT = `
   id, user_id, media_url, media_type, thumbnail_url, caption, tags,
@@ -50,11 +54,16 @@ const SELECT = `
   users:user_id (id, username, avatar_url)
 `;
 
-export function useFeed(currentUserId?: string) {
+export function useFeed(
+  currentUserId?: string,
+  feedMode: FeedMode = 'recent',
+  interestProfile?: InterestProfile,
+) {
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(0);
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
 
   function mergeIsLiked(rawPosts: any[], likedIds: string[]): FeedPost[] {
     return rawPosts.map(p => ({
@@ -66,7 +75,79 @@ export function useFeed(currentUserId?: string) {
     })) as FeedPost[];
   }
 
-  const fetchPosts = useCallback(async (pageIndex: number) => {
+  // ── Fetch the list of users the current user follows ──────────────────
+  const loadFollowingIds = useCallback(async () => {
+    if (!currentUserId) { setFollowingIds([]); return; }
+    const { data } = await supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', currentUserId);
+    setFollowingIds((data ?? []).map((r: any) => r.following_id));
+  }, [currentUserId]);
+
+  // ── Core fetch ────────────────────────────────────────────────────────
+  const fetchPosts = useCallback(async (pageIndex: number): Promise<FeedPost[]> => {
+
+    // ── A. FOR YOU: fetch a larger pool and personalise-rank it ─────────
+    if (feedMode === 'for_you' && currentUserId) {
+      const from = pageIndex * POOL_SIZE;
+      const to   = from + POOL_SIZE - 1;
+
+      const { data, error } = await supabase
+        .from('posts')
+        .select(SELECT)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (error) { console.error('[useFeed] for_you error:', error.message); return []; }
+      if (!data?.length) return [];
+
+      const { data: likes } = await supabase
+        .from('likes')
+        .select('post_id')
+        .eq('user_id', currentUserId)
+        .in('post_id', data.map((p: any) => p.id));
+
+      const likedIds = (likes ?? []).map((l: any) => l.post_id);
+      const merged   = mergeIsLiked(data, likedIds);
+
+      // Rank if we have a profile, else fall back to chronological
+      const profile = interestProfile ?? { tagWeights: {}, authorAffinity: {}, topTags: [], topAuthors: [], lastUpdated: 0 };
+      const ranked  = rankPosts(merged, profile);
+
+      // Return a PAGE_SIZE slice from the ranked pool
+      return ranked.slice(pageIndex === 0 ? 0 : pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE);
+    }
+
+    // ── B. FOLLOWING: only posts from people the user follows ────────────
+    if (feedMode === 'following' && currentUserId) {
+      const ids = followingIds.length > 0 ? followingIds : [];
+      if (!ids.length) return [];
+
+      const from = pageIndex * PAGE_SIZE;
+      const to   = from + PAGE_SIZE - 1;
+
+      const { data, error } = await supabase
+        .from('posts')
+        .select(SELECT)
+        .in('user_id', ids)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (error) { console.error('[useFeed] following error:', error.message); return []; }
+      if (!data?.length) return [];
+
+      const { data: likes } = await supabase
+        .from('likes')
+        .select('post_id')
+        .eq('user_id', currentUserId)
+        .in('post_id', data.map((p: any) => p.id));
+
+      const likedIds = (likes ?? []).map((l: any) => l.post_id);
+      return mergeIsLiked(data, likedIds);
+    }
+
+    // ── C. RECENT: chronological (original behaviour) ────────────────────
     const from = pageIndex * PAGE_SIZE;
     const to   = from + PAGE_SIZE - 1;
 
@@ -76,25 +157,20 @@ export function useFeed(currentUserId?: string) {
       .order('created_at', { ascending: false })
       .range(from, to);
 
-    if (error) {
-      console.error('[useFeed] fetchPosts error:', JSON.stringify(error));
-      return [];
-    }
+    if (error) { console.error('[useFeed] fetchPosts error:', error.message); return []; }
     if (!data) return [];
 
     if (!currentUserId) return mergeIsLiked(data, []);
 
-    const { data: likes, error: likesError } = await supabase
+    const { data: likes } = await supabase
       .from('likes')
       .select('post_id')
       .eq('user_id', currentUserId)
       .in('post_id', data.map((p: any) => p.id));
 
-    if (likesError) console.error('[useFeed] likes error:', JSON.stringify(likesError));
-
     const likedIds = (likes ?? []).map((l: any) => l.post_id);
     return mergeIsLiked(data, likedIds);
-  }, [currentUserId]);
+  }, [currentUserId, feedMode, followingIds, interestProfile]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -172,7 +248,6 @@ export function useFeed(currentUserId?: string) {
         let mime: string;
 
         if (mediaType === 'video') {
-          // Video: read via fetch
           ext  = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'mp4';
           mime = ext === 'mov' ? 'video/quicktime' : 'video/mp4';
           console.log('[useFeed] fetching video (no compression)...');
@@ -181,14 +256,12 @@ export function useFeed(currentUserId?: string) {
           console.log('[useFeed] video fetch byteLength:', arrayBuffer.byteLength);
 
         } else if (mediaBase64) {
-          // Image: use base64 from ImagePicker directly
           arrayBuffer = decode(mediaBase64);
           ext  = 'jpg';
           mime = 'image/jpeg';
           console.log('[useFeed] using picker base64, byteLength:', arrayBuffer.byteLength);
 
         } else {
-          // Image fallback: read via fetch
           ext  = mediaUrl.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'jpg';
           mime = ext === 'png'  ? 'image/png'
                : ext === 'heic' ? 'image/heic'
@@ -224,7 +297,6 @@ export function useFeed(currentUserId?: string) {
       }
     }
 
-    // Upload thumbnail frame if provided
     let finalThumbUrl: string | null = null;
     if (thumbnailUrl && mediaType === 'video') {
       try {
@@ -311,27 +383,33 @@ export function useFeed(currentUserId?: string) {
     return newPost;
   }, [currentUserId]);
 
- const deletePost = useCallback(async (postId: string): Promise<boolean> => {
-  console.log('[useFeed] deleting post:', postId);
-  const { error } = await supabase
-    .from('posts')
-    .delete()
-    .eq('id', postId);
+  const deletePost = useCallback(async (postId: string): Promise<boolean> => {
+    console.log('[useFeed] deleting post:', postId);
+    const { error } = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', postId);
 
-  if (error) {
-    console.error('[useFeed] deletePost error:', JSON.stringify(error));
-    return false;
-  }
+    if (error) {
+      console.error('[useFeed] deletePost error:', JSON.stringify(error));
+      return false;
+    }
 
-  setPosts(prev => prev.filter(p => p.id !== postId));
-  console.log('[useFeed] post deleted successfully');
-  return true;
-}, []);
-
-
-  useEffect(() => {
-    onRefresh();
+    setPosts(prev => prev.filter(p => p.id !== postId));
+    console.log('[useFeed] post deleted successfully');
+    return true;
   }, []);
+
+  // Load following IDs once userId is known
+  useEffect(() => {
+    loadFollowingIds();
+  }, [loadFollowingIds]);
+
+  // Initial load / refresh when feedMode or userId changes
+  useEffect(() => {
+    setLoading(true);
+    onRefresh();
+  }, [feedMode, currentUserId]);
 
   return {
     posts,
@@ -343,5 +421,6 @@ export function useFeed(currentUserId?: string) {
     createPost,
     createSocialPost,
     deletePost,
+    followingIds,
   };
 }
