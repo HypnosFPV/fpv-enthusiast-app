@@ -7,7 +7,7 @@ import {
   Animated, Easing, AppState, AppStateStatus,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, Circle, UrlTile, PROVIDER_GOOGLE, MapPressEvent } from 'react-native-maps';
+import MapView, { Marker, Circle, Polygon, PROVIDER_GOOGLE, MapPressEvent } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
@@ -189,6 +189,58 @@ const dtStyles = StyleSheet.create({
 });
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
+// ─── Airspace overlay types & helpers ────────────────────────────────────────
+type AirspaceZone = {
+  id: string;
+  name: string;
+  type: string;       // CLASS-B, CLASS-C, CLASS-D, CLASS-E, MODE-C, LAANC
+  ceiling: number | null;
+  coords: { latitude: number; longitude: number }[][];
+};
+
+const AIRSPACE_COLORS: Record<string, { fill: string; stroke: string }> = {
+  'CLASS-B':  { fill: 'rgba(0,100,255,0.18)',   stroke: 'rgba(0,100,255,0.85)'   },
+  'CLASS-C':  { fill: 'rgba(180,0,220,0.15)',   stroke: 'rgba(180,0,220,0.85)'   },
+  'CLASS-D':  { fill: 'rgba(0,130,255,0.12)',   stroke: 'rgba(0,130,255,0.75)'   },
+  'CLASS-E':  { fill: 'rgba(100,180,255,0.08)', stroke: 'rgba(100,180,255,0.55)' },
+  'MODE-C':   { fill: 'rgba(180,0,220,0.06)',   stroke: 'rgba(180,0,220,0.40)'   },
+  'LAANC':    { fill: 'rgba(0,200,100,0.12)',   stroke: 'rgba(0,200,100,0.70)'   },
+  'DEFAULT':  { fill: 'rgba(255,100,0,0.10)',   stroke: 'rgba(255,100,0,0.60)'   },
+};
+
+const FAA_BASE = 'https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services';
+
+function classifyZone(props: Record<string, any>): string {
+  const tc = (props.TYPE_CODE || props.LOCAL_TYPE || '').toUpperCase();
+  const cl = (props.CLASS || '').toUpperCase();
+  if (tc === 'MODE-C') return 'MODE-C';
+  if (cl === 'B' || tc.includes('CLASS B')) return 'CLASS-B';
+  if (cl === 'C' || tc.includes('CLASS C')) return 'CLASS-C';
+  if (cl === 'D' || tc.includes('CLASS D')) return 'CLASS-D';
+  if (cl === 'E' || tc.includes('CLASS E')) return 'CLASS-E';
+  if (tc === 'LAANC') return 'LAANC';
+  return 'DEFAULT';
+}
+
+function geoJsonToCoords(geometry: any): { latitude: number; longitude: number }[][] {
+  if (!geometry) return [];
+  try {
+    if (geometry.type === 'Polygon') {
+      return geometry.coordinates.map((ring: number[][]) =>
+        ring.map(([lng, lat]) => ({ latitude: lat, longitude: lng }))
+      );
+    }
+    if (geometry.type === 'MultiPolygon') {
+      return geometry.coordinates.flatMap((poly: number[][][]) =>
+        poly.map((ring: number[][]) =>
+          ring.map(([lng, lat]) => ({ latitude: lat, longitude: lng }))
+        )
+      );
+    }
+  } catch {}
+  return [];
+}
+
 export default function MapScreen() {
   const { user } = useAuth();
   const {
@@ -221,6 +273,66 @@ export default function MapScreen() {
   }, [triggerMgpSync, fetchEvents, userLocation, radiusMiles]);
 
   const mapRef = useRef<MapView>(null);
+
+  // ── Load FAA airspace zones for visible map region ────────────────────────
+  const loadAirspaceZones = useCallback(async (
+    minLat: number, minLng: number, maxLat: number, maxLng: number
+  ) => {
+    setAirspaceLoading(true);
+    try {
+      // Pad bbox slightly
+      const pad = 0.1;
+      const bbox = `${(minLng - pad).toFixed(4)},${(minLat - pad).toFixed(4)},${(maxLng + pad).toFixed(4)},${(maxLat + pad).toFixed(4)}`;
+      const geomParam = `geometry=${bbox}&geometryType=esriGeometryEnvelope&outSR=4326`;
+
+      // Fetch Class Airspace (B/C/D/E) and LAANC grids in parallel
+      const [classRes, laancRes] = await Promise.allSettled([
+        fetch(`${FAA_BASE}/Class_Airspace/FeatureServer/0/query?where=1%3D1&${geomParam}&f=geojson&resultRecordCount=200&outFields=NAME,CLASS,TYPE_CODE,LOCAL_TYPE,LOWER_VAL,UPPER_VAL`),
+        fetch(`${FAA_BASE}/FAA_UAS_FacilityMap_Data_V5/FeatureServer/0/query?where=CEILING+IS+NOT+NULL+AND+CEILING+%3C+400&${geomParam}&f=geojson&resultRecordCount=200&outFields=CEILING,UNIT,APT1_FAAID`),
+      ]);
+
+      const zones: AirspaceZone[] = [];
+
+      // Parse Class Airspace
+      if (classRes.status === 'fulfilled' && classRes.value.ok) {
+        const data = await classRes.value.json();
+        for (const feat of (data.features || [])) {
+          const coords = geoJsonToCoords(feat.geometry);
+          if (!coords.length) continue;
+          zones.push({
+            id: `class-${feat.properties.OBJECTID || Math.random()}`,
+            name: feat.properties.NAME || 'Controlled Airspace',
+            type: classifyZone(feat.properties),
+            ceiling: feat.properties.UPPER_VAL ?? null,
+            coords,
+          });
+        }
+      }
+
+      // Parse LAANC/UAS Facility Map (restricted altitude areas < 400ft)
+      if (laancRes.status === 'fulfilled' && laancRes.value.ok) {
+        const data = await laancRes.value.json();
+        for (const feat of (data.features || [])) {
+          const coords = geoJsonToCoords(feat.geometry);
+          if (!coords.length) continue;
+          const ceiling = feat.properties.CEILING ?? 0;
+          zones.push({
+            id: `laanc-${feat.properties.OBJECTID || Math.random()}`,
+            name: `LAANC Zone – Max ${ceiling}ft AGL`,
+            type: 'LAANC',
+            ceiling,
+            coords,
+          });
+        }
+      }
+
+      setAirspaceZones(zones);
+    } catch (e) {
+      console.warn('Airspace load error:', e);
+    } finally {
+      setAirspaceLoading(false);
+    }
+  }, []);
 
   // ── Animated title ───────────────────────────────────────────────────────
   const animValue = useRef(new Animated.Value(0)).current;
@@ -257,6 +369,8 @@ export default function MapScreen() {
   const [locationGranted,   setLocationGranted]   = useState<boolean | null>(null);
   const [isSatellite,       setIsSatellite]       = useState(false);
   const [showAirspace,      setShowAirspace]      = useState(false);
+  const [airspaceZones,     setAirspaceZones]     = useState<AirspaceZone[]>([]);
+  const [airspaceLoading,   setAirspaceLoading]   = useState(false);
   const [radiusMiles,       setRadiusMiles]       = useState(50);
   const [showSpots,         setShowSpots]         = useState(true);
   const [showEvents,        setShowEvents]        = useState(true);
@@ -670,28 +784,25 @@ export default function MapScreen() {
         {spotPin && <Marker coordinate={spotPin} tracksViewChanges={false}><Ionicons name="add-circle" size={36} color="#ff4500" /></Marker>}
         {evtPin && !showAddEvent && <Marker coordinate={evtPin} tracksViewChanges={false}><Ionicons name="calendar" size={36} color="#FFD700" /></Marker>}
 
-        {/* ── B4UFLY / FAA Airspace Restriction Tiles ─────────────────────
-            Source: FAA UAS Data Delivery System (public, no API key needed)
-            Class B/C/D/E airspace + restricted zones rendered as map tiles.
-            Tile URL from FAA's public ArcGIS MapServer. ──────────────────── */}
-        {showAirspace && (
-          <UrlTile
-            urlTemplate="https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/UAS_Facility_Maps_VFR/MapServer/tile/{z}/{y}/{x}"
-            zIndex={10}
-            opacity={0.55}
-            tileCachePath={undefined}
-            maximumZ={16}
-            minimumZ={6}
-          />
-        )}
-        {showAirspace && (
-          <UrlTile
-            urlTemplate="https://ais-faa.arcgis.com/arcgis/rest/services/Airspace_Class/MapServer/tile/{z}/{y}/{x}"
-            zIndex={11}
-            opacity={0.45}
-            maximumZ={15}
-            minimumZ={5}
-          />
+        {/* ── FAA Airspace Restriction Polygons (B4UFLY data) ────────────────
+            Data from FAA UAS Data Delivery System (public, no key needed).
+            Class B = blue, C = purple, D = dashed blue, E = light blue,
+            LAANC grids = green (shows altitude ceiling). ─────────────────── */}
+        {showAirspace && airspaceZones.map(zone =>
+          zone.coords.map((ring, ri) => {
+            const col = AIRSPACE_COLORS[zone.type] ?? AIRSPACE_COLORS.DEFAULT;
+            return (
+              <Polygon
+                key={`${zone.id}-${ri}`}
+                coordinates={ring}
+                fillColor={col.fill}
+                strokeColor={col.stroke}
+                strokeWidth={zone.type === 'CLASS-B' ? 2.5 : zone.type === 'LAANC' ? 1.5 : 2}
+                zIndex={zone.type === 'LAANC' ? 8 : 10}
+                tappable={false}
+              />
+            );
+          })
         )}
       </MapView>
 
@@ -803,11 +914,17 @@ export default function MapScreen() {
         {/* ── Airspace legend banner ──────────────────────────────────────── */}
         {showAirspace && (
           <View style={styles.airspaceBanner}>
-            <Ionicons name="warning" size={13} color="#ff4500" />
+            {airspaceLoading
+              ? <ActivityIndicator size="small" color="#ff4500" />
+              : <Ionicons name="warning" size={13} color="#ff4500" />
+            }
             <Text style={styles.airspaceBannerText}>
-              FAA airspace data shown · Always verify at{' '}
-              <Text style={styles.airspaceBannerLink}>b4ufly.faa.gov</Text>
-              {' '}before flying
+              {airspaceLoading
+                ? 'Loading FAA airspace data…'
+                : `FAA airspace shown (${airspaceZones.length} zones) · Verify at `
+              }
+              {!airspaceLoading && <Text style={styles.airspaceBannerLink}>b4ufly.faa.gov</Text>}
+              {!airspaceLoading && ' before flying'}
             </Text>
           </View>
         )}
@@ -1452,6 +1569,18 @@ const styles = StyleSheet.create({
   addrSearchInput: { flex: 1, color: '#fff', fontSize: 14, paddingVertical: 10, paddingHorizontal: 8, height: 42 },
   addrSearchBtn:   { backgroundColor: '#FFD700', paddingHorizontal: 16, paddingVertical: 10, alignSelf: 'stretch', justifyContent: 'center' },
   addrSearchBtnText: { color: '#000', fontWeight: '800', fontSize: 13 },
+
+  // ── Reload airspace data when toggle turned on or user moves map far ──────
+  useEffect(() => {
+    if (!showAirspace) return;
+    if (userLocation) {
+      const { latitude, longitude } = userLocation;
+      loadAirspaceZones(latitude - 0.5, longitude - 0.7, latitude + 0.5, longitude + 0.7);
+    } else {
+      // Default to CONUS centre until we have a location
+      loadAirspaceZones(38, -92, 41, -86);
+    }
+  }, [showAirspace, userLocation, loadAirspaceZones]);
 
   // Address result overlay (shown on map after geocode)
   addrResultBar:   { position: 'absolute', bottom: 110, left: 12, right: 12, alignItems: 'center' },
