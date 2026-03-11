@@ -10,7 +10,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as VideoThumbnails from 'expo-video-thumbnails';
-import { useFeed, FeedPost } from '../../src/hooks/useFeed';
+import { useFeed, FeedPost, FeedMode } from '../../src/hooks/useFeed';
+import { useFeedAlgorithm } from '../../src/hooks/useFeedAlgorithm';
 import { useAuth } from '../../src/context/AuthContext';
 import { useProfile } from '../../src/hooks/useProfile';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
@@ -95,12 +96,24 @@ export default function FeedScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { profile } = useProfile(user?.id);
+  // ── Feed Mode ────────────────────────────────────────────────────────────
+  const [feedMode, setFeedMode] = useState<FeedMode>('for_you');
+
+  // ── Personalisation algorithm ────────────────────────────────────────────
+  const {
+    profile: interestProfile,
+    trackSignal,
+    trackPostInteraction,
+    rankPosts: rankFeedPosts,
+  } = useFeedAlgorithm(user?.id);
+
   const {
     posts, loading, refreshing,
     onRefresh, loadMore,
     toggleLike,
     createPost, createSocialPost, deletePost,
-  } = useFeed(user?.id);
+    followingIds,
+  } = useFeed(user?.id, feedMode, interestProfile);
   const { unreadCount } = useNotificationsContext();
   const { mutedIds } = useMute(user?.id);
 
@@ -126,13 +139,26 @@ export default function FeedScreen() {
   // ── Autoplay tracking ────────────────────────────────────────────────────
   const [visiblePostId, setVisiblePostId] = useState<string | null>(null);
   const autoplayEnabled = profile?.autoplay_videos ?? true;
+  // Track when a post enters the viewport (view signal for personalisation)
+  const viewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
   const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
     setVisiblePostId(
       autoplayEnabled && viewableItems.length > 0
         ? viewableItems[0].item.id
         : null
     );
-  }, [autoplayEnabled]);
+    // Track view signals — fire after 2s of dwell to avoid scroll-through noise
+    if (user?.id && viewableItems.length > 0) {
+      const item: FeedPost = viewableItems[0].item;
+      if (!viewTimers.current[item.id]) {
+        viewTimers.current[item.id] = setTimeout(() => {
+          delete viewTimers.current[item.id];
+          trackPostInteraction('view', item);
+        }, 2000);
+      }
+    }
+  }, [autoplayEnabled, user?.id, trackPostInteraction]);
 
   // ── Modal state ──────────────────────────────────────────────────────────
   const [modalVisible, setModalVisible] = useState(false);
@@ -265,7 +291,12 @@ export default function FeedScreen() {
 
   const handleLike = useCallback((postId: string) => {
     toggleLike(postId);
-  }, [toggleLike]);
+    // Track like signal for personalisation
+    const post = posts.find(p => p.id === postId);
+    if (post && user?.id) {
+      trackPostInteraction('like', post);
+    }
+  }, [toggleLike, posts, user?.id, trackPostInteraction]);
 
   // ── FIXED: async, awaits deletePost, alerts on failure ───────────────────
   const handleDelete = useCallback(async (postId: string): Promise<boolean> => {
@@ -281,15 +312,29 @@ export default function FeedScreen() {
     : posts;
 
   const renderPost = useCallback(({ item }: { item: FeedPost }) => (
-    <PostCard
-      post={item}
-      isVisible={item.id === visiblePostId}
-      shouldAutoplay={autoplayEnabled}
-      currentUserId={user?.id ?? undefined}
-      onLike={handleLike}
-      onDelete={handleDelete}
-    />
-  ), [visiblePostId, autoplayEnabled, user?.id, handleLike, handleDelete]);
+    <View>
+      {/* ── "Why this post?" chip — only in For You mode ── */}
+      {feedMode === 'for_you' && item.tags && item.tags.length > 0 && (
+        <View style={styles.whyChipRow}>
+          <Ionicons name="sparkles-outline" size={11} color="#ff4500" />
+          <Text style={styles.whyChipText}>
+            Based on your interest in{' '}
+            <Text style={styles.whyChipTag}>
+              {item.tags.filter(t => interestProfile.tagWeights[t]).slice(0, 2).join(', ') || item.tags[0]}
+            </Text>
+          </Text>
+        </View>
+      )}
+      <PostCard
+        post={item}
+        isVisible={item.id === visiblePostId}
+        shouldAutoplay={autoplayEnabled}
+        currentUserId={user?.id ?? undefined}
+        onLike={handleLike}
+        onDelete={handleDelete}
+      />
+    </View>
+  ), [visiblePostId, autoplayEnabled, user?.id, handleLike, handleDelete, feedMode, interestProfile]);
 
   if (loading && posts.length === 0) {
     return (
@@ -324,6 +369,36 @@ export default function FeedScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* ── Feed Mode Tabs ── */}
+      <View style={styles.feedTabs}>
+        {([
+          { key: 'for_you',   label: '✦ For You'  },
+          { key: 'following', label: 'Following'  },
+          { key: 'recent',    label: 'Recent'     },
+        ] as const).map(tab => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.feedTab, feedMode === tab.key && styles.feedTabActive]}
+            onPress={() => setFeedMode(tab.key)}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.feedTabText, feedMode === tab.key && styles.feedTabTextActive]}>
+              {tab.label}
+            </Text>
+            {feedMode === tab.key && <View style={styles.feedTabUnderline} />}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* ── Following empty state ── */}
+      {feedMode === 'following' && !loading && followingIds.length === 0 && (
+        <View style={styles.followingEmpty}>
+          <Ionicons name="people-outline" size={44} color="#333" />
+          <Text style={styles.followingEmptyTitle}>No one followed yet</Text>
+          <Text style={styles.followingEmptySubtitle}>Follow pilots to see their posts here.</Text>
+        </View>
+      )}
 
       {/* ── Feed List ── */}
       <FlatList
@@ -933,4 +1008,78 @@ const styles = StyleSheet.create({
     backgroundColor: '#ff450015',
   },
   suggestionChipText: { color: '#666', fontSize: 11, fontWeight: '600' },
+
+  // ── Feed mode tabs ────────────────────────────────────────────────────────
+  feedTabs: {
+    flexDirection: 'row',
+    backgroundColor: '#0a0a0a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+    paddingHorizontal: 4,
+  },
+  feedTab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    position: 'relative',
+  },
+  feedTabActive: {},
+  feedTabText: {
+    color: '#555',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  feedTabTextActive: {
+    color: '#fff',
+    fontWeight: '800',
+  },
+  feedTabUnderline: {
+    position: 'absolute',
+    bottom: 0,
+    left: 12,
+    right: 12,
+    height: 2,
+    borderRadius: 2,
+    backgroundColor: '#ff4500',
+  },
+
+  // ── Following empty state ─────────────────────────────────────────────────
+  followingEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 80,
+    gap: 10,
+  },
+  followingEmptyTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  followingEmptySubtitle: {
+    color: '#555',
+    fontSize: 13,
+    textAlign: 'center',
+    paddingHorizontal: 40,
+  },
+
+  // ── "Why this post?" chip ────────────────────────────────────────────────
+  whyChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 2,
+  },
+  whyChipText: {
+    color: '#555',
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  whyChipTag: {
+    color: '#ff4500',
+    fontWeight: '700',
+  },
 });
