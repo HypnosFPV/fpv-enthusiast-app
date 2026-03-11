@@ -1047,6 +1047,7 @@ export default function MapScreen() {
                 keyboardShouldPersistTaps="handled"
                 nestedScrollEnabled
                 showsVerticalScrollIndicator={false}
+                scrollEventThrottle={16}
               >
                 <View style={styles.sheetHandle} />
                 <Text style={styles.sheetTitle}>📅 Schedule Event</Text>
@@ -1109,13 +1110,15 @@ export default function MapScreen() {
 
                 {/* Start date/time picker */}
                 <Text style={styles.fieldLabel}>START DATE & TIME</Text>
-                <DateTimePicker
-                  year={evtStartYear} month={evtStartMonth} day={evtStartDay}
-                  hour={evtStartHour} minute={evtStartMin}
-                  onChangeYear={setEvtStartYear} onChangeMonth={setEvtStartMonth}
-                  onChangeDay={setEvtStartDay} onChangeHour={setEvtStartHour}
-                  onChangeMinute={setEvtStartMin}
-                />
+                <View onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true}>
+                  <DateTimePicker
+                    year={evtStartYear} month={evtStartMonth} day={evtStartDay}
+                    hour={evtStartHour} minute={evtStartMin}
+                    onChangeYear={setEvtStartYear} onChangeMonth={setEvtStartMonth}
+                    onChangeDay={setEvtStartDay} onChangeHour={setEvtStartHour}
+                    onChangeMinute={setEvtStartMin}
+                  />
+                </View>
 
                 {/* End date/time toggle */}
                 <View style={styles.toggleRow}>
@@ -1130,13 +1133,15 @@ export default function MapScreen() {
                 {evtHasEnd && (
                   <>
                     <Text style={styles.fieldLabel}>END DATE & TIME</Text>
-                    <DateTimePicker
-                      year={evtEndYear} month={evtEndMonth} day={evtEndDay}
-                      hour={evtEndHour} minute={evtEndMin}
-                      onChangeYear={setEvtEndYear} onChangeMonth={setEvtEndMonth}
-                      onChangeDay={setEvtEndDay} onChangeHour={setEvtEndHour}
-                      onChangeMinute={setEvtEndMin}
-                    />
+                    <View onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true}>
+                      <DateTimePicker
+                        year={evtEndYear} month={evtEndMonth} day={evtEndDay}
+                        hour={evtEndHour} minute={evtEndMin}
+                        onChangeYear={setEvtEndYear} onChangeMonth={setEvtEndMonth}
+                        onChangeDay={setEvtEndDay} onChangeHour={setEvtEndHour}
+                        onChangeMinute={setEvtEndMin}
+                      />
+                    </View>
                   </>
                 )}
 
