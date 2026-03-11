@@ -199,13 +199,20 @@ type AirspaceZone = {
 };
 
 const AIRSPACE_COLORS: Record<string, { fill: string; stroke: string }> = {
-  'CLASS-B':  { fill: 'rgba(0,100,255,0.18)',   stroke: 'rgba(0,100,255,0.85)'   },
-  'CLASS-C':  { fill: 'rgba(180,0,220,0.15)',   stroke: 'rgba(180,0,220,0.85)'   },
-  'CLASS-D':  { fill: 'rgba(0,130,255,0.12)',   stroke: 'rgba(0,130,255,0.75)'   },
-  'CLASS-E':  { fill: 'rgba(100,180,255,0.08)', stroke: 'rgba(100,180,255,0.55)' },
-  'MODE-C':   { fill: 'rgba(180,0,220,0.06)',   stroke: 'rgba(180,0,220,0.40)'   },
-  'LAANC':    { fill: 'rgba(0,200,100,0.12)',   stroke: 'rgba(0,200,100,0.70)'   },
-  'DEFAULT':  { fill: 'rgba(255,100,0,0.10)',   stroke: 'rgba(255,100,0,0.60)'   },
+  // Class B  — deep cobalt blue  (large, most restrictive controlled)
+  'CLASS-B':  { fill: 'rgba(0,80,220,0.22)',    stroke: 'rgba(0,80,220,0.95)'    },
+  // Class C  — vivid magenta/red (medium airports)
+  'CLASS-C':  { fill: 'rgba(220,0,80,0.18)',    stroke: 'rgba(220,0,80,0.92)'    },
+  // Class D  — bright cyan-teal  (towered, smaller)
+  'CLASS-D':  { fill: 'rgba(0,210,210,0.15)',   stroke: 'rgba(0,210,210,0.90)'   },
+  // Class E  — soft amber/gold   (wide low-level controlled, least restrictive)
+  'CLASS-E':  { fill: 'rgba(255,180,0,0.10)',   stroke: 'rgba(255,180,0,0.65)'   },
+  // Mode C   — orange-red dashed veil
+  'MODE-C':   { fill: 'rgba(255,90,0,0.07)',    stroke: 'rgba(255,90,0,0.55)'    },
+  // LAANC    — lime green  (UAS facility map altitude grid)
+  'LAANC':    { fill: 'rgba(50,220,80,0.14)',   stroke: 'rgba(50,220,80,0.85)'   },
+  // Default  — grey fallback
+  'DEFAULT':  { fill: 'rgba(180,180,180,0.08)', stroke: 'rgba(180,180,180,0.50)' },
 };
 
 const FAA_BASE = 'https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services';
@@ -896,12 +903,12 @@ export default function MapScreen() {
             </TouchableOpacity>
           </View>
           {[
-            { color: 'rgba(0,100,255,0.85)',   label: 'Class B', desc: 'Major airports – LAANC auth required' },
-            { color: 'rgba(180,0,220,0.85)',   label: 'Class C', desc: 'Regional airports – LAANC auth required' },
-            { color: 'rgba(0,130,255,0.75)',   label: 'Class D', desc: 'Towered airports – LAANC auth required' },
-            { color: 'rgba(100,180,255,0.55)', label: 'Class E', desc: 'Controlled airspace – check altitude rules' },
-            { color: 'rgba(180,0,220,0.40)',   label: 'Mode C',  desc: 'Transponder veil – notify ATC' },
-            { color: 'rgba(0,200,100,0.70)',   label: 'LAANC',   desc: 'UAS facility – altitude ceiling noted' },
+            { color: 'rgba(0,80,220,0.95)',   label: 'Class B', desc: 'Major airports – LAANC auth required' },
+            { color: 'rgba(220,0,80,0.92)',   label: 'Class C', desc: 'Regional airports – LAANC auth required' },
+            { color: 'rgba(0,210,210,0.90)',  label: 'Class D', desc: 'Towered airports – LAANC auth required' },
+            { color: 'rgba(255,180,0,0.90)',  label: 'Class E', desc: 'Controlled airspace – check altitude rules' },
+            { color: 'rgba(255,90,0,0.85)',   label: 'Mode C',  desc: 'Transponder veil – notify ATC' },
+            { color: 'rgba(50,220,80,0.90)',  label: 'LAANC',   desc: 'UAS facility – altitude ceiling noted' },
           ].map(({ color, label, desc }) => (
             <View key={label} style={styles.airspaceLegendRow}>
               <View style={[styles.airspaceLegendSwatch, { backgroundColor: color }]} />
