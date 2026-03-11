@@ -1,5 +1,5 @@
 // src/hooks/useChallenges.ts
-// Full hook for the FPV Challenge + Props system
+// FPV Weekly Challenge hook — anonymous submissions, vote-to-win, suggestions
 
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../services/supabase';
@@ -27,10 +27,12 @@ export interface Challenge {
   status: 'active' | 'voting' | 'completed' | 'cancelled';
   max_duration_s: number;
   created_at: string;
+  is_weekly: boolean;
+  week_number?: number | null;
   // Joined
-  creator?: { username?: string | null; avatar_url?: string | null } | null;
   entry_count?: number;
   my_entry?: ChallengeEntry | null;
+  has_voted?: boolean;
 }
 
 export interface ChallengeEntry {
@@ -45,9 +47,21 @@ export interface ChallengeEntry {
   is_winner: boolean;
   place?: number | null;
   created_at: string;
-  // Joined (only revealed after voting ends)
+  // Only revealed after voting ends
   user?: { username?: string | null; avatar_url?: string | null } | null;
   has_voted?: boolean;
+}
+
+export interface ChallengeSuggestion {
+  id: string;
+  challenge_id: string;
+  user_id: string;
+  title: string;
+  description?: string | null;
+  vote_count: number;
+  has_voted?: boolean;
+  created_at: string;
+  user?: { username?: string | null; avatar_url?: string | null } | null;
 }
 
 export interface LeaderboardEntry {
@@ -66,16 +80,40 @@ export interface LeaderboardEntry {
 
 export type LeaderboardScope = 'global' | 'local' | 'season';
 
+// ─── Phase helpers ────────────────────────────────────────────────────────────
+
+export function getChallengePhase(ch: Challenge): 'submission' | 'voting' | 'completed' {
+  const now = new Date();
+  if (ch.status === 'completed' || new Date(ch.voting_ends) < now) return 'completed';
+  if (new Date(ch.submission_ends) < now) return 'voting';
+  return 'submission';
+}
+
+export function timeLeft(isoDate: string): string {
+  const diff = new Date(isoDate).getTime() - Date.now();
+  if (diff <= 0) return 'Ended';
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  const m = Math.floor((diff % 3600000)  / 60000);
+  if (d > 0) return `${d}d ${h}h left`;
+  if (h > 0) return `${h}h ${m}m left`;
+  return `${m}m left`;
+}
+
+export function propsForPlace(place: number): number {
+  return [0, 100, 60, 30][place] ?? 0;
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useChallenges(currentUserId?: string) {
-  const [seasons,    setSeasons]    = useState<Season[]>([]);
+  const [seasons,      setSeasons]      = useState<Season[]>([]);
   const [activeSeason, setActiveSeason] = useState<Season | null>(null);
-  const [challenges, setChallenges] = useState<Challenge[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [creating,   setCreating]   = useState(false);
+  const [challenges,   setChallenges]   = useState<Challenge[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [creating,     setCreating]     = useState(false);
 
-  // ── Load seasons ────────────────────────────────────────────────────────────
+  // ── Load seasons ──────────────────────────────────────────────────────────
   const loadSeasons = useCallback(async () => {
     const { data } = await supabase
       .from('seasons')
@@ -86,7 +124,7 @@ export function useChallenges(currentUserId?: string) {
     setActiveSeason(list.find(s => s.is_active) ?? list[0] ?? null);
   }, []);
 
-  // ── Load challenges for a given season ──────────────────────────────────────
+  // ── Load challenges ───────────────────────────────────────────────────────
   const loadChallenges = useCallback(async (seasonId?: string) => {
     setLoading(true);
     const sid = seasonId ?? activeSeason?.id;
@@ -94,18 +132,15 @@ export function useChallenges(currentUserId?: string) {
 
     const { data, error } = await supabase
       .from('challenges')
-      .select(`
-        *,
-        creator:created_by (username, avatar_url),
-        entry_count:challenge_entries(count)
-      `)
+      .select(`*, entry_count:challenge_entries(count)`)
       .eq('season_id', sid)
       .order('created_at', { ascending: false });
 
     if (error) { console.error('[useChallenges]', error.message); setLoading(false); return; }
 
-    // If user is logged in, fetch their own entries too
+    // Fetch my entries
     let myEntries: Record<string, ChallengeEntry> = {};
+    let myVotedChallengeIds: string[] = [];
     if (currentUserId && data?.length) {
       const ids = data.map((c: any) => c.id);
       const { data: mine } = await supabase
@@ -114,66 +149,37 @@ export function useChallenges(currentUserId?: string) {
         .eq('user_id', currentUserId)
         .in('challenge_id', ids);
       (mine ?? []).forEach((e: any) => { myEntries[e.challenge_id] = e; });
+
+      // Check if user has voted in each challenge (challenge_votes joined to challenge_entries)
+      const { data: myVotes } = await supabase
+        .from('challenge_votes')
+        .select('entry_id, challenge_entries(challenge_id)')
+        .eq('voter_id', currentUserId);
+      (myVotes ?? []).forEach((v: any) => {
+        const cid = v.challenge_entries?.challenge_id;
+        if (cid) myVotedChallengeIds.push(cid);
+      });
     }
 
-    const list = (data ?? []).map((c: any) => ({
-      ...c,
-      entry_count: c.entry_count?.[0]?.count ?? 0,
-      my_entry: myEntries[c.id] ?? null,
-    })) as Challenge[];
-
-    // Auto-advance status based on timestamps
     const now = new Date();
-    list.forEach(c => {
-      if (c.status === 'active' && new Date(c.submission_ends) < now) {
-        c.status = 'voting';
-      }
-      if (c.status === 'voting' && new Date(c.voting_ends) < now) {
-        c.status = 'completed';
-      }
-    });
+    const list = (data ?? []).map((c: any) => {
+      let status = c.status;
+      if (status === 'active' && new Date(c.submission_ends) < now) status = 'voting';
+      if (status === 'voting' && new Date(c.voting_ends) < now)     status = 'completed';
+      return {
+        ...c,
+        status,
+        entry_count: c.entry_count?.[0]?.count ?? 0,
+        my_entry: myEntries[c.id] ?? null,
+        has_voted: myVotedChallengeIds.includes(c.id),
+      };
+    }) as Challenge[];
 
     setChallenges(list);
     setLoading(false);
   }, [activeSeason?.id, currentUserId]);
 
-  // ── Create a challenge ──────────────────────────────────────────────────────
-  const createChallenge = useCallback(async (params: {
-    title: string;
-    description?: string;
-    rules?: string;
-  }): Promise<Challenge | null> => {
-    if (!currentUserId || !activeSeason) return null;
-    setCreating(true);
-
-    const now = new Date();
-    const submissionEnds = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000); // +5 days
-    const votingEnds     = new Date(submissionEnds.getTime() + 2 * 24 * 60 * 60 * 1000); // +2 days
-
-    const { data, error } = await supabase
-      .from('challenges')
-      .insert({
-        season_id:       activeSeason.id,
-        title:           params.title,
-        description:     params.description ?? null,
-        rules:           params.rules ?? null,
-        created_by:      currentUserId,
-        submission_ends: submissionEnds.toISOString(),
-        voting_ends:     votingEnds.toISOString(),
-        status:          'active',
-        max_duration_s:  120,
-      })
-      .select('*')
-      .single();
-
-    setCreating(false);
-    if (error) { console.error('[useChallenges] createChallenge:', error.message); return null; }
-    const ch = { ...data, entry_count: 0, my_entry: null } as Challenge;
-    setChallenges(prev => [ch, ...prev]);
-    return ch;
-  }, [currentUserId, activeSeason]);
-
-  // ── Submit an entry ─────────────────────────────────────────────────────────
+  // ── Submit entry ──────────────────────────────────────────────────────────
   const submitEntry = useCallback(async (params: {
     challengeId: string;
     videoUrl: string;
@@ -182,7 +188,6 @@ export function useChallenges(currentUserId?: string) {
     caption?: string;
   }): Promise<ChallengeEntry | null> => {
     if (!currentUserId) return null;
-
     const { data, error } = await supabase
       .from('challenge_entries')
       .insert({
@@ -195,11 +200,8 @@ export function useChallenges(currentUserId?: string) {
       })
       .select('*')
       .single();
-
     if (error) { console.error('[useChallenges] submitEntry:', error.message); return null; }
-
     const entry = data as ChallengeEntry;
-    // Update local challenge entry info
     setChallenges(prev => prev.map(c =>
       c.id === params.challengeId
         ? { ...c, my_entry: entry, entry_count: (c.entry_count ?? 0) + 1 }
@@ -208,15 +210,15 @@ export function useChallenges(currentUserId?: string) {
     return entry;
   }, [currentUserId]);
 
-  // ── Load entries for a challenge ─────────────────────────────────────────────
+  // ── Load entries for a challenge ──────────────────────────────────────────
   const loadEntries = useCallback(async (
     challengeId: string,
-    isVotingDone: boolean,
+    phase: 'submission' | 'voting' | 'completed',
   ): Promise<ChallengeEntry[]> => {
-    // Reveal author only after voting is done
-    const select = isVotingDone
+    const isRevealed = phase === 'completed';
+    const select = isRevealed
       ? '*, user:user_id (username, avatar_url)'
-      : '*';
+      : '*'; // anonymous during submission + voting
 
     const { data, error } = await supabase
       .from('challenge_entries')
@@ -227,28 +229,31 @@ export function useChallenges(currentUserId?: string) {
     if (error) { console.error('[useChallenges] loadEntries:', error.message); return []; }
 
     let votedIds: string[] = [];
-    if (currentUserId) {
+    if (currentUserId && data?.length) {
       const { data: myVotes } = await supabase
         .from('challenge_votes')
         .select('entry_id')
         .eq('voter_id', currentUserId)
-        .in('entry_id', (data ?? []).map((e: any) => e.id));
+        .in('entry_id', data.map((e: any) => e.id));
       votedIds = (myVotes ?? []).map((v: any) => v.entry_id);
     }
 
     return (data ?? []).map((e: any) => ({
       ...e,
-      user: isVotingDone ? (Array.isArray(e.user) ? e.user[0] : e.user) : null,
+      // Hide user identity unless revealed
+      user: isRevealed ? (Array.isArray(e.user) ? e.user[0] : e.user) : null,
       has_voted: votedIds.includes(e.id),
     })) as ChallengeEntry[];
   }, [currentUserId]);
 
-  // ── Vote on an entry ────────────────────────────────────────────────────────
+  // ── Vote on an entry ──────────────────────────────────────────────────────
   const vote = useCallback(async (
     entryId: string,
+    entryUserId: string,
     isCurrentlyVoted: boolean,
-  ): Promise<boolean> => {
-    if (!currentUserId) return false;
+  ): Promise<{ success: boolean; reason?: string }> => {
+    if (!currentUserId) return { success: false, reason: 'not_logged_in' };
+    if (entryUserId === currentUserId) return { success: false, reason: 'self_vote' };
 
     if (isCurrentlyVoted) {
       await supabase.from('challenge_votes').delete()
@@ -256,19 +261,86 @@ export function useChallenges(currentUserId?: string) {
     } else {
       const { error } = await supabase.from('challenge_votes')
         .insert({ entry_id: entryId, voter_id: currentUserId });
-      if (error) { console.error('[useChallenges] vote:', error.message); return false; }
+      if (error) return { success: false, reason: error.message };
     }
 
-    // Update vote count in Supabase
     await supabase.rpc('increment_vote', {
       p_entry_id: entryId,
-      p_delta:    isCurrentlyVoted ? -1 : 1,
-    }).catch(() => null); // graceful if RPC not set up yet; UI handles optimistic
+      p_delta: isCurrentlyVoted ? -1 : 1,
+    }).catch(() => null);
 
+    return { success: true };
+  }, [currentUserId]);
+
+  // ── Suggestions ───────────────────────────────────────────────────────────
+  const loadSuggestions = useCallback(async (
+    challengeId: string,
+  ): Promise<ChallengeSuggestion[]> => {
+    const { data, error } = await supabase
+      .from('challenge_suggestions')
+      .select('*, user:user_id (username, avatar_url)')
+      .eq('challenge_id', challengeId)
+      .order('vote_count', { ascending: false });
+    if (error) { console.error('[useChallenges] loadSuggestions:', error.message); return []; }
+
+    let votedIds: string[] = [];
+    if (currentUserId && data?.length) {
+      const { data: myVotes } = await supabase
+        .from('challenge_suggestion_votes')
+        .select('suggestion_id')
+        .eq('voter_id', currentUserId)
+        .in('suggestion_id', data.map((s: any) => s.id));
+      votedIds = (myVotes ?? []).map((v: any) => v.suggestion_id);
+    }
+
+    return (data ?? []).map((s: any) => ({
+      ...s,
+      user: Array.isArray(s.user) ? s.user[0] : s.user,
+      has_voted: votedIds.includes(s.id),
+    })) as ChallengeSuggestion[];
+  }, [currentUserId]);
+
+  const submitSuggestion = useCallback(async (params: {
+    challengeId: string;
+    title: string;
+    description?: string;
+  }): Promise<ChallengeSuggestion | null> => {
+    if (!currentUserId) return null;
+    const { data, error } = await supabase
+      .from('challenge_suggestions')
+      .insert({
+        challenge_id: params.challengeId,
+        user_id:      currentUserId,
+        title:        params.title,
+        description:  params.description ?? null,
+      })
+      .select('*')
+      .single();
+    if (error) { console.error('[useChallenges] submitSuggestion:', error.message); return null; }
+    return data as ChallengeSuggestion;
+  }, [currentUserId]);
+
+  const voteSuggestion = useCallback(async (
+    suggestionId: string,
+    isCurrentlyVoted: boolean,
+  ): Promise<boolean> => {
+    if (!currentUserId) return false;
+    if (isCurrentlyVoted) {
+      await supabase.from('challenge_suggestion_votes').delete()
+        .eq('suggestion_id', suggestionId).eq('voter_id', currentUserId);
+    } else {
+      const { error } = await supabase.from('challenge_suggestion_votes')
+        .insert({ suggestion_id: suggestionId, voter_id: currentUserId });
+      if (error) return false;
+    }
+    await supabase.rpc('increment_suggestion_vote', {
+      p_suggestion_id: suggestionId,
+      p_delta: isCurrentlyVoted ? -1 : 1,
+    }).catch(() => null);
     return true;
   }, [currentUserId]);
 
-  // ── Leaderboard ─────────────────────────────────────────────────────────────
+  // ── Leaderboard ───────────────────────────────────────────────────────────
   const loadLeaderboard = useCallback(async (
     scope: LeaderboardScope,
     seasonId?: string,
@@ -283,7 +355,6 @@ export function useChallenges(currentUserId?: string) {
         .limit(100);
       return (data ?? []).map((r: any) => ({ ...r, earned_props: r.earned })) as LeaderboardEntry[];
     }
-
     if (scope === 'local' && locationLabel) {
       const { data } = await supabase
         .from('leaderboard_global')
@@ -293,8 +364,6 @@ export function useChallenges(currentUserId?: string) {
         .limit(100);
       return (data ?? []) as LeaderboardEntry[];
     }
-
-    // Global
     const { data } = await supabase
       .from('leaderboard_global')
       .select('*')
@@ -303,7 +372,6 @@ export function useChallenges(currentUserId?: string) {
     return (data ?? []) as LeaderboardEntry[];
   }, []);
 
-  // ── User props balance ───────────────────────────────────────────────────────
   const loadUserProps = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from('users')
@@ -322,34 +390,10 @@ export function useChallenges(currentUserId?: string) {
   }, [activeSeason?.id, currentUserId]);
 
   return {
-    seasons,
-    activeSeason,
-    setActiveSeason,
-    challenges,
-    loading,
-    creating,
-    loadChallenges,
-    createChallenge,
-    submitEntry,
-    loadEntries,
-    vote,
-    loadLeaderboard,
-    loadUserProps,
+    seasons, activeSeason, setActiveSeason,
+    challenges, loading, creating,
+    loadChallenges, submitEntry, loadEntries,
+    vote, loadLeaderboard, loadUserProps,
+    loadSuggestions, submitSuggestion, voteSuggestion,
   };
-}
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-export function timeLeft(isoDate: string): string {
-  const diff = new Date(isoDate).getTime() - Date.now();
-  if (diff <= 0) return 'Ended';
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor((diff % 86400000) / 3600000);
-  const m = Math.floor((diff % 3600000)  / 60000);
-  if (d > 0) return `${d}d ${h}h left`;
-  if (h > 0) return `${h}h ${m}m left`;
-  return `${m}m left`;
-}
-
-export function propsForPlace(place: number): number {
-  return [0, 100, 60, 30][place] ?? 0;
 }
