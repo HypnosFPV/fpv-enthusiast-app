@@ -106,14 +106,34 @@ function thumbnailUri(post: Post): string | null {
 
 // ─── Small components ─────────────────────────────────────────────────────────
 
-const StatBox = ({ value, label, icon, tappable }: { value: number | string; label: string; icon?: string; tappable?: boolean }) => (
+const StatBox = ({
+  value,
+  label,
+  icon,
+  tappable,
+  accentColor = '#ffffff',
+}: {
+  value: number | string;
+  label: string;
+  icon?: string;
+  tappable?: boolean;
+  accentColor?: string;
+}) => (
   <View style={styles.statBox}>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-      {icon && <Ionicons name={icon as any} size={16} color="#ff4500" />}
-      <Text style={[styles.statValue, tappable && styles.statValueTappable]}>{value}</Text>
-      {tappable && <Ionicons name="chevron-down" size={10} color="#ff4500" style={{ marginLeft: 2 }} />}
+    {/* Coloured top-accent bar */}
+    <View style={[styles.statTopAccent, { backgroundColor: accentColor }]} />
+    {/* Value row */}
+    <View style={styles.statValueRow}>
+      {icon && <Ionicons name={icon as any} size={15} color={accentColor} />}
+      <Text style={[styles.statValue, { color: accentColor }]}>{value}</Text>
     </View>
-    <Text style={styles.statLabel}>{label}</Text>
+    {/* Label row */}
+    <View style={styles.statLabelRow}>
+      <Text style={styles.statLabel}>{label}</Text>
+      {tappable && (
+        <Ionicons name="chevron-forward" size={9} color="#444" style={{ marginLeft: 2 }} />
+      )}
+    </View>
   </View>
 );
 
@@ -559,15 +579,52 @@ export default function ProfileScreen() {
         <View style={styles.bioSection}>
           <Text style={styles.displayName}>{profile?.username ?? 'FPV Pilot'}</Text>
           {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
-          <View style={styles.statsRow}>
-            <StatBox value={myPosts.length} label="Posts" />
-            <TouchableOpacity onPress={() => setFollowModal('followers')} activeOpacity={0.7}>
-              <StatBox value={followersCount} label="Followers" tappable />
+          <View style={styles.statsCard}>
+            {/* Posts */}
+            <StatBox
+              value={myPosts.length}
+              label="Posts"
+              accentColor="#ffffff"
+            />
+            <View style={styles.statDivider} />
+
+            {/* Followers — tappable */}
+            <TouchableOpacity
+              style={styles.statItem}
+              onPress={() => setFollowModal('followers')}
+              activeOpacity={0.7}
+            >
+              <StatBox
+                value={followersCount}
+                label="Followers"
+                tappable
+                accentColor="#00d4ff"
+              />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setFollowModal('following')} activeOpacity={0.7}>
-              <StatBox value={followingCount} label="Following" tappable />
+            <View style={styles.statDivider} />
+
+            {/* Following — tappable */}
+            <TouchableOpacity
+              style={styles.statItem}
+              onPress={() => setFollowModal('following')}
+              activeOpacity={0.7}
+            >
+              <StatBox
+                value={followingCount}
+                label="Following"
+                tappable
+                accentColor="#00d4ff"
+              />
             </TouchableOpacity>
-            <StatBox value={profile?.total_props ?? 0} label="Props" icon="trophy" />
+            <View style={styles.statDivider} />
+
+            {/* Props */}
+            <StatBox
+              value={profile?.total_props ?? 0}
+              label="Props"
+              icon="trophy"
+              accentColor="#ffd700"
+            />
           </View>
           <View style={styles.socialRow}>
             {([
@@ -987,11 +1044,58 @@ const styles = StyleSheet.create({
   displayName: { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 4 },
   bio:         { color: '#aaa', fontSize: 13, lineHeight: 18, marginBottom: 10 },
 
-  statsRow:  { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 12 },
-  statBox:   { alignItems: 'center' },
-  statValue:         { color: '#fff', fontSize: 18, fontWeight: '800' },
-  statValueTappable:  { color: '#ff4500', textDecorationLine: 'underline' },
-  statLabel: { color: '#888', fontSize: 11, marginTop: 2 },
+  // ── Premium stats card ──────────────────────────────────────────────────
+  statsCard: {
+    flexDirection: 'row',
+    backgroundColor: '#0d1117',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1e2a3a',
+    marginVertical: 14,
+    overflow: 'hidden',
+  },
+  statItem: {
+    flex: 1,
+  },
+  statBox: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+  },
+  statTopAccent: {
+    width: 28,
+    height: 2,
+    borderRadius: 2,
+    marginBottom: 9,
+  },
+  statValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  statLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 5,
+  },
+  statLabel: {
+    color: '#4a5568',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.0,
+    textTransform: 'uppercase',
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: '#1e2a3a',
+    marginVertical: 10,
+  },
 
   socialRow:      { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 8 },
   socialChip:     { width: 36, height: 36, borderRadius: 18, backgroundColor: '#1e1e3a', justifyContent: 'center', alignItems: 'center' },
