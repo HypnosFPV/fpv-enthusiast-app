@@ -5,6 +5,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
 
+const FOLLOWER_MILESTONES = [
+  { count: 10,  event: 'follower_milestone_10',  props: 20  },
+  { count: 50,  event: 'follower_milestone_50',  props: 50  },
+  { count: 100, event: 'follower_milestone_100', props: 100 },
+];
+
 export interface UseFollowsReturn {
   isFollowing: boolean;
   loading:     boolean;   // initial check
@@ -54,6 +60,24 @@ export function useFollows(
     if (error) {
       setIsFollowing(false); // rollback on failure
       console.error('[useFollows] follow:', error.message);
+    } else {
+      // Check follower milestones for the person being followed
+      const { count } = await supabase
+        .from('follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('following_id', targetUserId);
+      if (count != null) {
+        for (const m of FOLLOWER_MILESTONES) {
+          if (count === m.count) {
+            void supabase.rpc('award_props', {
+              p_user_id:      targetUserId,
+              p_event_type:   m.event,
+              p_props:        m.props,
+              p_reference_id: 'global',
+            });
+          }
+        }
+      }
     }
     setToggling(false);
   }, [currentUserId, targetUserId]);
