@@ -515,6 +515,9 @@ export default function ChallengesScreen() {
             <View style={styles.rulesBox}>
               <Text style={styles.rulesLabel}>RULES</Text>
               <Text style={styles.rulesText}>{weeklyChallenge.rules}</Text>
+              <Text style={[styles.rulesText, { marginTop: 6, color: '#4a5568' }]}>
+                🏁 Ties in votes are broken by earliest submission time.
+              </Text>
             </View>
           ) : null}
 
@@ -1098,7 +1101,7 @@ export default function ChallengesScreen() {
                     Submission Rules
                   </Text>
                   <Text style={styles.infoText}>
-                    {'• Direct video upload only — no links accepted\n• No visible faces or people\n• No logos, branding, or watermarks\n• FPV footage only — skill over identity\n• Violations auto-detected & rejected'}
+                    {'• Direct video upload only — no links accepted\n• No visible faces or people\n• No logos, branding, or watermarks\n• FPV footage only — skill over identity\n• Violations auto-detected & rejected\n• Ties broken by earliest submission time'}
                   </Text>
                 </View>
               </View>
