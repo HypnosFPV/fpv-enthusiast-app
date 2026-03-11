@@ -247,6 +247,16 @@ export function useChallenges(currentUserId?: string) {
         ? { ...c, my_entry: enriched, entry_count: (c.entry_count ?? 0) + 1 }
         : c
     ));
+    // ── Props award: first challenge entry ever ──────────────────────────────
+    try {
+      await supabase.from('props_log').insert({
+        user_id:      currentUserId,
+        amount:       25,
+        reason:       'first_challenge_entry',
+        reference_id: currentUserId,
+      });
+    } catch (_) { /* duplicate = already awarded, ignore */ }
+
     return enriched;
   }, [currentUserId]);
 
