@@ -364,7 +364,7 @@ export default function ChallengesScreen() {
       <View style={[styles.badge, styles.badgeVoting]}>
         <Ionicons name="thumbs-up-outline" size={10} color={C.cyan} />
         <Text style={[styles.badgeText, { color: C.cyan }]}>
-          Voting · {timeLeft(ch.voting_ends)}
+          Voting · {timeLeft(ch.voting_closes_at)}
         </Text>
       </View>
     );
@@ -372,7 +372,7 @@ export default function ChallengesScreen() {
       <View style={[styles.badge, styles.badgeActive]}>
         <Ionicons name="videocam-outline" size={10} color={C.orange} />
         <Text style={[styles.badgeText, { color: C.orange }]}>
-          Submit · {timeLeft(ch.submission_ends)}
+          Submit · {timeLeft(ch.submission_closes_at)}
         </Text>
       </View>
     );
@@ -506,9 +506,9 @@ export default function ChallengesScreen() {
           <Text style={styles.sectionLabel}>PRIZES</Text>
           <View style={styles.prizesRow}>
             {[
-              { place: 1, label: '🥇 1st', colour: C.gold,   props: 100 },
-              { place: 2, label: '🥈 2nd', colour: C.silver, props: 60  },
-              { place: 3, label: '🥉 3rd', colour: C.bronze, props: 30  },
+              { place: 1, label: '🥇 1st', colour: C.gold,   props: weeklyChallenge?.prize_first_props  ?? 500 },
+              { place: 2, label: '🥈 2nd', colour: C.silver, props: weeklyChallenge?.prize_second_props ?? 300 },
+              { place: 3, label: '🥉 3rd', colour: C.bronze, props: weeklyChallenge?.prize_third_props  ?? 150 },
             ].map(p => (
               <View key={p.place} style={[styles.prizeChip,
                 { borderColor: p.colour + '44', backgroundColor: p.colour + '12' }]}>
@@ -557,7 +557,7 @@ export default function ChallengesScreen() {
             <Text style={styles.archiveTitle}>{ch.title}</Text>
             <Text style={styles.archiveMeta}>
               {ch.entry_count ?? 0} entries ·{' '}
-              {new Date(ch.voting_ends).toLocaleDateString()}
+              {new Date(ch.voting_closes_at).toLocaleDateString()}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={16} color={C.muted} />
@@ -1046,9 +1046,9 @@ export default function ChallengesScreen() {
 
               {/* Prizes reminder */}
               <View style={styles.prizesRow}>
-                {[{ p: 1, l: '🥇', c: C.gold, v: 100 },
-                  { p: 2, l: '🥈', c: C.silver, v: 60 },
-                  { p: 3, l: '🥉', c: C.bronze, v: 30 }].map(x => (
+                {[{ p: 1, l: '🥇', c: C.gold,   v: submitTarget?.prize_first_props  ?? 500 },
+                  { p: 2, l: '🥈', c: C.silver, v: submitTarget?.prize_second_props ?? 300 },
+                  { p: 3, l: '🥉', c: C.bronze, v: submitTarget?.prize_third_props  ?? 150 }].map(x => (
                   <View key={x.p} style={[styles.prizeChip,
                     { borderColor: x.c + '44', backgroundColor: x.c + '12' }]}>
                     <Text style={styles.prizeEmoji}>{x.l}</Text>
@@ -1167,7 +1167,7 @@ export default function ChallengesScreen() {
               <>
                 <Text style={styles.archiveMeta}>
                   Week #{detailChallenge.week_number ?? '—'} ·{' '}
-                  Ended {new Date(detailChallenge.voting_ends).toLocaleDateString()}
+                  Ended {new Date(detailChallenge.voting_closes_at).toLocaleDateString()}
                 </Text>
                 <Text style={styles.sectionLabel}>RESULTS</Text>
                 {entriesLoading ? (
