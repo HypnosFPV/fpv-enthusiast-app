@@ -106,36 +106,94 @@ function thumbnailUri(post: Post): string | null {
 
 // ─── Small components ─────────────────────────────────────────────────────────
 
+// ─── Animated StatBox ──────────────────────────────────────────────────────────
+// Props:
+//   displayValue  – the number to show (string values skip count-up)
+//   animatedValue – Animated.Value that drives the count-up (0 → displayValue)
+//   scaleAnim     – Animated.Value for pulse-on-tap (passed in for tappable cells)
+//   accentAnim    – Animated.Value for accent-bar brightness on tap
 const StatBox = ({
-  value,
+  displayValue,
   label,
   icon,
   tappable,
   accentColor = '#ffffff',
+  animatedValue,
+  scaleAnim,
+  accentAnim,
 }: {
-  value: number | string;
+  displayValue: number | string;
   label: string;
   icon?: string;
   tappable?: boolean;
   accentColor?: string;
-}) => (
-  <View style={styles.statBox}>
-    {/* Coloured top-accent bar */}
-    <View style={[styles.statTopAccent, { backgroundColor: accentColor }]} />
-    {/* Value row */}
-    <View style={styles.statValueRow}>
-      {icon && <Ionicons name={icon as any} size={15} color={accentColor} />}
-      <Text style={[styles.statValue, { color: accentColor }]}>{value}</Text>
-    </View>
-    {/* Label row */}
-    <View style={styles.statLabelRow}>
-      <Text style={styles.statLabel}>{label}</Text>
-      {tappable && (
-        <Ionicons name="chevron-forward" size={9} color="#444" style={{ marginLeft: 2 }} />
-      )}
-    </View>
-  </View>
-);
+  animatedValue?: Animated.Value;
+  scaleAnim?: Animated.Value;
+  accentAnim?: Animated.Value;
+}) => {
+  // Displayed text: interpolate count-up if animatedValue provided and value is numeric
+  const isNumeric = typeof displayValue === 'number';
+
+  // Pulse scale (default 1 if not tappable)
+  const scale = scaleAnim ?? new Animated.Value(1);
+
+  // Accent opacity glow (default 0.8)
+  const accentOpacity = accentAnim
+    ? accentAnim.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1] })
+    : 0.85;
+
+  return (
+    <Animated.View style={[styles.statBox, { transform: [{ scale }] }]}>
+      {/* Coloured top-accent bar with glow on tap */}
+      <Animated.View
+        style={[
+          styles.statTopAccent,
+          { backgroundColor: accentColor, opacity: accentOpacity },
+        ]}
+      />
+      {/* Value row — count-up or static */}
+      <View style={styles.statValueRow}>
+        {icon && <Ionicons name={icon as any} size={15} color={accentColor} />}
+        {isNumeric && animatedValue ? (
+          <AnimatedCountText
+            animValue={animatedValue}
+            target={displayValue as number}
+            style={[styles.statValue, { color: accentColor }]}
+          />
+        ) : (
+          <Text style={[styles.statValue, { color: accentColor }]}>{displayValue}</Text>
+        )}
+      </View>
+      {/* Label row */}
+      <View style={styles.statLabelRow}>
+        <Text style={styles.statLabel}>{label}</Text>
+        {tappable && (
+          <Ionicons name="chevron-forward" size={9} color="#444" style={{ marginLeft: 2 }} />
+        )}
+      </View>
+    </Animated.View>
+  );
+};
+
+// ─── Count-up helper ───────────────────────────────────────────────────────────
+function AnimatedCountText({
+  animValue,
+  target,
+  style,
+}: {
+  animValue: Animated.Value;
+  target: number;
+  style?: any;
+}) {
+  const [display, setDisplay] = React.useState(0);
+  React.useEffect(() => {
+    const id = animValue.addListener(({ value }) => {
+      setDisplay(Math.round(value * target));
+    });
+    return () => animValue.removeListener(id);
+  }, [animValue, target]);
+  return <Text style={style}>{display}</Text>;
+}
 
 function EmptyState({ icon, text }: { icon: string; text: string }) {
   return (
@@ -257,6 +315,81 @@ export default function ProfileScreen() {
   const [showMuteList,    setShowMuteList]    = useState(false);
   const [showMultiGP,     setShowMultiGP]     = useState(false);
   const [followModal,     setFollowModal]     = useState<'followers' | 'following' | null>(null);
+
+  // ── Stats card animations ──────────────────────────────────────────────────
+  // Shared count-up progress values (0 → 1, driven together)
+  const countProgress  = useRef(new Animated.Value(0)).current;   // 0→1 for all count-ups
+  // Per-stat stagger refs (each advances slightly later)
+  const countPosts     = useRef(new Animated.Value(0)).current;
+  const countFollowers = useRef(new Animated.Value(0)).current;
+  const countFollowing = useRef(new Animated.Value(0)).current;
+  const countProps     = useRef(new Animated.Value(0)).current;
+
+  // Card slide-in
+  const cardSlideY   = useRef(new Animated.Value(14)).current;
+  const cardOpacity  = useRef(new Animated.Value(0)).current;
+
+  // Per-cell pulse (scale) for tappable stats
+  const scaleFollowers = useRef(new Animated.Value(1)).current;
+  const scaleFollowing = useRef(new Animated.Value(1)).current;
+  const accentFollowers = useRef(new Animated.Value(0)).current;
+  const accentFollowing = useRef(new Animated.Value(0)).current;
+
+  // Fire count-up whenever real values arrive (followers / following load async)
+  const lastAnimatedKey = useRef('');
+  useEffect(() => {
+    const key = `${myPosts.length}-${followersCount}-${followingCount}-${profile?.total_props ?? 0}`;
+    if (key === lastAnimatedKey.current) return;
+    lastAnimatedKey.current = key;
+
+    // Reset
+    countPosts.setValue(0);
+    countFollowers.setValue(0);
+    countFollowing.setValue(0);
+    countProps.setValue(0);
+    cardSlideY.setValue(14);
+    cardOpacity.setValue(0);
+
+    // Staggered count-up  (80 ms gap per cell, 750 ms duration each)
+    const dur = 750;
+    const stagger = 80;
+    Animated.parallel([
+      // Card entrance
+      Animated.timing(cardSlideY,  { toValue: 0, duration: 400, useNativeDriver: true }),
+      Animated.timing(cardOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+      // Count-ups
+      Animated.sequence([
+        Animated.delay(0),
+        Animated.timing(countPosts,     { toValue: 1, duration: dur, useNativeDriver: false }),
+      ]),
+      Animated.sequence([
+        Animated.delay(stagger),
+        Animated.timing(countFollowers, { toValue: 1, duration: dur, useNativeDriver: false }),
+      ]),
+      Animated.sequence([
+        Animated.delay(stagger * 2),
+        Animated.timing(countFollowing, { toValue: 1, duration: dur, useNativeDriver: false }),
+      ]),
+      Animated.sequence([
+        Animated.delay(stagger * 3),
+        Animated.timing(countProps,     { toValue: 1, duration: dur, useNativeDriver: false }),
+      ]),
+    ]).start();
+  }, [myPosts.length, followersCount, followingCount, profile?.total_props]);
+
+  // Pulse helper — spring scale + accent glow on press
+  const pulseStat = (scaleRef: Animated.Value, accentRef: Animated.Value) => {
+    Animated.parallel([
+      Animated.sequence([
+        Animated.spring(scaleRef, { toValue: 1.13, useNativeDriver: true, speed: 40, bounciness: 14 }),
+        Animated.spring(scaleRef, { toValue: 1.0,  useNativeDriver: true, speed: 20, bounciness: 6  }),
+      ]),
+      Animated.sequence([
+        Animated.timing(accentRef, { toValue: 1, duration: 120, useNativeDriver: false }),
+        Animated.timing(accentRef, { toValue: 0, duration: 300, useNativeDriver: false }),
+      ]),
+    ]).start();
+  };
 
   // ── Edit profile fields ───────────────────────────────────────────────────
   const [editUsername,  setEditUsername]  = useState('');
@@ -579,53 +712,75 @@ export default function ProfileScreen() {
         <View style={styles.bioSection}>
           <Text style={styles.displayName}>{profile?.username ?? 'FPV Pilot'}</Text>
           {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
-          <View style={styles.statsCard}>
-            {/* Posts */}
+          <Animated.View
+            style={[
+              styles.statsCard,
+              {
+                opacity: cardOpacity,
+                transform: [{ translateY: cardSlideY }],
+              },
+            ]}
+          >
+            {/* Posts — count-up, no pulse */}
             <StatBox
-              value={myPosts.length}
+              displayValue={myPosts.length}
               label="Posts"
               accentColor="#ffffff"
+              animatedValue={countPosts}
             />
             <View style={styles.statDivider} />
 
-            {/* Followers — tappable */}
+            {/* Followers — count-up + pulse on tap */}
             <TouchableOpacity
               style={styles.statItem}
-              onPress={() => setFollowModal('followers')}
-              activeOpacity={0.7}
+              onPress={() => {
+                pulseStat(scaleFollowers, accentFollowers);
+                setFollowModal('followers');
+              }}
+              activeOpacity={0.85}
             >
               <StatBox
-                value={followersCount}
+                displayValue={followersCount}
                 label="Followers"
                 tappable
                 accentColor="#00d4ff"
+                animatedValue={countFollowers}
+                scaleAnim={scaleFollowers}
+                accentAnim={accentFollowers}
               />
             </TouchableOpacity>
             <View style={styles.statDivider} />
 
-            {/* Following — tappable */}
+            {/* Following — count-up + pulse on tap */}
             <TouchableOpacity
               style={styles.statItem}
-              onPress={() => setFollowModal('following')}
-              activeOpacity={0.7}
+              onPress={() => {
+                pulseStat(scaleFollowing, accentFollowing);
+                setFollowModal('following');
+              }}
+              activeOpacity={0.85}
             >
               <StatBox
-                value={followingCount}
+                displayValue={followingCount}
                 label="Following"
                 tappable
                 accentColor="#00d4ff"
+                animatedValue={countFollowing}
+                scaleAnim={scaleFollowing}
+                accentAnim={accentFollowing}
               />
             </TouchableOpacity>
             <View style={styles.statDivider} />
 
-            {/* Props */}
+            {/* Props — count-up, no pulse */}
             <StatBox
-              value={profile?.total_props ?? 0}
+              displayValue={profile?.total_props ?? 0}
               label="Props"
               icon="trophy"
               accentColor="#ffd700"
+              animatedValue={countProps}
             />
-          </View>
+          </Animated.View>
           <View style={styles.socialRow}>
             {([
               { icon: 'logo-youtube',   url: profile?.youtube_url },
