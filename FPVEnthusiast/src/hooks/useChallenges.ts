@@ -273,10 +273,12 @@ export function useChallenges(currentUserId?: string) {
     }
 
     const voteDelta = isCurrentlyVoted ? -1 : 1;
-    await supabase.rpc('increment_vote', {
-      p_entry_id: entryId,
-      p_delta: voteDelta,
-    }).catch(() => null);
+    try {
+      await supabase.rpc('increment_vote', {
+        p_entry_id: entryId,
+        p_delta: voteDelta,
+      });
+    } catch (_) {}
 
     return { success: true };
   }, [currentUserId]);
@@ -343,10 +345,12 @@ export function useChallenges(currentUserId?: string) {
       if (error) return false;
     }
     const sugDelta = isCurrentlyVoted ? -1 : 1;
-    await supabase.rpc('increment_suggestion_vote', {
-      p_suggestion_id: suggestionId,
-      p_delta: sugDelta,
-    }).catch(() => null);
+    try {
+      await supabase.rpc('increment_suggestion_vote', {
+        p_suggestion_id: suggestionId,
+        p_delta: sugDelta,
+      });
+    } catch (_) {}
     return true;
   }, [currentUserId]);
 
