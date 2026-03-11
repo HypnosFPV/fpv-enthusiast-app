@@ -23,6 +23,16 @@ const MentionTextInput = MentionTextInputComponent as any;
 
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
 
+
+// ── FPV Tag Suggestions ───────────────────────────────────────────────────────
+const MAX_TAGS = 10;
+const TAG_SUGGESTIONS = [
+  '#fpv', '#freestyle', '#race', '#bando', '#cinematic',
+  '#quad', '#drone', '#whoop', '#longrange', '#gopro',
+  '#miniquad', '#fpvlife', '#fpvpilot', '#ripping', '#proximity',
+];
+const TAG_COLORS = ['#ff4500','#00d4ff','#9c27b0','#ff9100','#00e676','#e91e63','#2979FF','#ffcc00'];
+const tagColor = (tag: string) => TAG_COLORS[Math.abs(tag.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % TAG_COLORS.length];
 function parseMentions(text: string): string[] {
   const matches = text.match(/@([a-zA-Z0-9_]+)/g) ?? [];
   return [...new Set(matches.map(m => m.slice(1).toLowerCase()))];
@@ -98,6 +108,9 @@ export default function FeedScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState<'media' | 'social'>('media');
   const [caption, setCaption] = useState('');
+  const [postTags,  setPostTags]  = useState<string[]>([]);
+  const [tagInput,  setTagInput]  = useState('');
+  const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [socialUrl, setSocialUrl] = useState('');
   const [mediaUri, setMediaUri] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
@@ -115,6 +128,9 @@ export default function FeedScreen() {
     setMediaUri(null);
     setMediaBase64(null);
     setMediaType('image');
+    setPostTags([]);
+    setTagInput('');
+    setShowTagSuggestions(false);
     setVideoThumbFrames([]);
     setSelectedThumb(null);
     setThumbsLoading(false);
@@ -183,6 +199,7 @@ export default function FeedScreen() {
           socialUrl: trimmed,
           platform: detectedPlatform ?? 'unknown',
           caption,
+          tags: postTags.length ? postTags : undefined,
         });
       } else {
         if (!mediaUri) { Alert.alert('Pick a media file first'); return; }
@@ -190,6 +207,7 @@ export default function FeedScreen() {
           mediaUrl: mediaUri,
           mediaType,
           caption,
+          tags: postTags.length ? postTags : undefined,
           mediaBase64,
           thumbnailUrl: mediaType === 'video' ? selectedThumb : null,
         });
@@ -428,6 +446,121 @@ export default function FeedScreen() {
               suggestionsAbove={false}
             />
 
+
+            {/* ── Tags Input ────────────────────────────────────────────── */}
+            <View style={styles.tagsBox}>
+              <View style={styles.tagsHeader}>
+                <Ionicons name="pricetag-outline" size={14} color="#ff4500" />
+                <Text style={styles.tagsHeaderText}>Tags</Text>
+                <Text style={styles.tagsCount}>{postTags.length}/{MAX_TAGS}</Text>
+              </View>
+
+              {/* Existing tag pills */}
+              {postTags.length > 0 && (
+                <View style={styles.tagPillsRow}>
+                  {postTags.map(tag => (
+                    <View key={tag} style={[styles.tagPill, { borderColor: tagColor(tag) + '88', backgroundColor: tagColor(tag) + '1a' }]}>
+                      <Text style={[styles.tagPillText, { color: tagColor(tag) }]}>{tag}</Text>
+                      <TouchableOpacity
+                        onPress={() => setPostTags(prev => prev.filter(t => t !== tag))}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Ionicons name="close" size={12} color={tagColor(tag)} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Tag text input */}
+              {postTags.length < MAX_TAGS && (
+                <TextInput
+                  style={styles.tagInput}
+                  placeholder={postTags.length === 0 ? 'Add tags (e.g. freestyle, race)…' : 'Add another tag…'}
+                  placeholderTextColor="#444"
+                  value={tagInput}
+                  onChangeText={text => {
+                    // Comma or space triggers add
+                    if (text.endsWith(',') || text.endsWith(' ')) {
+                      const raw = text.slice(0, -1).trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+                      if (raw.length > 0 && postTags.length < MAX_TAGS) {
+                        const tag = raw.startsWith('#') ? raw : '#' + raw;
+                        if (!postTags.includes(tag)) setPostTags(prev => [...prev, tag]);
+                      }
+                      setTagInput('');
+                    } else {
+                      setTagInput(text.toLowerCase().replace(/[^a-z0-9#_]/g, ''));
+                      setShowTagSuggestions(text.length > 0);
+                    }
+                  }}
+                  onSubmitEditing={() => {
+                    const raw = tagInput.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+                    if (raw.length > 0 && postTags.length < MAX_TAGS) {
+                      const tag = raw.startsWith('#') ? raw : '#' + raw;
+                      if (!postTags.includes(tag)) setPostTags(prev => [...prev, tag]);
+                    }
+                    setTagInput('');
+                    setShowTagSuggestions(false);
+                  }}
+                  onKeyPress={({ nativeEvent }) => {
+                    if (nativeEvent.key === 'Backspace' && tagInput === '' && postTags.length > 0) {
+                      setPostTags(prev => prev.slice(0, -1));
+                    }
+                  }}
+                  returnKeyType="done"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={22}
+                />
+              )}
+
+              {/* Suggestions row */}
+              {!showTagSuggestions && postTags.length < MAX_TAGS && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.suggestionsScroll}>
+                  <View style={styles.suggestionsRow}>
+                    {TAG_SUGGESTIONS.filter(s => !postTags.includes(s)).slice(0, 8).map(s => (
+                      <TouchableOpacity
+                        key={s}
+                        style={styles.suggestionChip}
+                        onPress={() => {
+                          if (postTags.length < MAX_TAGS && !postTags.includes(s))
+                            setPostTags(prev => [...prev, s]);
+                        }}
+                      >
+                        <Text style={styles.suggestionChipText}>{s}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              )}
+
+              {/* Filtered suggestions while typing */}
+              {showTagSuggestions && tagInput.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.suggestionsScroll}>
+                  <View style={styles.suggestionsRow}>
+                    {TAG_SUGGESTIONS
+                      .filter(s => s.includes(tagInput.replace('#','')) && !postTags.includes(s))
+                      .map(s => (
+                        <TouchableOpacity
+                          key={s}
+                          style={[styles.suggestionChip, styles.suggestionChipActive]}
+                          onPress={() => {
+                            if (postTags.length < MAX_TAGS && !postTags.includes(s)) {
+                              setPostTags(prev => [...prev, s]);
+                              setTagInput('');
+                              setShowTagSuggestions(false);
+                            }
+                          }}
+                        >
+                          <Text style={styles.suggestionChipText}>{s}</Text>
+                        </TouchableOpacity>
+                      ))
+                    }
+                  </View>
+                </ScrollView>
+              )}
+            </View>
+
             <TouchableOpacity
               style={[styles.postBtn, creating && styles.postBtnDisabled]}
               onPressIn={handlePost}
@@ -509,4 +642,84 @@ const styles = StyleSheet.create({
   postBtn: { backgroundColor: '#ff4500', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   postBtnDisabled: { opacity: 0.5 },
   postBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // ── Tags ────────────────────────────────────────────────────────────────
+  tagsBox: {
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e2a3a',
+    padding: 12,
+    marginBottom: 12,
+  },
+  tagsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  tagsHeaderText: {
+    color: '#ff4500',
+    fontSize: 13,
+    fontWeight: '700',
+    flex: 1,
+  },
+  tagsCount: {
+    color: '#444',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  tagPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  tagPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 5,
+  },
+  tagPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  tagInput: {
+    color: '#fff',
+    fontSize: 13,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e2a3a',
+    marginBottom: 8,
+  },
+  suggestionsScroll: {
+    marginTop: 4,
+  },
+  suggestionsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingBottom: 2,
+  },
+  suggestionChip: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: '#2a2a4a',
+  },
+  suggestionChipActive: {
+    borderColor: '#ff4500',
+    backgroundColor: '#ff450015',
+  },
+  suggestionChipText: {
+    color: '#888',
+    fontSize: 11,
+    fontWeight: '600',
+  },
 });
