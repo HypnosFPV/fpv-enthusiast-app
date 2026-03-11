@@ -46,18 +46,31 @@ export interface Challenge {
 export interface ChallengeEntry {
   id: string;
   challenge_id: string;
-  user_id: string;
-  video_url: string;
-  thumbnail_url?: string | null;
-  duration_s?: number | null;
-  caption?: string | null;
+  pilot_id: string;                        // real column name in live DB
+  entry_number: number;
+  processing_status: string;               // enum: uploading, processing, ready, failed
+  s3_upload_key?: string | null;
+  s3_processed_key?: string | null;
+  thumbnail_s3_key?: string | null;
+  original_filename?: string | null;
+  file_size_bytes?: number | null;
+  duration_seconds?: number | null;
+  audio_removed: boolean;
+  processing_completed_at?: string | null;
+  processing_error?: string | null;
+  status: string;                          // enum: pending, active, disqualified, winner
   vote_count: number;
-  is_winner: boolean;
-  place?: number | null;
+  final_rank?: number | null;              // 1/2/3 for winners, null otherwise
+  props_awarded: number;
+  submitted_at?: string | null;
   created_at: string;
+  updated_at: string;
+  // Derived helpers
+  video_url?: string | null;              // public URL derived from s3_upload_key
+  thumbnail_url?: string | null;          // public URL derived from thumbnail_s3_key
+  has_voted?: boolean;
   // Only revealed after voting ends
   user?: { username?: string | null; avatar_url?: string | null } | null;
-  has_voted?: boolean;
 }
 
 export interface ChallengeSuggestion {
@@ -154,7 +167,7 @@ export function useChallenges(currentUserId?: string) {
       const { data: mine } = await supabase
         .from('challenge_entries')
         .select('*')
-        .eq('user_id', currentUserId)
+        .eq('pilot_id', currentUserId)
         .in('challenge_id', ids);
       (mine ?? []).forEach((e: any) => { myEntries[e.challenge_id] = e; });
 
@@ -190,33 +203,51 @@ export function useChallenges(currentUserId?: string) {
   // ── Submit entry ──────────────────────────────────────────────────────────
   const submitEntry = useCallback(async (params: {
     challengeId: string;
-    videoUrl: string;
-    thumbnailUrl?: string;
-    durationS?: number;
-    caption?: string;
+    s3UploadKey: string;          // storage path returned after upload
+    thumbnailS3Key?: string;
+    durationSeconds?: number;
+    originalFilename?: string;
+    fileSizeBytes?: number;
   }): Promise<ChallengeEntry | null> => {
     if (!currentUserId) return null;
+
+    // Calculate entry_number (no DB default)
+    const { count } = await supabase
+      .from('challenge_entries')
+      .select('*', { count: 'exact', head: true })
+      .eq('challenge_id', params.challengeId);
+    const entryNumber = (count ?? 0) + 1;
+
     const { data, error } = await supabase
       .from('challenge_entries')
       .insert({
-        challenge_id:  params.challengeId,
-        user_id:       currentUserId,
-        video_url:     params.videoUrl,
-        thumbnail_url: params.thumbnailUrl ?? null,
-        // caption & duration_s added via migration — safe to include after schema reload
-        ...(params.caption    ? { caption:    params.caption }    : {}),
-        ...(params.durationS  ? { duration_s: params.durationS }  : {}),
+        challenge_id:      params.challengeId,
+        pilot_id:          currentUserId,
+        entry_number:      entryNumber,
+        s3_upload_key:     params.s3UploadKey,
+        thumbnail_s3_key:  params.thumbnailS3Key ?? null,
+        duration_seconds:  params.durationSeconds ? Math.round(params.durationSeconds) : null,
+        original_filename: params.originalFilename ?? null,
+        file_size_bytes:   params.fileSizeBytes ?? null,
       })
       .select('*')
       .single();
     if (error) { console.error('[useChallenges] submitEntry:', error.message); return null; }
     const entry = data as ChallengeEntry;
+    // Derive public URLs for immediate display
+    const videoUrl = params.s3UploadKey
+      ? supabase.storage.from('posts').getPublicUrl(params.s3UploadKey).data.publicUrl
+      : null;
+    const thumbUrl = params.thumbnailS3Key
+      ? supabase.storage.from('posts').getPublicUrl(params.thumbnailS3Key).data.publicUrl
+      : null;
+    const enriched = { ...entry, video_url: videoUrl, thumbnail_url: thumbUrl };
     setChallenges(prev => prev.map(c =>
       c.id === params.challengeId
-        ? { ...c, my_entry: entry, entry_count: (c.entry_count ?? 0) + 1 }
+        ? { ...c, my_entry: enriched, entry_count: (c.entry_count ?? 0) + 1 }
         : c
     ));
-    return entry;
+    return enriched;
   }, [currentUserId]);
 
   // ── Load entries for a challenge ──────────────────────────────────────────
@@ -226,7 +257,7 @@ export function useChallenges(currentUserId?: string) {
   ): Promise<ChallengeEntry[]> => {
     const isRevealed = phase === 'completed';
     const select = isRevealed
-      ? '*, user:user_id (username, avatar_url)'
+      ? '*, user:pilot_id (username, avatar_url)'
       : '*'; // anonymous during submission + voting
 
     const { data, error } = await supabase
@@ -247,22 +278,31 @@ export function useChallenges(currentUserId?: string) {
       votedIds = (myVotes ?? []).map((v: any) => v.entry_id);
     }
 
-    return (data ?? []).map((e: any) => ({
-      ...e,
-      // Hide user identity unless revealed
-      user: isRevealed ? (Array.isArray(e.user) ? e.user[0] : e.user) : null,
-      has_voted: votedIds.includes(e.id),
-    })) as ChallengeEntry[];
+    return (data ?? []).map((e: any) => {
+      const videoUrl = e.s3_upload_key
+        ? supabase.storage.from('posts').getPublicUrl(e.s3_upload_key).data.publicUrl
+        : null;
+      const thumbUrl = e.thumbnail_s3_key
+        ? supabase.storage.from('posts').getPublicUrl(e.thumbnail_s3_key).data.publicUrl
+        : null;
+      return {
+        ...e,
+        video_url: videoUrl,
+        thumbnail_url: thumbUrl,
+        user: isRevealed ? (Array.isArray(e.user) ? e.user[0] : e.user) : null,
+        has_voted: votedIds.includes(e.id),
+      };
+    }) as ChallengeEntry[];
   }, [currentUserId]);
 
   // ── Vote on an entry ──────────────────────────────────────────────────────
   const vote = useCallback(async (
     entryId: string,
-    entryUserId: string,
+    entryPilotId: string,
     isCurrentlyVoted: boolean,
   ): Promise<{ success: boolean; reason?: string }> => {
     if (!currentUserId) return { success: false, reason: 'not_logged_in' };
-    if (entryUserId === currentUserId) return { success: false, reason: 'self_vote' };
+    if (entryPilotId === currentUserId) return { success: false, reason: 'self_vote' };
 
     if (isCurrentlyVoted) {
       await supabase.from('challenge_votes').delete()
@@ -287,37 +327,25 @@ export function useChallenges(currentUserId?: string) {
   // ── Delete (replace) an entry ─────────────────────────────────────────────
   const deleteEntry = useCallback(async (
     entryId: string,
-    videoUrl: string,
-    thumbnailUrl?: string | null,
+    s3UploadKey?: string | null,
+    thumbnailS3Key?: string | null,
   ): Promise<boolean> => {
     if (!currentUserId) return false;
 
-    // Delete storage files
-    const extractPath = (url: string) => {
-      try {
-        const u = new URL(url);
-        // path after /object/public/posts/
-        const parts = u.pathname.split('/object/public/posts/');
-        return parts[1] ?? null;
-      } catch { return null; }
-    };
-
-    const videoPth = extractPath(videoUrl);
-    const thumbPth = thumbnailUrl ? extractPath(thumbnailUrl) : null;
-
-    if (videoPth) {
-      await supabase.storage.from('posts').remove([videoPth]).catch(() => null);
+    // Delete storage files directly by key (no URL parsing needed)
+    if (s3UploadKey) {
+      try { await supabase.storage.from('posts').remove([s3UploadKey]); } catch (_) {}
     }
-    if (thumbPth) {
-      await supabase.storage.from('posts').remove([thumbPth]).catch(() => null);
+    if (thumbnailS3Key) {
+      try { await supabase.storage.from('posts').remove([thumbnailS3Key]); } catch (_) {}
     }
 
-    // Delete DB row
+    // Delete DB row (RLS enforces pilot_id = auth.uid())
     const { error } = await supabase
       .from('challenge_entries')
       .delete()
       .eq('id', entryId)
-      .eq('user_id', currentUserId);
+      .eq('pilot_id', currentUserId);
 
     if (error) {
       console.error('[useChallenges] deleteEntry:', error.message);
