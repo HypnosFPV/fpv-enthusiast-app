@@ -514,6 +514,18 @@ export default function MapScreen() {
     }
   }, [mgpSyncCount]);
 
+  // ── Reload airspace data when toggle turned on or user moves map far ──────
+  useEffect(() => {
+    if (!showAirspace) return;
+    if (userLocation) {
+      const { latitude, longitude } = userLocation;
+      loadAirspaceZones(latitude - 0.5, longitude - 0.7, latitude + 0.5, longitude + 0.7);
+    } else {
+      // Default to CONUS centre until we have a location
+      loadAirspaceZones(38, -92, 41, -86);
+    }
+  }, [showAirspace, userLocation, loadAirspaceZones]);
+
   // ── Refresh ───────────────────────────────────────────────────────────────
   const refreshData = useCallback(() => {
     if (!userLocation) return;
@@ -1569,18 +1581,6 @@ const styles = StyleSheet.create({
   addrSearchInput: { flex: 1, color: '#fff', fontSize: 14, paddingVertical: 10, paddingHorizontal: 8, height: 42 },
   addrSearchBtn:   { backgroundColor: '#FFD700', paddingHorizontal: 16, paddingVertical: 10, alignSelf: 'stretch', justifyContent: 'center' },
   addrSearchBtnText: { color: '#000', fontWeight: '800', fontSize: 13 },
-
-  // ── Reload airspace data when toggle turned on or user moves map far ──────
-  useEffect(() => {
-    if (!showAirspace) return;
-    if (userLocation) {
-      const { latitude, longitude } = userLocation;
-      loadAirspaceZones(latitude - 0.5, longitude - 0.7, latitude + 0.5, longitude + 0.7);
-    } else {
-      // Default to CONUS centre until we have a location
-      loadAirspaceZones(38, -92, 41, -86);
-    }
-  }, [showAirspace, userLocation, loadAirspaceZones]);
 
   // Address result overlay (shown on map after geocode)
   addrResultBar:   { position: 'absolute', bottom: 110, left: 12, right: 12, alignItems: 'center' },
