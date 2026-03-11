@@ -203,8 +203,9 @@ export function useChallenges(currentUserId?: string) {
         user_id:       currentUserId,
         video_url:     params.videoUrl,
         thumbnail_url: params.thumbnailUrl ?? null,
-        duration_s:    params.durationS ?? null,
-        caption:       params.caption ?? null,
+        // caption & duration_s added via migration — safe to include after schema reload
+        ...(params.caption    ? { caption:    params.caption }    : {}),
+        ...(params.durationS  ? { duration_s: params.durationS }  : {}),
       })
       .select('*')
       .single();
@@ -281,6 +282,55 @@ export function useChallenges(currentUserId?: string) {
     } catch (_) {}
 
     return { success: true };
+  }, [currentUserId]);
+
+  // ── Delete (replace) an entry ─────────────────────────────────────────────
+  const deleteEntry = useCallback(async (
+    entryId: string,
+    videoUrl: string,
+    thumbnailUrl?: string | null,
+  ): Promise<boolean> => {
+    if (!currentUserId) return false;
+
+    // Delete storage files
+    const extractPath = (url: string) => {
+      try {
+        const u = new URL(url);
+        // path after /object/public/posts/
+        const parts = u.pathname.split('/object/public/posts/');
+        return parts[1] ?? null;
+      } catch { return null; }
+    };
+
+    const videoPth = extractPath(videoUrl);
+    const thumbPth = thumbnailUrl ? extractPath(thumbnailUrl) : null;
+
+    if (videoPth) {
+      await supabase.storage.from('posts').remove([videoPth]).catch(() => null);
+    }
+    if (thumbPth) {
+      await supabase.storage.from('posts').remove([thumbPth]).catch(() => null);
+    }
+
+    // Delete DB row
+    const { error } = await supabase
+      .from('challenge_entries')
+      .delete()
+      .eq('id', entryId)
+      .eq('user_id', currentUserId);
+
+    if (error) {
+      console.error('[useChallenges] deleteEntry:', error.message);
+      return false;
+    }
+
+    // Clear my_entry on the parent challenge
+    setChallenges(prev => prev.map(c =>
+      c.my_entry?.id === entryId
+        ? { ...c, my_entry: null, entry_count: Math.max(0, (c.entry_count ?? 1) - 1) }
+        : c
+    ));
+    return true;
   }, [currentUserId]);
 
   // ── Suggestions ───────────────────────────────────────────────────────────
@@ -439,7 +489,7 @@ export function useChallenges(currentUserId?: string) {
   return {
     seasons, activeSeason, setActiveSeason,
     challenges, loading, creating,
-    loadChallenges, submitEntry, loadEntries,
+    loadChallenges, submitEntry, deleteEntry, loadEntries,
     vote, loadLeaderboard, loadUserProps,
     loadSuggestions, submitSuggestion, voteSuggestion,
     checkThumbnail,
