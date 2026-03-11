@@ -55,7 +55,7 @@ export default function ChallengesScreen() {
   const {
     seasons, activeSeason, setActiveSeason,
     challenges, loading,
-    loadChallenges, submitEntry, loadEntries,
+    loadChallenges, submitEntry, deleteEntry, loadEntries,
     vote, loadLeaderboard,
     loadSuggestions, submitSuggestion, voteSuggestion,
     checkThumbnail,
@@ -297,6 +297,34 @@ export default function ChallengesScreen() {
     }
   };
 
+  const handleReplaceEntry = () => {
+    const myEntry = weeklyChallenge?.my_entry;
+    if (!myEntry) return;
+    Alert.alert(
+      'Replace Your Entry?',
+      'This will permanently delete your current submission. You can then upload a new one. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete & Replace',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await deleteEntry(
+              myEntry.id,
+              myEntry.video_url,
+              myEntry.thumbnail_url,
+            );
+            if (ok) {
+              Alert.alert('Entry Deleted', 'You can now submit a new entry.');
+            } else {
+              Alert.alert('Error', 'Could not delete your entry. Try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleVote = async (entry: ChallengeEntry) => {
     if (!user) { Alert.alert('Sign in to vote'); return; }
 
@@ -513,11 +541,20 @@ export default function ChallengesScreen() {
           )}
 
           {hasEntry && phase === 'submission' && (
-            <View style={[styles.infoBox, { borderColor: C.green + '44', backgroundColor: C.green + '10' }]}>
-              <Ionicons name="checkmark-circle-outline" size={15} color={C.green} />
-              <Text style={[styles.infoText, { color: C.green }]}>
-                Entry submitted anonymously! Come back Sat–Sun to vote.
-              </Text>
+            <View style={{ gap: 8 }}>
+              <View style={[styles.infoBox, { borderColor: C.green + '44', backgroundColor: C.green + '10' }]}>
+                <Ionicons name="checkmark-circle-outline" size={15} color={C.green} />
+                <Text style={[styles.infoText, { color: C.green }]}>
+                  Entry submitted anonymously! Come back Sat–Sun to vote.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.heroCTA, { backgroundColor: '#1a0505', borderWidth: 1, borderColor: '#ff4500' + '66' }]}
+                onPress={handleReplaceEntry}
+              >
+                <Ionicons name="refresh-outline" size={15} color={C.orange} />
+                <Text style={[styles.heroCTAText, { color: C.orange }]}>Replace My Entry</Text>
+              </TouchableOpacity>
             </View>
           )}
         </LinearGradient>
