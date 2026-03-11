@@ -20,6 +20,7 @@ import { useFollow }        from '../../src/hooks/useFollow';
 import FollowListModal      from '../../src/components/FollowListModal';
 import { useMute }          from '../../src/hooks/useMute';
 import MuteListModal        from '../../src/components/MuteListModal';
+import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
 
 const { width: W } = Dimensions.get('window');
 const CELL = (W - 4) / 3;
@@ -426,6 +427,7 @@ export default function ProfileScreen() {
   const [eggVisible,  setEggVisible]  = useState(false);
   const eggSpin                        = useRef(new Animated.Value(0)).current;
   const eggTapTimer                    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const propsToast                     = usePropsToast();
   const eggSpinAnim                    = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
@@ -594,6 +596,19 @@ export default function ProfileScreen() {
           })
         );
         eggSpinAnim.current.start();
+        // Award easter egg props (idempotent – shows toast only first time)
+        if (user?.id) {
+          supabase.rpc('award_props', {
+            p_user_id:      user.id,
+            p_event_type:   'easter_egg',
+            p_props:        150,
+            p_reference_id: 'global',
+          }).then(({ data: awarded }) => {
+            if (awarded) {
+              setTimeout(() => propsToast.show('+150 Props! You found the Easter Egg! 🥚'), 600);
+            }
+          });
+        }
         return 0;
       }
       eggTapTimer.current = setTimeout(() => setEggTapCount(0), 2000);
@@ -1164,6 +1179,8 @@ export default function ProfileScreen() {
       {/* ── FOLLOW / MUTE MODALS ──────────────────────────────────────────── */}
       {user && <FollowListModal visible={followModal !== null} type={followModal ?? 'followers'} profileUserId={user.id} currentUserId={user.id} onClose={() => setFollowModal(null)} />}
       <MuteListModal visible={showMuteList} onClose={() => setShowMuteList(false)} mutedUsers={mutedUsers} loading={muteLoading} onUnmute={async (userId) => { await unmuteUser(userId); }} />
+      {/* Props award toast */}
+      <PropsToast toast={propsToast} />
 
     </View>
   );
