@@ -232,7 +232,23 @@ export default function ChallengesScreen() {
       const path = `challenges/${submitTarget.id}/${user!.id}_${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from('posts').upload(path, buf, { contentType: mime, upsert: false });
-      if (upErr) { Alert.alert('Upload failed', upErr.message); return; }
+      if (upErr) {
+        let errMsg = upErr.message ?? '';
+        let userMsg = '';
+        if (errMsg.includes('row-level security') || errMsg.includes('policy')) {
+          userMsg = 'Video upload was blocked. This usually means:\n\n• Your account session expired — try signing out and back in\n• The storage bucket does not allow uploads from your account\n\nIf this keeps happening, contact support.';
+        } else if (errMsg.includes('Duplicate') || errMsg.includes('already exists')) {
+          userMsg = 'You already have a submission for this challenge.';
+        } else if (errMsg.includes('size') || errMsg.includes('too large')) {
+          userMsg = 'Video file is too large. Please trim it to under 2 minutes and try again.';
+        } else if (errMsg.includes('mime') || errMsg.includes('type')) {
+          userMsg = 'Unsupported video format. Please use MP4 or MOV.';
+        } else {
+          userMsg = 'Upload failed. Please check your connection and try again.\n\nDetails: ' + errMsg;
+        }
+        Alert.alert('Upload Failed', userMsg);
+        return;
+      }
       const { data: urlData } = supabase.storage.from('posts').getPublicUrl(path);
 
       let thumbUrl: string | undefined;
@@ -269,7 +285,12 @@ export default function ChallengesScreen() {
           [{ text: 'Got it' }]
         );
       } else {
-        Alert.alert('Error', 'Submission failed. You may have already entered this challenge.');
+        Alert.alert('Submission Failed',
+          'Could not save your entry. This may be because:\n\n' +
+          '• You already submitted an entry for this challenge\n' +
+          '• The submission window has closed\n' +
+          '• Your session expired — try signing out and back in'
+        );
       }
     } finally {
       setSubmitting(false);
@@ -613,9 +634,7 @@ export default function ChallengesScreen() {
                 {s.description ? (
                   <Text style={styles.sugDesc} numberOfLines={2}>{s.description}</Text>
                 ) : null}
-                {s.user?.username ? (
-                  <Text style={styles.sugAuthor}>by @{s.user.username}</Text>
-                ) : null}
+{/* username hidden to preserve suggestion anonymity */}
               </View>
               <TouchableOpacity
                 style={[styles.sugVoteBtn, s.has_voted && styles.sugVoteBtnActive]}
@@ -1034,6 +1053,7 @@ export default function ChallengesScreen() {
                 value={entryCaption}
                 onChangeText={setEntryCaption}
                 maxLength={200}
+                color={C.text}
               />
 
               {/* Prizes reminder */}
