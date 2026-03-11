@@ -4,7 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet } from 'react-native';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
 import DroneIcon from '../../src/components/icons/DroneIcon';
-import PropIcon  from '../../src/components/icons/PropIcon';
+import PropIcon    from '../../src/components/icons/PropIcon';
+import GogglesIcon from '../../src/components/icons/GogglesIcon';
 
 export default function TabLayout() {
   // ── FIX: use shared context instead of a separate hook instance ──────────
@@ -85,8 +86,8 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <GogglesIcon size={size} color={color} focused={focused} />
           ),
         }}
       />
