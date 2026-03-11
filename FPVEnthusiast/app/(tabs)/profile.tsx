@@ -9,6 +9,7 @@ import {
   RefreshControl, StatusBar, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import PropIcon from '../../src/components/icons/PropIcon';
 import { useAuth }          from '../../src/context/AuthContext';
 import { useProfile }       from '../../src/hooks/useProfile';
 import { useYouTubeAuth }   from '../../src/hooks/useYouTubeAuth';
@@ -122,6 +123,7 @@ const StatBox = ({
   animatedValue,
   scaleAnim,
   accentAnim,
+  renderIcon,
 }: {
   displayValue: number | string;
   label: string;
@@ -129,6 +131,7 @@ const StatBox = ({
   tappable?: boolean;
   accentColor?: string;
   animatedValue?: Animated.Value;
+  renderIcon?: (color: string) => React.ReactNode;
   scaleAnim?: Animated.Value;
   accentAnim?: Animated.Value;
 }) => {
@@ -154,7 +157,7 @@ const StatBox = ({
       />
       {/* Value row — count-up or static */}
       <View style={styles.statValueRow}>
-        {icon && <Ionicons name={icon as any} size={15} color={accentColor} />}
+        {renderIcon ? renderIcon(accentColor) : (icon && <Ionicons name={icon as any} size={15} color={accentColor} />)}
         {isNumeric && animatedValue ? (
           <AnimatedCountText
             animValue={animatedValue}
@@ -614,25 +617,12 @@ export default function ProfileScreen() {
           })
         );
         eggSpinAnim.current.start();
-        // Award easter egg props (idempotent – shows toast only first time)
-        if (user?.id) {
-          supabase.rpc('award_props', {
-            p_user_id:      user.id,
-            p_event_type:   'easter_egg',
-            p_props:        150,
-            p_reference_id: 'global',
-          }).then(({ data: awarded }) => {
-            if (awarded) {
-              setTimeout(() => propsToast.show('+150 Props! You found the Easter Egg! 🥚'), 600);
-            }
-          });
-        }
         return 0;
       }
       eggTapTimer.current = setTimeout(() => setEggTapCount(0), 2000);
       return next;
     });
-  }, [eggSpin]);
+  }, [eggSpin, user?.id, propsToast]);
 
   const closeEgg = useCallback(() => {
     eggSpinAnim.current?.stop();
@@ -809,9 +799,9 @@ export default function ProfileScreen() {
             <StatBox
               displayValue={profile?.total_props ?? 0}
               label="Props"
-              icon="trophy"
               accentColor="#ffd700"
               animatedValue={countProps}
+              renderIcon={(c) => <PropIcon size={15} color={c} focused />}
             />
           </Animated.View>
           <View style={styles.socialRow}>
