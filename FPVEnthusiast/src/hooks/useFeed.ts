@@ -349,6 +349,21 @@ export function useFeed(
       isLiked: false,
     };
     setPosts(prev => [newPost, ...prev]);
+
+    // ── Props award: first post ever ─────────────────────────────────────────
+    if (currentUserId) {
+      try {
+        await supabase.from('props_log').insert({
+          user_id:      currentUserId,
+          amount:       50,
+          reason:       'first_post',
+          reference_id: currentUserId,
+        });
+        // If insert succeeded (no 23505), signal the screen to show toast
+        (createPost as any).__lastAward = { amount: 50, reason: 'first_post' };
+      } catch (_) { /* duplicate = already awarded, ignore */ }
+    }
+
     return newPost;
   }, [currentUserId]);
 
