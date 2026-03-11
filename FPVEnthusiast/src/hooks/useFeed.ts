@@ -18,6 +18,7 @@ export interface FeedPost {
   isLiked: boolean;
   likes_count?: number;
   comments_count?: number;
+  tags?: string[] | null;
   users?: {
     id?: string | null;
     username?: string | null;
@@ -29,6 +30,7 @@ interface CreatePostParams {
   mediaUrl: string;
   mediaType: string;
   caption?: string;
+  tags?: string[];
   mediaBase64?: string | null;
   thumbnailUrl?: string | null;
 }
@@ -37,12 +39,13 @@ interface CreateSocialPostParams {
   socialUrl: string;
   platform: string;
   caption?: string;
+  tags?: string[];
 }
 
 const PAGE_SIZE = 10;
 
 const SELECT = `
-  id, user_id, media_url, media_type, thumbnail_url, caption,
+  id, user_id, media_url, media_type, thumbnail_url, caption, tags,
   social_url, platform, created_at, likes_count, comments_count,
   users:user_id (id, username, avatar_url)
 `;
@@ -154,6 +157,7 @@ export function useFeed(currentUserId?: string) {
     mediaUrl,
     mediaType,
     caption,
+    tags,
     mediaBase64,
     thumbnailUrl,
   }: CreatePostParams) => {
@@ -253,6 +257,7 @@ export function useFeed(currentUserId?: string) {
         media_url:     finalUrl,
         media_type:    mediaType,
         caption,
+        tags:          tags?.length ? tags : null,
         thumbnail_url: finalThumbUrl,
       })
       .select(SELECT)
@@ -279,12 +284,13 @@ export function useFeed(currentUserId?: string) {
     socialUrl,
     platform,
     caption,
+    tags,
   }: CreateSocialPostParams) => {
     if (!currentUserId) return null;
 
     const { data, error } = await supabase
       .from('posts')
-      .insert({ user_id: currentUserId, social_url: socialUrl, platform, caption })
+      .insert({ user_id: currentUserId, social_url: socialUrl, platform, caption, tags: tags?.length ? tags : null })
       .select(SELECT)
       .single();
 
