@@ -7,7 +7,7 @@ import {
   Animated, Easing, AppState, AppStateStatus,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE, MapPressEvent } from 'react-native-maps';
+import MapView, { Marker, Circle, UrlTile, PROVIDER_GOOGLE, MapPressEvent } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
@@ -256,6 +256,7 @@ export default function MapScreen() {
   const [userLocation,      setUserLocation]      = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationGranted,   setLocationGranted]   = useState<boolean | null>(null);
   const [isSatellite,       setIsSatellite]       = useState(false);
+  const [showAirspace,      setShowAirspace]      = useState(false);
   const [radiusMiles,       setRadiusMiles]       = useState(50);
   const [showSpots,         setShowSpots]         = useState(true);
   const [showEvents,        setShowEvents]        = useState(true);
@@ -668,6 +669,30 @@ export default function MapScreen() {
         })}
         {spotPin && <Marker coordinate={spotPin} tracksViewChanges={false}><Ionicons name="add-circle" size={36} color="#ff4500" /></Marker>}
         {evtPin && !showAddEvent && <Marker coordinate={evtPin} tracksViewChanges={false}><Ionicons name="calendar" size={36} color="#FFD700" /></Marker>}
+
+        {/* ── B4UFLY / FAA Airspace Restriction Tiles ─────────────────────
+            Source: FAA UAS Data Delivery System (public, no API key needed)
+            Class B/C/D/E airspace + restricted zones rendered as map tiles.
+            Tile URL from FAA's public ArcGIS MapServer. ──────────────────── */}
+        {showAirspace && (
+          <UrlTile
+            urlTemplate="https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/UAS_Facility_Maps_VFR/MapServer/tile/{z}/{y}/{x}"
+            zIndex={10}
+            opacity={0.55}
+            tileCachePath={undefined}
+            maximumZ={16}
+            minimumZ={6}
+          />
+        )}
+        {showAirspace && (
+          <UrlTile
+            urlTemplate="https://ais-faa.arcgis.com/arcgis/rest/services/Airspace_Class/MapServer/tile/{z}/{y}/{x}"
+            zIndex={11}
+            opacity={0.45}
+            maximumZ={15}
+            minimumZ={5}
+          />
+        )}
       </MapView>
 
       {/* ─── Pin-drop overlay ─────────────────────────────────────────────── */}
@@ -760,6 +785,12 @@ export default function MapScreen() {
             <TouchableOpacity style={[styles.iconBtn, isSatellite && styles.iconBtnSatellite]} onPress={() => setIsSatellite(v => !v)}>
               <Ionicons name={isSatellite ? "earth" : "earth-outline"} size={20} color={isSatellite ? '#FFD700' : '#fff'} />
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.iconBtn, showAirspace && styles.iconBtnAirspace]}
+              onPress={() => setShowAirspace(v => !v)}
+            >
+              <Ionicons name={showAirspace ? "warning" : "warning-outline"} size={20} color={showAirspace ? '#ff4500' : '#fff'} />
+            </TouchableOpacity>
             <TouchableOpacity style={[styles.iconBtn, showFilterPanel && styles.iconBtnActive]} onPress={() => setShowFilterPanel(true)}>
               <Ionicons name={showFilterPanel ? "funnel" : "funnel-outline"} size={20} color={showFilterPanel ? '#FFD700' : '#fff'} />
             </TouchableOpacity>
@@ -768,6 +799,18 @@ export default function MapScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* ── Airspace legend banner ──────────────────────────────────────── */}
+        {showAirspace && (
+          <View style={styles.airspaceBanner}>
+            <Ionicons name="warning" size={13} color="#ff4500" />
+            <Text style={styles.airspaceBannerText}>
+              FAA airspace data shown · Always verify at{' '}
+              <Text style={styles.airspaceBannerLink}>b4ufly.faa.gov</Text>
+              {' '}before flying
+            </Text>
+          </View>
+        )}
 
         {/* Address search bar — shown when search icon is active */}
         {showAddrSearch && (
@@ -1391,6 +1434,16 @@ const styles = StyleSheet.create({
   headerRight:   { flexDirection: 'row', gap: 6 },
   iconBtn:          { backgroundColor: 'rgba(0,0,0,0.65)', padding: 8, borderRadius: 20, borderWidth: 1, borderColor: '#333' },
   iconBtnSatellite: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
+  iconBtnAirspace:  { borderColor: '#ff4500', backgroundColor: 'rgba(255,69,0,0.18)' },
+  airspaceBanner: {
+    position: 'absolute', top: 100, left: 12, right: 12,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    borderRadius: 8, borderWidth: 1, borderColor: '#ff4500',
+    paddingHorizontal: 10, paddingVertical: 6,
+    flexDirection: 'row', alignItems: 'center', gap: 6, zIndex: 20,
+  },
+  airspaceBannerText: { color: '#ccc', fontSize: 11, flex: 1, flexWrap: 'wrap' },
+  airspaceBannerLink: { color: '#ff4500', textDecorationLine: 'underline' },
   iconBtnMgp:       { borderColor: '#2979FF', backgroundColor: 'rgba(41,121,255,0.12)' },
   iconBtnSearchActive: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
 
