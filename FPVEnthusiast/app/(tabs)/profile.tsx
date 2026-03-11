@@ -501,6 +501,15 @@ export default function ProfileScreen() {
     const result = await updateProfile({ username: editUsername.trim(), bio: editBio.trim() });
     if (result?.error) { Alert.alert('Error', result.error); return; }
     setShowEditProfile(false);
+    // ── Award profile complete props (once, when username + bio both filled) ──
+    if (user?.id && editUsername.trim() && editBio.trim()) {
+      supabase.from('props_log').insert({
+        user_id: user.id, amount: 30,
+        reason: 'profile_complete', reference_id: user.id,
+      }).then(({ error }) => {
+        if (!error) propsToast.show('+30 Props! Profile complete ✈️');
+      });
+    }
   }, [editUsername, editBio, validateUsername, updateProfile]);
 
   const saveSocials = useCallback(async () => {
@@ -588,6 +597,15 @@ export default function ProfileScreen() {
       if (next >= 7) {
         setEggVisible(true);
         eggSpin.setValue(0);
+        // ── Award easter egg props (once ever) ─────────────────────────────────
+        if (user?.id) {
+          supabase.from('props_log').insert({
+            user_id: user.id, amount: 150,
+            reason: 'easter_egg', reference_id: user.id,
+          }).then(({ error }) => {
+            if (!error) propsToast.show('+150 Props! Easter egg found 🥚');
+          });
+        }
         eggSpinAnim.current = Animated.loop(
           Animated.timing(eggSpin, {
             toValue: 1,
