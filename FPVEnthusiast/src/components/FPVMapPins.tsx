@@ -16,9 +16,10 @@ interface PinShellProps {
   size?: number;
   children: React.ReactNode;
   glowColor?: string;
+  hasEvent?: boolean;  // show calendar badge on spot pins
 }
 
-function PinShell({ color, size = 44, children, glowColor }: PinShellProps) {
+function PinShell({ color, size = 44, children, glowColor, hasEvent }: PinShellProps) {
   const w = size;
   const h = size * 1.35;
   const r = size / 2;
@@ -46,6 +47,13 @@ function PinShell({ color, size = 44, children, glowColor }: PinShellProps) {
         <Circle cx="22" cy="20" r="14" fill="rgba(0,0,0,0.30)" />
         {/* Icon content goes here (positioned in 8..36 x 6..34 range) */}
         {children}
+        {/* Upcoming-event badge — orange calendar dot on top-right */}
+        {hasEvent && (
+          <G>
+            <Circle cx="35" cy="7" r="6.5" fill="#FF6D00" stroke="#1a1a2e" strokeWidth="1.5" />
+            <SvgText x="35" y="10.5" fontSize="7" fill="#fff" fontWeight="bold" textAnchor="middle">📅</SvgText>
+          </G>
+        )}
       </Svg>
     </View>
   );
@@ -54,9 +62,9 @@ function PinShell({ color, size = 44, children, glowColor }: PinShellProps) {
 // ─── SPOT PINS ────────────────────────────────────────────────────────────────
 
 // Freestyle — quad drone top-view (green)
-export function FreestylePin({ size = 44 }: { size?: number }) {
+export function FreestylePin({ size = 44, hasEvent = false }: { size?: number; hasEvent?: boolean }) {
   return (
-    <PinShell color="#00C853" size={size}>
+    <PinShell color="#00C853" size={size} hasEvent={hasEvent}>
       {/* Quad drone: 4 arms + motors */}
       <G transform="translate(22,20)">
         {/* Arms */}
@@ -75,9 +83,9 @@ export function FreestylePin({ size = 44 }: { size?: number }) {
 }
 
 // Bando — broken building with hole (orange)
-export function BandoPin({ size = 44 }: { size?: number }) {
+export function BandoPin({ size = 44, hasEvent = false }: { size?: number; hasEvent?: boolean }) {
   return (
-    <PinShell color="#FF6D00" size={size}>
+    <PinShell color="#FF6D00" size={size} hasEvent={hasEvent}>
       <G transform="translate(22,20)">
         {/* Building outline */}
         <Rect x="-10" y="-10" width="20" height="18" rx="1" fill="none" stroke="#fff" strokeWidth="2" />
@@ -95,9 +103,9 @@ export function BandoPin({ size = 44 }: { size?: number }) {
 }
 
 // Race Track — gates + checkered (blue)
-export function RaceTrackPin({ size = 44 }: { size?: number }) {
+export function RaceTrackPin({ size = 44, hasEvent = false }: { size?: number; hasEvent?: boolean }) {
   return (
-    <PinShell color="#2979FF" size={size}>
+    <PinShell color="#2979FF" size={size} hasEvent={hasEvent}>
       <G transform="translate(22,20)">
         {/* Gate arch */}
         <Path d="M-11 8 L-11 -6 C-11 -14 11 -14 11 -6 L11 8"
@@ -115,9 +123,9 @@ export function RaceTrackPin({ size = 44 }: { size?: number }) {
 }
 
 // Open Field — grass waves + horizon (yellow)
-export function OpenFieldPin({ size = 44 }: { size?: number }) {
+export function OpenFieldPin({ size = 44, hasEvent = false }: { size?: number; hasEvent?: boolean }) {
   return (
-    <PinShell color="#FFD600" size={size}>
+    <PinShell color="#FFD600" size={size} hasEvent={hasEvent}>
       <G transform="translate(22,20)">
         {/* Horizon line */}
         <Line x1="-11" y1="1" x2="11" y2="1" stroke="#fff" strokeWidth="1.5" opacity="0.6" />
@@ -133,9 +141,9 @@ export function OpenFieldPin({ size = 44 }: { size?: number }) {
 }
 
 // Indoor — house + tiny drone inside (purple)
-export function IndoorPin({ size = 44 }: { size?: number }) {
+export function IndoorPin({ size = 44, hasEvent = false }: { size?: number; hasEvent?: boolean }) {
   return (
-    <PinShell color="#E040FB" size={size}>
+    <PinShell color="#E040FB" size={size} hasEvent={hasEvent}>
       <G transform="translate(22,20)">
         {/* House roof */}
         <Polygon points="0,-13 -11,-3 11,-3" fill="#fff" opacity="0.9" />
@@ -327,7 +335,7 @@ export function FunFlyPin({ size = 44 }: { size?: number }) {
 
 // ─── Lookup maps (same keys as SPOT_CONFIG / EVENT_CONFIG) ───────────────────
 
-export const SPOT_PIN_MAP: Record<string, React.FC<{ size?: number }>> = {
+export const SPOT_PIN_MAP: Record<string, React.FC<{ size?: number; hasEvent?: boolean }>> = {
   freestyle:  FreestylePin,
   bando:      BandoPin,
   race_track: RaceTrackPin,
