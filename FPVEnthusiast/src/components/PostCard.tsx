@@ -4,7 +4,7 @@ import {
   View, Text, Image, TouchableOpacity, StyleSheet,
   AppState, Modal, Alert, ActivityIndicator, TextInput,
   Dimensions, Linking, Platform, FlatList, KeyboardAvoidingView,
-  Keyboard, PanResponder, ScrollView, Animated,
+  Keyboard, PanResponder, ScrollView, Animated, Pressable,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -336,6 +336,7 @@ export default function PostCard(props: Props) {
   const [reactionPickerForId, setReactionPickerForId] = useState<string | null>(null);
   const [zoomUri, setZoomUri] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
 
   // ── like animation state ─────────────────────────────────────────────────
   const [localLiked, setLocalLiked] = useState(post.isLiked ?? false);
@@ -519,6 +520,65 @@ export default function PostCard(props: Props) {
     setCommentLikes(map);
   }, [currentUserId]);
 
+  const REACTION_EMOJIS = ['👍','❤️','😂','😮','😢','🔥'];
+
+  const fetchCommentReactions = useCallback(async function (commentIds: string[]) {
+    if (!commentIds.length) return;
+    try {
+      const { data } = await supabase
+        .from('comment_reactions')
+        .select('comment_id, emoji, user_id')
+        .in('comment_id', commentIds);
+      if (!data) return;
+      const counts: Record<string, Record<string, number>> = {};
+      const mine: Record<string, string[]> = {};
+      for (const row of data) {
+        const cid = row.comment_id as string;
+        const em  = row.emoji as string;
+        counts[cid] = counts[cid] ?? {};
+        counts[cid][em] = (counts[cid][em] ?? 0) + 1;
+        if (currentUserId && row.user_id === currentUserId) {
+          mine[cid] = mine[cid] ?? [];
+          if (!mine[cid].includes(em)) mine[cid].push(em);
+        }
+      }
+      setCommentReactions(counts);
+      setMyReactions(mine);
+    } catch (_) {}
+  }, [currentUserId]);
+
+  const handleCommentReact = useCallback(async function (commentId: string, emoji: string) {
+    if (!currentUserId) return;
+    setReactionPickerForId(null);
+    const already = (myReactions[commentId] ?? []).includes(emoji);
+    // optimistic update
+    setCommentReactions(prev => {
+      const c = { ...(prev[commentId] ?? {}) };
+      c[emoji] = Math.max((c[emoji] ?? 0) + (already ? -1 : 1), 0);
+      if (c[emoji] === 0) delete c[emoji];
+      return { ...prev, [commentId]: c };
+    });
+    setMyReactions(prev => {
+      const arr = [...(prev[commentId] ?? [])];
+      if (already) return { ...prev, [commentId]: arr.filter(e => e !== emoji) };
+      return { ...prev, [commentId]: [...arr, emoji] };
+    });
+    try {
+      if (already) {
+        await supabase.from('comment_reactions')
+          .delete()
+          .eq('comment_id', commentId)
+          .eq('user_id', currentUserId)
+          .eq('emoji', emoji);
+      } else {
+        await supabase.from('comment_reactions')
+          .insert({ comment_id: commentId, user_id: currentUserId, emoji });
+      }
+    } catch (_) {
+      await fetchCommentReactions([commentId]);
+    }
+  }, [currentUserId, myReactions, fetchCommentReactions]);
+
   const fetchComments = useCallback(async function () {
     setCommentsLoading(true);
     try {
@@ -618,67 +678,6 @@ export default function PostCard(props: Props) {
         : await supabase.from('comment_likes').delete().eq('comment_id', id).eq('user_id', currentUserId);
     } catch (_) { setCommentLikes(function (p) { return { ...p, [id]: cur }; }); }
   }, [currentUserId, commentLikes]);
-
-  const REACTION_EMOJIS = ['👍','❤️','😂','😮','😢','🔥'];
-
-  const fetchCommentReactions = useCallback(async function (commentIds: string[]) {
-    if (!commentIds.length) return;
-    try {
-      const { data } = await supabase
-        .from('comment_reactions')
-        .select('comment_id, emoji, user_id')
-        .in('comment_id', commentIds);
-      if (!data) return;
-      const counts: Record<string, Record<string, number>> = {};
-      const mine: Record<string, string[]> = {};
-      for (const row of data) {
-        const cid = row.comment_id as string;
-        const em  = row.emoji as string;
-        counts[cid] = counts[cid] ?? {};
-        counts[cid][em] = (counts[cid][em] ?? 0) + 1;
-        if (currentUserId && row.user_id === currentUserId) {
-          mine[cid] = mine[cid] ?? [];
-          if (!mine[cid].includes(em)) mine[cid].push(em);
-        }
-      }
-      setCommentReactions(counts);
-      setMyReactions(mine);
-    } catch (_) {}
-  }, [currentUserId]);
-
-  const handleCommentReact = useCallback(async function (commentId: string, emoji: string) {
-    if (!currentUserId) return;
-    setReactionPickerForId(null);
-    const already = (myReactions[commentId] ?? []).includes(emoji);
-    // optimistic update
-    setCommentReactions(prev => {
-      const c = { ...(prev[commentId] ?? {}) };
-      c[emoji] = Math.max((c[emoji] ?? 0) + (already ? -1 : 1), 0);
-      if (c[emoji] === 0) delete c[emoji];
-      return { ...prev, [commentId]: c };
-    });
-    setMyReactions(prev => {
-      const arr = [...(prev[commentId] ?? [])];
-      if (already) return { ...prev, [commentId]: arr.filter(e => e !== emoji) };
-      return { ...prev, [commentId]: [...arr, emoji] };
-    });
-    try {
-      if (already) {
-        await supabase.from('comment_reactions')
-          .delete()
-          .eq('comment_id', commentId)
-          .eq('user_id', currentUserId)
-          .eq('emoji', emoji);
-      } else {
-        await supabase.from('comment_reactions')
-          .insert({ comment_id: commentId, user_id: currentUserId, emoji });
-      }
-    } catch (_) {
-      // rollback on error — re-fetch
-      await fetchCommentReactions([commentId]);
-    }
-  }, [currentUserId, myReactions, fetchCommentReactions]);
-
   const handleDeletePost = useCallback(function () {
     Alert.alert('Delete Post', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
@@ -1095,17 +1094,55 @@ export default function PostCard(props: Props) {
         ? <View style={styles.captionWrap}><MentionText text={post.caption ?? ''} style={styles.caption} /></View>
         : null}
 
-      {/* ── Tags ─────────────────────────────────────────────────────────── */}
+      {/* ── Tags (collapsible) ──────────────────────────────────────────── */}
       {post.tags && post.tags.length > 0 && (
-        <View style={styles.postTagsRow}>
-          {post.tags.map(tag => {
-            const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % PC_TAG_COLORS.length];
-            return (
-              <View key={tag} style={[styles.postTag, { backgroundColor: TC + '1a', borderColor: TC + '55' }]}>
-                <Text style={[styles.postTagText, { color: TC }]}>{tag}</Text>
-              </View>
-            );
-          })}
+        <View>
+          {/* Toggle pill */}
+          <TouchableOpacity
+            style={styles.tagsToggleRow}
+            onPress={function () { setTagsExpanded(function (v) { return !v; }); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="pricetag-outline" size={12} color="#888" style={{ marginRight: 4 }} />
+            {!tagsExpanded && (
+              <>
+                {post.tags.slice(0, 2).map(function (tag) {
+                  const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce(function (a, c) { return a + c.charCodeAt(0); }, 0)) % PC_TAG_COLORS.length];
+                  return (
+                    <View key={tag} style={[styles.postTag, { backgroundColor: TC + '1a', borderColor: TC + '55', marginRight: 4 }]}>
+                      <Text style={[styles.postTagText, { color: TC }]}>{tag}</Text>
+                    </View>
+                  );
+                })}
+                {post.tags.length > 2 && (
+                  <Text style={styles.tagsMoreLabel}>+{post.tags.length - 2} more</Text>
+                )}
+              </>
+            )}
+            {tagsExpanded && (
+              <Text style={styles.tagsToggleLabel}>Tags</Text>
+            )}
+            <Ionicons
+              name={tagsExpanded ? 'chevron-up' : 'chevron-down'}
+              size={13}
+              color="#888"
+              style={{ marginLeft: 'auto' } as any}
+            />
+          </TouchableOpacity>
+
+          {/* Expanded tag list */}
+          {tagsExpanded && (
+            <View style={styles.postTagsRow}>
+              {post.tags.map(function (tag) {
+                const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce(function (a, c) { return a + c.charCodeAt(0); }, 0)) % PC_TAG_COLORS.length];
+                return (
+                  <View key={tag} style={[styles.postTag, { backgroundColor: TC + '1a', borderColor: TC + '55' }]}>
+                    <Text style={[styles.postTagText, { color: TC }]}>{tag}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
       )}
 
