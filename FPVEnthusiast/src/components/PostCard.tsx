@@ -322,6 +322,7 @@ export default function PostCard(props: Props) {
   const [showOwnerMenu, setShowOwnerMenu] = useState(false);
   const [showEditCaption, setShowEditCaption] = useState(false);
   const [editCaptionText, setEditCaptionText] = useState(post.caption || '');
+  const [tagsExpanded, setTagsExpanded]       = useState(false);
   const [commentLikes, setCommentLikes] = useState<Record<string, CommentLikeState>>({});
   const [zoomUri, setZoomUri] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -911,17 +912,53 @@ export default function PostCard(props: Props) {
         ? <View style={styles.captionWrap}><MentionText text={post.caption ?? ''} style={styles.caption} /></View>
         : null}
 
-      {/* ── Tags ─────────────────────────────────────────────────────────── */}
+      {/* ── Tags (collapsible) ──────────────────────────────────────────── */}
       {post.tags && post.tags.length > 0 && (
-        <View style={styles.postTagsRow}>
-          {post.tags.map(tag => {
-            const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % PC_TAG_COLORS.length];
-            return (
-              <View key={tag} style={[styles.postTag, { backgroundColor: TC + '1a', borderColor: TC + '55' }]}>
-                <Text style={[styles.postTagText, { color: TC }]}>{tag}</Text>
-              </View>
-            );
-          })}
+        <View>
+          {/* Toggle row — always visible */}
+          <TouchableOpacity
+            style={styles.tagToggleRow}
+            onPress={() => setTagsExpanded(prev => !prev)}
+            activeOpacity={0.75}
+          >
+            <View style={styles.tagTogglePill}>
+              <Ionicons
+                name="pricetag-outline"
+                size={11}
+                color="#ff4500"
+                style={{ marginRight: 3 }}
+              />
+              {!tagsExpanded && (
+                <Text style={styles.tagTogglePillText} numberOfLines={1}>
+                  {post.tags.slice(0, 2).join(' ')}
+                  {post.tags.length > 2 ? ` +${post.tags.length - 2}` : ''}
+                </Text>
+              )}
+              {tagsExpanded && (
+                <Text style={styles.tagTogglePillText}>Tags</Text>
+              )}
+              <Ionicons
+                name={tagsExpanded ? 'chevron-up' : 'chevron-down'}
+                size={12}
+                color="#888"
+                style={{ marginLeft: 4 }}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {/* Expanded tag grid */}
+          {tagsExpanded && (
+            <View style={styles.postTagsRow}>
+              {post.tags.map(tag => {
+                const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % PC_TAG_COLORS.length];
+                return (
+                  <View key={tag} style={[styles.postTag, { backgroundColor: TC + '1a', borderColor: TC + '55' }]}>
+                    <Text style={[styles.postTagText, { color: TC }]}>{tag}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
       )}
 
@@ -1170,5 +1207,30 @@ const styles = StyleSheet.create({
   postTagText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  // tag toggle
+  tagToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingBottom: 4,
+    paddingTop: 2,
+  },
+  tagTogglePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e1e1e',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#333',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    maxWidth: 240,
+  },
+  tagTogglePillText: {
+    color: '#aaa',
+    fontSize: 11,
+    fontWeight: '600',
+    flexShrink: 1,
   },
 });
