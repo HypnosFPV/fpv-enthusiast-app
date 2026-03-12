@@ -2,7 +2,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, Pressable,
-  Modal, TextInput, ActivityIndicator, Alert,
+  Modal, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView,
   RefreshControl, StatusBar, Image,
   Animated, Easing, ScrollView, Platform, Keyboard,
 } from 'react-native';
@@ -460,12 +460,18 @@ export default function FeedScreen() {
         transparent
         onRequestClose={() => { setModalVisible(false); resetModal(); }}
       >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+        >
         <View style={styles.modalOverlay}>
           <ScrollView
             style={styles.modalContainer}
             contentContainerStyle={styles.modalContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            automaticallyAdjustKeyboardInsets
           >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>New Post</Text>
@@ -876,6 +882,7 @@ export default function FeedScreen() {
             </TouchableOpacity>
           </ScrollView>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     {/* ── Props award toast ─────────────────────────────────────────── */}
     <PropsToast toast={propsToast} />
