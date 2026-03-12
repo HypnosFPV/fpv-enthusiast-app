@@ -328,6 +328,12 @@ export default function PostCard(props: Props) {
   const [editCaptionText, setEditCaptionText] = useState(post.caption || '');
   const [replyingTo, setReplyingTo]           = useState<Comment | null>(null);
   const [commentLikes, setCommentLikes] = useState<Record<string, CommentLikeState>>({});
+  // emoji reactions: { [comment_id]: { [emoji]: count } }
+  const [commentReactions, setCommentReactions] = useState<Record<string, Record<string, number>>>({});
+  // which emojis the current user has already reacted with: { [comment_id]: Set<emoji> }
+  const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
+  // which comment bubble is showing the emoji picker popover
+  const [reactionPickerForId, setReactionPickerForId] = useState<string | null>(null);
   const [zoomUri, setZoomUri] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -337,6 +343,8 @@ export default function PostCard(props: Props) {
     post.like_count ?? post.likes_count ?? post.likeCount ?? 0
   );
   useEffect(() => { setLocalLiked(post.isLiked ?? false); }, [post.isLiked]);
+  // Close reaction picker when comments modal closes
+  useEffect(() => { if (!showComments) setReactionPickerForId(null); }, [showComments]);
   useEffect(() => {
     setLocalLikeCount(post.like_count ?? post.likes_count ?? post.likeCount ?? 0);
   }, [post.like_count, post.likes_count, post.likeCount]);
@@ -522,11 +530,12 @@ export default function PostCard(props: Props) {
       const data: Comment[] = r.data || [];
       setComments(data);
       await fetchCommentLikes(data);
+      await fetchCommentReactions(data.map(function (c: Comment) { return c.id; }));
       setTimeout(function () { flatListRef.current?.scrollToEnd({ animated: false }); }, 150);
     } catch (err: any) {
       console.error('[PostCard] fetchComments:', err.message);
     } finally { setCommentsLoading(false); }
-  }, [post.id, fetchCommentLikes]);
+  }, [post.id, fetchCommentLikes, fetchCommentReactions]);
 
   const handleOpenComments = useCallback(function () {
     setCommentsPage(1);   // always start at newest when reopening
@@ -609,6 +618,66 @@ export default function PostCard(props: Props) {
         : await supabase.from('comment_likes').delete().eq('comment_id', id).eq('user_id', currentUserId);
     } catch (_) { setCommentLikes(function (p) { return { ...p, [id]: cur }; }); }
   }, [currentUserId, commentLikes]);
+
+  const REACTION_EMOJIS = ['👍','❤️','😂','😮','😢','🔥'];
+
+  const fetchCommentReactions = useCallback(async function (commentIds: string[]) {
+    if (!commentIds.length) return;
+    try {
+      const { data } = await supabase
+        .from('comment_reactions')
+        .select('comment_id, emoji, user_id')
+        .in('comment_id', commentIds);
+      if (!data) return;
+      const counts: Record<string, Record<string, number>> = {};
+      const mine: Record<string, string[]> = {};
+      for (const row of data) {
+        const cid = row.comment_id as string;
+        const em  = row.emoji as string;
+        counts[cid] = counts[cid] ?? {};
+        counts[cid][em] = (counts[cid][em] ?? 0) + 1;
+        if (currentUserId && row.user_id === currentUserId) {
+          mine[cid] = mine[cid] ?? [];
+          if (!mine[cid].includes(em)) mine[cid].push(em);
+        }
+      }
+      setCommentReactions(counts);
+      setMyReactions(mine);
+    } catch (_) {}
+  }, [currentUserId]);
+
+  const handleCommentReact = useCallback(async function (commentId: string, emoji: string) {
+    if (!currentUserId) return;
+    setReactionPickerForId(null);
+    const already = (myReactions[commentId] ?? []).includes(emoji);
+    // optimistic update
+    setCommentReactions(prev => {
+      const c = { ...(prev[commentId] ?? {}) };
+      c[emoji] = Math.max((c[emoji] ?? 0) + (already ? -1 : 1), 0);
+      if (c[emoji] === 0) delete c[emoji];
+      return { ...prev, [commentId]: c };
+    });
+    setMyReactions(prev => {
+      const arr = [...(prev[commentId] ?? [])];
+      if (already) return { ...prev, [commentId]: arr.filter(e => e !== emoji) };
+      return { ...prev, [commentId]: [...arr, emoji] };
+    });
+    try {
+      if (already) {
+        await supabase.from('comment_reactions')
+          .delete()
+          .eq('comment_id', commentId)
+          .eq('user_id', currentUserId)
+          .eq('emoji', emoji);
+      } else {
+        await supabase.from('comment_reactions')
+          .insert({ comment_id: commentId, user_id: currentUserId, emoji });
+      }
+    } catch (_) {
+      // rollback on error — re-fetch
+      await fetchCommentReactions([commentId]);
+    }
+  }, [currentUserId, myReactions, fetchCommentReactions]);
 
   const handleDeletePost = useCallback(function () {
     Alert.alert('Delete Post', 'This cannot be undone.', [
@@ -828,6 +897,10 @@ export default function PostCard(props: Props) {
       );
     }
 
+    const rxns = commentReactions[c.id] ?? {};
+    const myRxns = myReactions[c.id] ?? [];
+    const hasRxns = Object.keys(rxns).some(e => rxns[e] > 0);
+
     return (
       <View key={c.id} style={[styles.commentRow, isReply && styles.replyRow]}>
         {isReply && <View style={styles.replyThreadLine} />}
@@ -840,7 +913,34 @@ export default function PostCard(props: Props) {
               </View>
           }
         </View>
-        <View style={styles.commentBubble}>
+        <View style={{ flex: 1 }}>
+        {/* Reaction picker popover */}
+        {reactionPickerForId === c.id && (
+          <View style={styles.reactionPickerWrap}>
+            {REACTION_EMOJIS.map(em => (
+              <TouchableOpacity
+                key={em}
+                style={[styles.reactionPickerBtn, myRxns.includes(em) && styles.reactionPickerBtnActive]}
+                onPress={function () { handleCommentReact(c.id, em); }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.reactionPickerEmoji}>{em}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={styles.reactionPickerClose}
+              onPress={function () { setReactionPickerForId(null); }}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Ionicons name="close" size={13} color="#888" />
+            </TouchableOpacity>
+          </View>
+        )}
+        <Pressable
+          onLongPress={function () { setReactionPickerForId(reactionPickerForId === c.id ? null : c.id); }}
+          delayLongPress={350}
+          style={styles.commentBubble}
+        >
           <View style={styles.commentBubbleHeader}>
             <Text style={styles.commentUsername} numberOfLines={1}>{c.users?.username || 'Unknown'}</Text>
             {isMine ? (
@@ -858,7 +958,7 @@ export default function PostCard(props: Props) {
           <View style={styles.commentMeta}>
             <Text style={styles.commentTime}>{timeAgo(c.created_at)}</Text>
             {edited ? <Text style={styles.commentEdited}>  edited</Text> : null}
-            <TouchableOpacity style={styles.commentLikeBtn} onPress={function () { handleCommentLike(c.id); }}>
+            <TouchableOpacity style={styles.commentLikeBtn} onPress={function () { handleCommentLike(c.id); }} hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}>
               <Ionicons name={lk.liked ? 'heart' : 'heart-outline'} size={12} color={lk.liked ? '#e74c3c' : '#666'} />
               {lk.count > 0 ? <Text style={styles.commentLikeCount}>{lk.count}</Text> : null}
             </TouchableOpacity>
@@ -877,6 +977,25 @@ export default function PostCard(props: Props) {
               </TouchableOpacity>
             )}
           </View>
+        </Pressable>
+        {/* Reaction pills */}
+        {hasRxns && (
+          <View style={styles.reactionPillsRow}>
+            {REACTION_EMOJIS.filter(em => (rxns[em] ?? 0) > 0).map(em => (
+              <TouchableOpacity
+                key={em}
+                style={[styles.reactionPill, myRxns.includes(em) && styles.reactionPillMine]}
+                onPress={function () { handleCommentReact(c.id, em); }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.reactionPillEmoji}>{em}</Text>
+                <Text style={[styles.reactionPillCount, myRxns.includes(em) && styles.reactionPillCountMine]}>
+                  {rxns[em]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
         </View>
       </View>
     );
@@ -992,11 +1111,16 @@ export default function PostCard(props: Props) {
 
       {/* ── Action bar ──────────────────────────────────────────────────── */}
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleLikePress} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={handleLikePress}
+          activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 8 }}
+        >
           <Animated.View style={{ transform: [{ scale: likeScaleAnim }] }}>
             <Ionicons
               name={localLiked ? 'heart' : 'heart-outline'}
-              size={22}
+              size={26}
               color={localLiked ? '#e74c3c' : '#666'}
             />
           </Animated.View>
@@ -1005,11 +1129,15 @@ export default function PostCard(props: Props) {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionBtn} onPress={handleOpenComments}>
+        <TouchableOpacity
+          style={styles.actionBtn}
+          onPress={handleOpenComments}
+          hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
+        >
           <View style={styles.commentIconWrap}>
             <Ionicons
               name={localCommentCount > 0 ? 'chatbubble' : 'chatbubble-outline'}
-              size={20}
+              size={24}
               color={localCommentCount > 0 ? '#4fc3f7' : '#666'}
             />
             {localCommentCount > 0 && (
@@ -1191,7 +1319,7 @@ const styles = StyleSheet.create({
   captionWrap: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 },
   caption: { color: '#ddd', fontSize: 14, lineHeight: 21 },
   actions: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#252540' },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', marginRight: 20 },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', marginRight: 20, paddingVertical: 8, paddingHorizontal: 4 },
   actionCount: { color: '#888', fontSize: 13, marginLeft: 5, fontWeight: '500' },
   actionCountLiked: { color: '#e74c3c' },
   actionCountComment: { color: '#4fc3f7' },
@@ -1258,7 +1386,7 @@ const styles = StyleSheet.create({
   commentMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   commentTime: { color: '#555', fontSize: 11 },
   commentEdited: { color: '#444', fontSize: 11 },
-  commentLikeBtn: { flexDirection: 'row', alignItems: 'center', marginLeft: 10, gap: 3 } as any,
+  commentLikeBtn: { flexDirection: 'row', alignItems: 'center', marginLeft: 10, gap: 3, paddingVertical: 4, paddingHorizontal: 4 } as any,
   commentLikeCount: { color: '#666', fontSize: 11 },
   // ── Reply styles ────────────────────────────────────────
   replyRow: {
@@ -1315,7 +1443,70 @@ const styles = StyleSheet.create({
   cancelEditBtn: { backgroundColor: '#252540' },
   editCommentBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 
-  // tags
+  // ── Emoji Reactions ─────────────────────────────────────────────────────
+  reactionPickerWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a2e',
+    borderRadius: 24,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 6,
+    alignSelf: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 6,
+  } as any,
+  reactionPickerBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 2,
+  },
+  reactionPickerBtnActive: {
+    backgroundColor: 'rgba(255,69,0,0.25)',
+  },
+  reactionPickerEmoji: { fontSize: 22 },
+  reactionPickerClose: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#252540',
+    marginLeft: 4,
+  },
+  reactionPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 4,
+    marginBottom: 2,
+    paddingHorizontal: 2,
+  } as any,
+  reactionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e1e3a',
+    borderRadius: 12,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: '#252550',
+  } as any,
+  reactionPillMine: {
+    backgroundColor: 'rgba(255,69,0,0.18)',
+    borderColor: '#ff4500',
+  },
+  reactionPillEmoji: { fontSize: 13 },
+  reactionPillCount: { color: '#888', fontSize: 11, fontWeight: '600' },
+  reactionPillCountMine: { color: '#ff7040' },
+  // ── tags ─────────────────────────────────────────────────────────────────
   postTagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
