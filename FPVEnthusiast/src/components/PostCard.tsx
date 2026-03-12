@@ -606,12 +606,16 @@ export default function PostCard(props: Props) {
   const handleSubmitComment = useCallback(async function () {
     const text = newComment.trim();
     if (!text || !currentUserId || submittingComment) return;
-    commentInputRef.current?.blur();
+
+    // ── Clear input + dismiss keyboard IMMEDIATELY so button goes grey on first tap ──
+    setNewComment('');
+    Keyboard.dismiss();
     setSubmittingComment(true);
     setLocalCommentCount(function (n) { return n + 1; });
     const parentId = replyingTo?.id ?? null;
-    const replyTarget = replyingTo;        // capture before clear
-    setReplyingTo(null);                   // clear banner immediately
+    const replyTarget = replyingTo;
+    setReplyingTo(null);
+
     try {
       const r = await supabase.from('comments')
         .insert({ post_id: post.id, user_id: currentUserId, content: text,
@@ -630,9 +634,10 @@ export default function PostCard(props: Props) {
           type: 'comment_reply', post_id: post.id,
         });
       }
-      setNewComment('');
       await fetchComments();
     } catch (err: any) {
+      // On failure put the text back so the user can retry
+      setNewComment(text);
       setLocalCommentCount(function (n) { return Math.max(0, n - 1); });
       console.error('[PostCard] submitComment:', err.message);
     } finally { setSubmittingComment(false); }
