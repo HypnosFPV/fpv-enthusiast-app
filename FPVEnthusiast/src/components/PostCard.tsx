@@ -125,6 +125,7 @@ interface Comment {
   id: string;
   user_id?: string | null;
   post_id?: string | null;
+  parent_id?: string | null;   // null = top-level, set = reply
   content?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -322,7 +323,7 @@ export default function PostCard(props: Props) {
   const [showOwnerMenu, setShowOwnerMenu] = useState(false);
   const [showEditCaption, setShowEditCaption] = useState(false);
   const [editCaptionText, setEditCaptionText] = useState(post.caption || '');
-  const [tagsExpanded, setTagsExpanded]       = useState(false);
+  const [replyingTo, setReplyingTo]           = useState<Comment | null>(null);
   const [commentLikes, setCommentLikes] = useState<Record<string, CommentLikeState>>({});
   const [zoomUri, setZoomUri] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -512,7 +513,8 @@ export default function PostCard(props: Props) {
     try {
       const r = await supabase.from('comments')
         .select('*, users:user_id(id,username,avatar_url)')
-        .eq('post_id', post.id).order('created_at', { ascending: true });
+        .eq('post_id', post.id)
+        .order('created_at', { ascending: true });
       if (r.error) throw r.error;
       const data: Comment[] = r.data || [];
       setComments(data);
@@ -534,13 +536,25 @@ export default function PostCard(props: Props) {
     commentInputRef.current?.blur();
     setSubmittingComment(true);
     setLocalCommentCount(function (n) { return n + 1; });
+    const parentId = replyingTo?.id ?? null;
+    const replyTarget = replyingTo;        // capture before clear
+    setReplyingTo(null);                   // clear banner immediately
     try {
       const r = await supabase.from('comments')
-        .insert({ post_id: post.id, user_id: currentUserId, content: text });
+        .insert({ post_id: post.id, user_id: currentUserId, content: text,
+                  parent_id: parentId ?? undefined });
       if (r.error) throw r.error;
-      if (post.user_id && post.user_id !== currentUserId) {
+      // Notify post owner (if not self and not a reply to someone else)
+      if (!parentId && post.user_id && post.user_id !== currentUserId) {
         void supabase.from('notifications').insert({
           user_id: post.user_id, actor_id: currentUserId, type: 'comment', post_id: post.id,
+        });
+      }
+      // Notify the comment author when replying to their comment
+      if (parentId && replyTarget?.user_id && replyTarget.user_id !== currentUserId) {
+        void supabase.from('notifications').insert({
+          user_id: replyTarget.user_id, actor_id: currentUserId,
+          type: 'comment_reply', post_id: post.id,
         });
       }
       setNewComment('');
@@ -549,7 +563,7 @@ export default function PostCard(props: Props) {
       setLocalCommentCount(function (n) { return Math.max(0, n - 1); });
       console.error('[PostCard] submitComment:', err.message);
     } finally { setSubmittingComment(false); }
-  }, [newComment, currentUserId, submittingComment, post.id, post.user_id, fetchComments]);
+  }, [newComment, currentUserId, submittingComment, replyingTo, post.id, post.user_id, fetchComments]);
 
   const handleEditComment = useCallback(async function (id: string, txt: string) {
     const text = txt.trim();
@@ -788,16 +802,15 @@ export default function PostCard(props: Props) {
     return null;
   }
 
-  // ── Comment row ───────────────────────────────────────────────────────────
-  function renderComment(info: { item: Comment }) {
-    const c = info.item;
+  // ── Single comment bubble (shared by top-level and replies) ──────────────
+  function renderCommentBubble(c: Comment, isReply: boolean) {
     const isMine = !!currentUserId && currentUserId === c.user_id;
     const edited = c.updated_at && c.created_at && c.updated_at !== c.created_at;
     const lk = commentLikes[c.id] ?? { liked: false, count: 0 };
 
     if (editingCommentId === c.id) {
       return (
-        <View style={styles.commentRow}>
+        <View style={[styles.commentRow, isReply && styles.replyRow]}>
           <TextInput style={styles.editCommentInput} value={editingCommentText} onChangeText={setEditingCommentText} multiline autoFocus />
           <View style={styles.editCommentActions}>
             <TouchableOpacity onPress={function () { handleEditComment(c.id, editingCommentText); }} style={styles.editCommentBtn}>
@@ -812,11 +825,13 @@ export default function PostCard(props: Props) {
     }
 
     return (
-      <View style={styles.commentRow}>
+      <View key={c.id} style={[styles.commentRow, isReply && styles.replyRow]}>
+        {isReply && <View style={styles.replyThreadLine} />}
         <View style={styles.commentAvatarWrap}>
           {c.users?.avatar_url
-            ? <Image source={{ uri: c.users.avatar_url }} style={styles.commentAvatarImg} />
-            : <View style={styles.commentAvatarFallback}>
+            ? <Image source={{ uri: c.users.avatar_url }}
+                     style={isReply ? styles.replyAvatarImg : styles.commentAvatarImg} />
+            : <View style={[styles.commentAvatarFallback, isReply && styles.replyAvatarFallback]}>
                 <Text style={styles.commentAvatarInitial}>{(c.users?.username || '?')[0].toUpperCase()}</Text>
               </View>
           }
@@ -843,8 +858,36 @@ export default function PostCard(props: Props) {
               <Ionicons name={lk.liked ? 'heart' : 'heart-outline'} size={12} color={lk.liked ? '#e74c3c' : '#666'} />
               {lk.count > 0 ? <Text style={styles.commentLikeCount}>{lk.count}</Text> : null}
             </TouchableOpacity>
+            {/* Reply button — only on top-level comments */}
+            {!isReply && (
+              <TouchableOpacity
+                style={styles.replyBtn}
+                onPress={function () {
+                  setReplyingTo(c);
+                  // Small delay so the banner renders before keyboard opens
+                  setTimeout(function () { commentInputRef.current?.focus(); }, 80);
+                }}
+              >
+                <Ionicons name="return-down-forward-outline" size={12} color="#4fc3f7" />
+                <Text style={styles.replyBtnText}>Reply</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
+      </View>
+    );
+  }
+
+  // ── Comment row — renders parent + any replies below it ───────────────────
+  function renderComment(info: { item: Comment }) {
+    const c = info.item;
+    // Only render top-level comments here; replies are rendered inline below
+    if (c.parent_id) return null;
+    const replies = comments.filter(function (r) { return r.parent_id === c.id; });
+    return (
+      <View>
+        {renderCommentBubble(c, false)}
+        {replies.map(function (reply) { return renderCommentBubble(reply, true); })}
       </View>
     );
   }
@@ -855,6 +898,23 @@ export default function PostCard(props: Props) {
     const hasText = newComment.trim().length > 0;
     return (
       <View style={[styles.commentInputRow, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+        {/* Replying-to banner */}
+        {replyingTo && (
+          <View style={styles.replyingToBanner}>
+            <Ionicons name="return-down-forward-outline" size={12} color="#4fc3f7" style={{ marginRight: 4 }} />
+            <Text style={styles.replyingToText} numberOfLines={1}>
+              Replying to{' '}
+              <Text style={styles.replyingToName}>@{replyingTo.users?.username || 'Unknown'}</Text>
+            </Text>
+            <TouchableOpacity
+              onPress={function () { setReplyingTo(null); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ marginLeft: 'auto' } as any}
+            >
+              <Ionicons name="close-circle" size={15} color="#555" />
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={styles.commentInputInner}>
           <MentionTextInput
             containerStyle={styles.commentInputWrap}
@@ -912,53 +972,17 @@ export default function PostCard(props: Props) {
         ? <View style={styles.captionWrap}><MentionText text={post.caption ?? ''} style={styles.caption} /></View>
         : null}
 
-      {/* ── Tags (collapsible) ──────────────────────────────────────────── */}
+      {/* ── Tags ─────────────────────────────────────────────────────────── */}
       {post.tags && post.tags.length > 0 && (
-        <View>
-          {/* Toggle row — always visible */}
-          <TouchableOpacity
-            style={styles.tagToggleRow}
-            onPress={() => setTagsExpanded(prev => !prev)}
-            activeOpacity={0.75}
-          >
-            <View style={styles.tagTogglePill}>
-              <Ionicons
-                name="pricetag-outline"
-                size={11}
-                color="#ff4500"
-                style={{ marginRight: 3 }}
-              />
-              {!tagsExpanded && (
-                <Text style={styles.tagTogglePillText} numberOfLines={1}>
-                  {post.tags.slice(0, 2).join(' ')}
-                  {post.tags.length > 2 ? ` +${post.tags.length - 2}` : ''}
-                </Text>
-              )}
-              {tagsExpanded && (
-                <Text style={styles.tagTogglePillText}>Tags</Text>
-              )}
-              <Ionicons
-                name={tagsExpanded ? 'chevron-up' : 'chevron-down'}
-                size={12}
-                color="#888"
-                style={{ marginLeft: 4 }}
-              />
-            </View>
-          </TouchableOpacity>
-
-          {/* Expanded tag grid */}
-          {tagsExpanded && (
-            <View style={styles.postTagsRow}>
-              {post.tags.map(tag => {
-                const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % PC_TAG_COLORS.length];
-                return (
-                  <View key={tag} style={[styles.postTag, { backgroundColor: TC + '1a', borderColor: TC + '55' }]}>
-                    <Text style={[styles.postTagText, { color: TC }]}>{tag}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          )}
+        <View style={styles.postTagsRow}>
+          {post.tags.map(tag => {
+            const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % PC_TAG_COLORS.length];
+            return (
+              <View key={tag} style={[styles.postTag, { backgroundColor: TC + '1a', borderColor: TC + '55' }]}>
+                <Text style={[styles.postTagText, { color: TC }]}>{tag}</Text>
+              </View>
+            );
+          })}
         </View>
       )}
 
@@ -1161,6 +1185,34 @@ const styles = StyleSheet.create({
   commentEdited: { color: '#444', fontSize: 11 },
   commentLikeBtn: { flexDirection: 'row', alignItems: 'center', marginLeft: 10, gap: 3 } as any,
   commentLikeCount: { color: '#666', fontSize: 11 },
+  // ── Reply styles ────────────────────────────────────────
+  replyRow: {
+    paddingLeft: 42,    // indent replies under parent
+    paddingTop: 6,
+  },
+  replyThreadLine: {
+    position: 'absolute',
+    left: 54,
+    top: 0,
+    bottom: 8,
+    width: 1.5,
+    backgroundColor: '#2a2a4a',
+  },
+  replyAvatarImg: { width: 26, height: 26, borderRadius: 13 },
+  replyAvatarFallback: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#1e1e3a', alignItems: 'center', justifyContent: 'center' },
+  replyBtn: { flexDirection: 'row', alignItems: 'center', marginLeft: 10, gap: 3 } as any,
+  replyBtnText: { color: '#4fc3f7', fontSize: 11, fontWeight: '600' },
+  replyingToBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#12122a',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#1e1e3a',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  } as any,
+  replyingToText: { color: '#888', fontSize: 12, flex: 1 },
+  replyingToName: { color: '#4fc3f7', fontWeight: '700' },
   commentInputRow: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#1e1e3a', backgroundColor: '#0f0f23', paddingTop: 8, paddingHorizontal: 12 },
   commentInputInner: { flexDirection: 'row', alignItems: 'flex-end' },
   commentInputWrap: { flex: 1, marginRight: 8 },
@@ -1207,30 +1259,5 @@ const styles = StyleSheet.create({
   postTagText: {
     fontSize: 11,
     fontWeight: '700',
-  },
-  // tag toggle
-  tagToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingBottom: 4,
-    paddingTop: 2,
-  },
-  tagTogglePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1e1e1e',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#333',
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    maxWidth: 240,
-  },
-  tagTogglePillText: {
-    color: '#aaa',
-    fontSize: 11,
-    fontWeight: '600',
-    flexShrink: 1,
   },
 });
