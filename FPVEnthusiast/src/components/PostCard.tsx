@@ -121,6 +121,8 @@ interface PostData {
   users?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
 }
 
+const COMMENTS_PAGE = 10; // how many top-level threads to show at once
+
 interface Comment {
   id: string;
   user_id?: string | null;
@@ -311,6 +313,7 @@ export default function PostCard(props: Props) {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsPage, setCommentsPage]       = useState(1); // pages of COMMENTS_PAGE threads
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
 
@@ -526,6 +529,7 @@ export default function PostCard(props: Props) {
   }, [post.id, fetchCommentLikes]);
 
   const handleOpenComments = useCallback(function () {
+    setCommentsPage(1);   // always start at newest when reopening
     setShowComments(true);
     fetchComments();
   }, [fetchComments]);
@@ -1002,8 +1006,26 @@ export default function PostCard(props: Props) {
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.actionBtn} onPress={handleOpenComments}>
-          <Ionicons name="chatbubble-outline" size={20} color="#666" />
-          <Text style={styles.actionCount}>{localCommentCount}</Text>
+          <View style={styles.commentIconWrap}>
+            <Ionicons
+              name={localCommentCount > 0 ? 'chatbubble' : 'chatbubble-outline'}
+              size={20}
+              color={localCommentCount > 0 ? '#4fc3f7' : '#666'}
+            />
+            {localCommentCount > 0 && (
+              <View style={styles.commentCountBadge}>
+                <Text style={styles.commentCountBadgeText}>
+                  {localCommentCount > 99 ? '99+' : localCommentCount}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={[
+            styles.actionCount,
+            localCommentCount > 0 && styles.actionCountComment,
+          ]}>
+            {localCommentCount}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -1024,22 +1046,44 @@ export default function PostCard(props: Props) {
               {commentsLoading ? (
                 <View style={styles.loadingWrap}><ActivityIndicator color="#4fc3f7" size="large" /></View>
               ) : (
-                <FlatList
-                  ref={flatListRef}
-                  data={comments}
-                  keyExtractor={function (c) { return c.id; }}
-                  keyboardShouldPersistTaps="always"
-                  renderItem={renderComment}
-                  style={styles.commentsList}
-                  contentContainerStyle={styles.commentsListContent}
-                  ListEmptyComponent={
-                    <View style={styles.emptyWrap}>
-                      <Ionicons name="chatbubbles-outline" size={40} color="#333" />
-                      <Text style={styles.noComments}>No comments yet</Text>
-                      <Text style={styles.noCommentsSub}>Be the first to comment!</Text>
-                    </View>
-                  }
-                />
+                {(() => {
+                  const topLevel = comments.filter(function (c) { return !c.parent_id; });
+                  const visible  = topLevel.slice(
+                    Math.max(0, topLevel.length - commentsPage * COMMENTS_PAGE)
+                  );
+                  const hasMore  = topLevel.length > commentsPage * COMMENTS_PAGE;
+                  return (
+                    <FlatList
+                      ref={flatListRef}
+                      data={visible}
+                      keyExtractor={function (c) { return c.id; }}
+                      keyboardShouldPersistTaps="always"
+                      renderItem={renderComment}
+                      style={styles.commentsList}
+                      contentContainerStyle={styles.commentsListContent}
+                      ListHeaderComponent={
+                        hasMore ? (
+                          <TouchableOpacity
+                            style={styles.loadMoreBtn}
+                            onPress={function () { setCommentsPage(function (p) { return p + 1; }); }}
+                          >
+                            <Ionicons name="chevron-up-outline" size={14} color="#4fc3f7" />
+                            <Text style={styles.loadMoreText}>
+                              Load {Math.min(COMMENTS_PAGE, topLevel.length - commentsPage * COMMENTS_PAGE)} older comments
+                            </Text>
+                          </TouchableOpacity>
+                        ) : null
+                      }
+                      ListEmptyComponent={
+                        <View style={styles.emptyWrap}>
+                          <Ionicons name="chatbubbles-outline" size={40} color="#333" />
+                          <Text style={styles.noComments}>No comments yet</Text>
+                          <Text style={styles.noCommentsSub}>Be the first to comment!</Text>
+                        </View>
+                      }
+                    />
+                  );
+                })()}
               )}
             </View>
             <View>{renderCommentInput()}</View>
@@ -1150,6 +1194,37 @@ const styles = StyleSheet.create({
   actionBtn: { flexDirection: 'row', alignItems: 'center', marginRight: 20 },
   actionCount: { color: '#888', fontSize: 13, marginLeft: 5, fontWeight: '500' },
   actionCountLiked: { color: '#e74c3c' },
+  actionCountComment: { color: '#4fc3f7' },
+  commentIconWrap: { position: 'relative' },
+  commentCountBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -6,
+    minWidth: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#ff4500',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  commentCountBadgeText: { color: '#fff', fontSize: 8, fontWeight: '800' },
+  // load-more button
+  loadMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginTop: 6,
+    marginBottom: 2,
+    borderRadius: 10,
+    backgroundColor: '#12122a',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#1e1e3a',
+  } as any,
+  loadMoreText: { color: '#4fc3f7', fontSize: 12, fontWeight: '600' },
   // ── double-tap wrapper & overlay ──────────────────────────────────────────
   mediaTapWrapper: { position: 'relative' },
   overlayHeartContainer: {
@@ -1187,17 +1262,17 @@ const styles = StyleSheet.create({
   commentLikeCount: { color: '#666', fontSize: 11 },
   // ── Reply styles ────────────────────────────────────────
   replyRow: {
-    paddingLeft: 42,    // indent replies under parent
-    paddingTop: 6,
+    paddingLeft: 42,
+    paddingTop: 4,
+    marginLeft: 14,          // align thread line with parent avatar centre
+    borderLeftWidth: 1.5,
+    borderLeftColor: '#2a2a4a',
+    borderStyle: 'solid',
   },
   replyThreadLine: {
-    position: 'absolute',
-    left: 54,
-    top: 0,
-    bottom: 8,
-    width: 1.5,
-    backgroundColor: '#2a2a4a',
-  },
+    // kept for backwards compat but hidden — border on replyRow does the job
+    display: 'none',
+  } as any,
   replyAvatarImg: { width: 26, height: 26, borderRadius: 13 },
   replyAvatarFallback: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#1e1e3a', alignItems: 'center', justifyContent: 'center' },
   replyBtn: { flexDirection: 'row', alignItems: 'center', marginLeft: 10, gap: 3 } as any,
