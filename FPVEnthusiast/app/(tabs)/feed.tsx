@@ -229,7 +229,10 @@ export default function FeedScreen() {
         setSelectedThumb(null);
         setThumbsLoading(true);
         try {
-          const durationMs = (asset.duration ?? 5) * 1000;
+          // expo-image-picker returns duration in milliseconds already;
+          // do NOT multiply by 1000 (that was the bug causing all frames
+          // to be identical — every sample landed past the video end).
+          const durationMs = asset.duration ?? 5000; // default 5 s if unknown
           // 24 frames; skip first 2% and last 2% (usually black/blurry)
           const COUNT = 24;
           const frames: string[] = [];
