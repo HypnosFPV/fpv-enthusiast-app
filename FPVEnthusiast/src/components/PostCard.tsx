@@ -1046,7 +1046,7 @@ export default function PostCard(props: Props) {
               {commentsLoading ? (
                 <View style={styles.loadingWrap}><ActivityIndicator color="#4fc3f7" size="large" /></View>
               ) : (
-                {(() => {
+                (() => {
                   const topLevel = comments.filter(function (c) { return !c.parent_id; });
                   const visible  = topLevel.slice(
                     Math.max(0, topLevel.length - commentsPage * COMMENTS_PAGE)
@@ -1083,7 +1083,7 @@ export default function PostCard(props: Props) {
                       }
                     />
                   );
-                })()}
+                })()
               )}
             </View>
             <View>{renderCommentInput()}</View>
