@@ -1,7 +1,7 @@
 // app/(tabs)/feed.tsx
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, Pressable,
   Modal, TextInput, ActivityIndicator, Alert,
   RefreshControl, StatusBar, Image,
   Animated, Easing, ScrollView, Platform, Keyboard,
@@ -180,6 +180,7 @@ export default function FeedScreen() {
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [mediaBase64, setMediaBase64] = useState<string | null>(null);
   const [videoThumbFrames, setVideoThumbFrames] = useState<string[]>([]);
+  const [videoThumbTimes, setVideoThumbTimes]   = useState<number[]>([]);
   const [selectedThumb, setSelectedThumb] = useState<string | null>(null);
   const [thumbsLoading, setThumbsLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -197,6 +198,7 @@ export default function FeedScreen() {
     setShowTagSuggestions(false);
     setAcSelectedIdx(-1);
     setVideoThumbFrames([]);
+    setVideoThumbTimes([]);
     setSelectedThumb(null);
     setThumbsLoading(false);
   };
@@ -220,27 +222,34 @@ export default function FeedScreen() {
       setMediaType(isVideo ? 'video' : 'image');
       setMediaBase64(isVideo ? null : (asset.base64 ?? null));
 
-      // ── Generate 12 thumbnail frames spread across the full clip ──────
+      // ── Generate 24 thumbnail frames spread across the full clip ──────
       if (isVideo) {
         setVideoThumbFrames([]);
+        setVideoThumbTimes([]);
         setSelectedThumb(null);
         setThumbsLoading(true);
         try {
           const durationMs = (asset.duration ?? 5) * 1000;
-          const COUNT = 12;
+          // 24 frames; skip first 2% and last 2% (usually black/blurry)
+          const COUNT = 24;
           const frames: string[] = [];
+          const times:  number[] = [];
           for (let i = 0; i < COUNT; i++) {
             const pct  = 0.02 + (0.96 * i) / (COUNT - 1);
             const time = Math.max(0, Math.floor(durationMs * pct));
             try {
               const { uri } = await VideoThumbnails.getThumbnailAsync(asset.uri, { time });
               frames.push(uri);
+              times.push(time);
             } catch {
-              // skip failed frame, keep generating
+              // skip failed frame
             }
           }
           setVideoThumbFrames(frames);
-          setSelectedThumb(frames[0] ?? null);
+          setVideoThumbTimes(times);
+          // Auto-select the frame closest to 33% (often a good establishing shot)
+          const autoIdx = Math.round(frames.length * 0.33);
+          setSelectedThumb(frames[autoIdx] ?? frames[0] ?? null);
         } catch (e) {
           console.warn('[feed] thumbnail generation failed:', e);
         } finally {
@@ -482,11 +491,17 @@ export default function FeedScreen() {
 
             {modalMode === 'media' ? (
               <>
+                {/* ── Media preview + pick button ─────────────────────── */}
                 <TouchableOpacity style={styles.mediaPicker} onPress={pickMedia}>
                   {mediaUri ? (
                     mediaType === 'video' ? (
                       selectedThumb ? (
-                        <Image source={{ uri: selectedThumb }} style={styles.mediaPreview} />
+                        /* key forces Image to re-mount when selection changes */
+                        <Image
+                          key={selectedThumb}
+                          source={{ uri: selectedThumb }}
+                          style={styles.mediaPreview}
+                        />
                       ) : (
                         <View style={styles.mediaPlaceholder}>
                           <Ionicons name="videocam" size={40} color="#ff4500" />
@@ -505,32 +520,89 @@ export default function FeedScreen() {
                     </View>
                   )}
                 </TouchableOpacity>
+                {/* Change video shortcut shown once a video is loaded */}
+                {mediaType === 'video' && mediaUri && !thumbsLoading && (
+                  <TouchableOpacity style={styles.changeVideoBtn} onPress={pickMedia}>
+                    <Ionicons name="swap-horizontal-outline" size={13} color="#888" />
+                    <Text style={styles.changeVideoBtnText}>Change video</Text>
+                  </TouchableOpacity>
+                )}
 
                 {mediaType === 'video' && (
                   <View style={styles.thumbPickerWrap}>
-                    <Text style={styles.thumbPickerLabel}>Choose thumbnail frame:</Text>
                     {thumbsLoading ? (
                       <View style={styles.thumbLoadingRow}>
                         <ActivityIndicator color="#ff4500" size="small" />
-                        <Text style={styles.thumbLoadingText}>Generating 12 frames…</Text>
+                        <Text style={styles.thumbLoadingText}>Scanning video for best frames…</Text>
                       </View>
                     ) : videoThumbFrames.length > 0 ? (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbPickerRow}>
-                        {videoThumbFrames.map((uri, i) => (
-                          <TouchableOpacity
-                            key={i}
-                            onPress={() => setSelectedThumb(uri)}
-                            style={[styles.thumbFrame, selectedThumb === uri && styles.thumbFrameSelected]}
-                          >
-                            <Image source={{ uri }} style={styles.thumbFrameImg} />
-                            {selectedThumb === uri && (
-                              <View style={styles.thumbCheckOverlay}>
-                                <Ionicons name="checkmark-circle" size={22} color="#ff4500" />
+                      <>
+                        {/* Label row with selected-time readout */}
+                        <View style={styles.thumbLabelRow}>
+                          <Text style={styles.thumbPickerLabel}>Choose thumbnail:</Text>
+                          {selectedThumb && videoThumbTimes.length > 0 && (() => {
+                            const selIdx = videoThumbFrames.indexOf(selectedThumb);
+                            const ms = selIdx >= 0 ? (videoThumbTimes[selIdx] ?? 0) : 0;
+                            const ss = String(Math.floor((ms / 1000) % 60)).padStart(2, '0');
+                            const mm = String(Math.floor(ms / 60000)).padStart(2, '0');
+                            return (
+                              <Text style={styles.thumbSelectedTime}>{mm}:{ss}</Text>
+                            );
+                          })()}
+                        </View>
+
+                        {/*
+                         * FlatList + Pressable instead of ScrollView + TouchableOpacity.
+                         * Fixes iOS gesture-recogniser conflict where the outer vertical
+                         * ScrollView swallows taps on children of an inner horizontal list.
+                         */}
+                        <FlatList
+                          data={videoThumbFrames}
+                          keyExtractor={(_, i) => `thumb-${i}`}
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={styles.thumbPickerRow}
+                          keyboardShouldPersistTaps="always"
+                          renderItem={({ item: uri, index: i }) => {
+                            const isSelected = selectedThumb === uri;
+                            // Suggest frames near 25%, 50%, 75% of the clip
+                            const relPos = videoThumbFrames.length > 1
+                              ? i / (videoThumbFrames.length - 1)
+                              : 0;
+                            const isSuggested =
+                              Math.abs(relPos - 0.25) < 0.04 ||
+                              Math.abs(relPos - 0.50) < 0.04 ||
+                              Math.abs(relPos - 0.75) < 0.04;
+                            const ms = videoThumbTimes[i] ?? 0;
+                            const ss = String(Math.floor((ms / 1000) % 60)).padStart(2, '0');
+                            const mm = String(Math.floor(ms / 60000)).padStart(2, '0');
+                            return (
+                              <View style={styles.thumbFrameWrap}>
+                                {isSuggested && (
+                                  <Text style={styles.thumbSuggestBadge}>⭐</Text>
+                                )}
+                                <Pressable
+                                  onPress={() => setSelectedThumb(uri)}
+                                  style={[
+                                    styles.thumbFrame,
+                                    isSelected && styles.thumbFrameSelected,
+                                    isSuggested && !isSelected && styles.thumbFrameSuggested,
+                                  ]}
+                                >
+                                  <Image source={{ uri }} style={styles.thumbFrameImg} />
+                                  {isSelected && (
+                                    <View style={styles.thumbCheckOverlay}>
+                                      <Ionicons name="checkmark-circle" size={22} color="#ff4500" />
+                                    </View>
+                                  )}
+                                </Pressable>
+                                <Text style={styles.thumbTimeLabel}>{mm}:{ss}</Text>
                               </View>
-                            )}
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
+                            );
+                          }}
+                        />
+                        <Text style={styles.thumbHint}>⭐ = suggested best frame</Text>
+                      </>
                     ) : null}
                   </View>
                 )}
