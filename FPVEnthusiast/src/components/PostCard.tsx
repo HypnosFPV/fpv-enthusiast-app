@@ -967,12 +967,25 @@ export default function PostCard(props: Props) {
                 style={styles.replyBtn}
                 onPress={function () {
                   setReplyingTo(c);
-                  // Small delay so the banner renders before keyboard opens
                   setTimeout(function () { commentInputRef.current?.focus(); }, 80);
                 }}
               >
                 <Ionicons name="return-down-forward-outline" size={12} color="#4fc3f7" />
                 <Text style={styles.replyBtnText}>Reply</Text>
+              </TouchableOpacity>
+            )}
+            {/* React button — always visible, opens emoji picker */}
+            {currentUserId && (
+              <TouchableOpacity
+                style={styles.reactBtn}
+                onPress={function () { setReactionPickerForId(reactionPickerForId === c.id ? null : c.id); }}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              >
+                <Text style={styles.reactBtnEmoji}>
+                  {(myReactions[c.id] ?? []).length > 0
+                    ? (myReactions[c.id])[0]
+                    : '😊'}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1096,48 +1109,45 @@ export default function PostCard(props: Props) {
 
       {/* ── Tags (collapsible) ──────────────────────────────────────────── */}
       {post.tags && post.tags.length > 0 && (
-        <View>
-          {/* Toggle pill */}
+        <View style={styles.tagsSection}>
+          {/* Collapsed bar: icon + first tag names inline + count + chevron */}
           <TouchableOpacity
-            style={styles.tagsToggleRow}
+            style={styles.tagsCollapseBar}
             onPress={function () { setTagsExpanded(function (v) { return !v; }); }}
-            activeOpacity={0.7}
+            activeOpacity={0.75}
           >
-            <Ionicons name="pricetag-outline" size={12} color="#888" style={{ marginRight: 4 }} />
-            {!tagsExpanded && (
-              <>
-                {post.tags.slice(0, 2).map(function (tag) {
-                  const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce(function (a, c) { return a + c.charCodeAt(0); }, 0)) % PC_TAG_COLORS.length];
-                  return (
-                    <View key={tag} style={[styles.postTag, { backgroundColor: TC + '1a', borderColor: TC + '55', marginRight: 4 }]}>
-                      <Text style={[styles.postTagText, { color: TC }]}>{tag}</Text>
-                    </View>
-                  );
-                })}
-                {post.tags.length > 2 && (
-                  <Text style={styles.tagsMoreLabel}>+{post.tags.length - 2} more</Text>
-                )}
-              </>
-            )}
-            {tagsExpanded && (
-              <Text style={styles.tagsToggleLabel}>Tags</Text>
-            )}
+            <Ionicons name="pricetag-outline" size={11} color="#555" />
+            <View style={styles.tagsInlineList}>
+              {post.tags.slice(0, tagsExpanded ? 0 : 3).map(function (tag) {
+                const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce(function (a, c) { return a + c.charCodeAt(0); }, 0)) % PC_TAG_COLORS.length];
+                return (
+                  <Text key={tag} style={[styles.tagsInlineTag, { color: TC }]}>
+                    #{tag}
+                  </Text>
+                );
+              })}
+              {!tagsExpanded && post.tags.length > 3 && (
+                <Text style={styles.tagsInlineMore}>+{post.tags.length - 3}</Text>
+              )}
+              {tagsExpanded && (
+                <Text style={styles.tagsExpandedLabel}>Tags</Text>
+              )}
+            </View>
             <Ionicons
-              name={tagsExpanded ? 'chevron-up' : 'chevron-down'}
-              size={13}
-              color="#888"
-              style={{ marginLeft: 'auto' } as any}
+              name={tagsExpanded ? 'chevron-up-outline' : 'chevron-down-outline'}
+              size={12}
+              color="#444"
             />
           </TouchableOpacity>
 
-          {/* Expanded tag list */}
+          {/* Expanded chips grid */}
           {tagsExpanded && (
             <View style={styles.postTagsRow}>
               {post.tags.map(function (tag) {
                 const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce(function (a, c) { return a + c.charCodeAt(0); }, 0)) % PC_TAG_COLORS.length];
                 return (
-                  <View key={tag} style={[styles.postTag, { backgroundColor: TC + '1a', borderColor: TC + '55' }]}>
-                    <Text style={[styles.postTagText, { color: TC }]}>{tag}</Text>
+                  <View key={tag} style={[styles.postTag, { backgroundColor: TC + '18', borderColor: TC + '44' }]}>
+                    <Text style={[styles.postTagText, { color: TC }]}>#{tag}</Text>
                   </View>
                 );
               })}
@@ -1543,24 +1553,64 @@ const styles = StyleSheet.create({
   reactionPillEmoji: { fontSize: 13 },
   reactionPillCount: { color: '#888', fontSize: 11, fontWeight: '600' },
   reactionPillCountMine: { color: '#ff7040' },
-  // ── tags ─────────────────────────────────────────────────────────────────
+  // ── Tags ──────────────────────────────────────────────────────────────────
+  tagsSection: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#1a1a30',
+  },
+  tagsCollapseBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    gap: 6,
+  } as any,
+  tagsInlineList: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
+    gap: 6,
+    overflow: 'hidden',
+  } as any,
+  tagsInlineTag: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tagsInlineMore: {
+    fontSize: 11,
+    color: '#555',
+    fontWeight: '500',
+  },
+  tagsExpandedLabel: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '600',
+  },
   postTagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingBottom: 8,
+    paddingHorizontal: 14,
+    paddingTop: 2,
+    paddingBottom: 10,
   },
   postTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   postTagText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
+  // ── React button ─────────────────────────────────────────────────────────
+  reactBtn: {
+    marginLeft: 8,
+    paddingHorizontal: 2,
+  },
+  reactBtnEmoji: { fontSize: 13 },
 });
