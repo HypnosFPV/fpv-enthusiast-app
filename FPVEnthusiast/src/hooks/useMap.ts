@@ -447,12 +447,32 @@ export function useMap(userId?: string) {
     }
   }, [userId, events]);
 
+  // ── Dedup check: any spot within radiusMiles, ALL types ──────────────────
+  const checkNearbySpots = useCallback(async (
+    lat: number, lng: number, radiusMiles: number,
+  ): Promise<{ tooClose: boolean; nearestName?: string }> => {
+    // Use a bounding box then precise haversine — queries ALL spot types
+    const { minLat, maxLat, minLng, maxLng } = boundingBox(lat, lng, radiusMiles);
+    const { data, error } = await supabase
+      .from('fly_spots')
+      .select('id, name, latitude, longitude')
+      .gte('latitude',  minLat).lte('latitude',  maxLat)
+      .gte('longitude', minLng).lte('longitude', maxLng);
+    if (error || !data) return { tooClose: false };
+    for (const s of data) {
+      if (haversineDistance(lat, lng, s.latitude, s.longitude) < radiusMiles) {
+        return { tooClose: true, nearestName: s.name };
+      }
+    }
+    return { tooClose: false };
+  }, []);
+
   return {
     spots, events, comments, loading,
     mgpSyncing, mgpSyncCount,
     fetchSpots, fetchEvents, fetchComments,
     syncMultiGPEvents, syncChapterRaces,
-    addSpot, voteSpot, addComment, reportSpot,
+    addSpot, voteSpot, addComment, reportSpot, checkNearbySpots,
     addEvent, toggleRsvp,
     deleteSpot, deleteEvent,
     fetchNewNearbyEvents,

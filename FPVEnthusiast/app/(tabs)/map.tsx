@@ -255,7 +255,7 @@ export default function MapScreen() {
     mgpSyncing, mgpSyncCount,
     fetchSpots, fetchEvents, fetchComments,
     syncMultiGPEvents,
-    addSpot, voteSpot, addComment, reportSpot,
+    addSpot, voteSpot, addComment, reportSpot, checkNearbySpots,
     addEvent, toggleRsvp,
     deleteSpot, deleteEvent,
     fetchNewNearbyEvents,
@@ -643,15 +643,17 @@ export default function MapScreen() {
       }
     }
 
-    // ── 2. Duplicate check — no pin within 800 ft (~0.15 miles) ──────────────
+    // ── 2. Duplicate check — live DB query, ALL spot types, 800 ft (~0.15 mi) ──
     const DEDUP_MILES = 0.15;
-    const tooClose = spots.some(s =>
-      haversineDistance(spotPin.latitude, spotPin.longitude, s.latitude, s.longitude) < DEDUP_MILES
+    const { tooClose, nearestName } = await checkNearbySpots(
+      spotPin.latitude, spotPin.longitude, DEDUP_MILES,
     );
     if (tooClose) {
       Alert.alert(
         'Spot Already Exists',
-        'There is already a pin within 800 feet of this location.\n\nTap the existing pin to comment or vote instead.'
+        nearestName
+          ? `"${nearestName}" is already within 800 feet.\n\nTap the existing pin to comment or vote instead.`
+          : 'There is already a pin within 800 feet of this location.\n\nTap the existing pin to comment or vote instead.'
       );
       return;
     }
