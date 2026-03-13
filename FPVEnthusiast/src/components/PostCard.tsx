@@ -1186,20 +1186,11 @@ export default function PostCard(props: Props) {
           onPress={handleOpenComments}
           hitSlop={{ top: 12, bottom: 12, left: 8, right: 12 }}
         >
-          <View style={styles.commentIconWrap}>
-            <Ionicons
-              name={localCommentCount > 0 ? 'chatbubble' : 'chatbubble-outline'}
-              size={24}
-              color={localCommentCount > 0 ? '#4fc3f7' : '#666'}
-            />
-            {localCommentCount > 0 && (
-              <View style={styles.commentCountBadge}>
-                <Text style={styles.commentCountBadgeText}>
-                  {localCommentCount > 99 ? '99+' : localCommentCount}
-                </Text>
-              </View>
-            )}
-          </View>
+          <Ionicons
+            name={localCommentCount > 0 ? 'chatbubble' : 'chatbubble-outline'}
+            size={24}
+            color={localCommentCount > 0 ? '#4fc3f7' : '#666'}
+          />
           <Text style={[
             styles.actionCount,
             localCommentCount > 0 && styles.actionCountComment,
