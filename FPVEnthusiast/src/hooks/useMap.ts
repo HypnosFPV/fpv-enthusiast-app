@@ -342,7 +342,7 @@ export function useMap(userId?: string) {
       spot_id:     spotId,
       reporter_id: userId,
       reason,
-      detail:      detail ?? null,
+      details:     detail ?? null,
     });
     if (error) {
       // Unique constraint = already reported
@@ -430,17 +430,13 @@ export function useMap(userId?: string) {
     if (evt.user_rsvpd) {
       await supabase.from('event_rsvps').delete()
         .eq('event_id', eventId).eq('user_id', userId);
-      await supabase.from('race_events')
-        .update({ rsvp_count: Math.max(0, evt.rsvp_count - 1) })
-        .eq('id', eventId);
+      // rsvp_count decremented atomically by trg_sync_rsvp_count trigger
       setEvents(prev => prev.map(e => e.id !== eventId ? e : {
         ...e, user_rsvpd: false, rsvp_count: Math.max(0, e.rsvp_count - 1),
       }));
     } else {
       await supabase.from('event_rsvps').insert({ event_id: eventId, user_id: userId });
-      await supabase.from('race_events')
-        .update({ rsvp_count: evt.rsvp_count + 1 })
-        .eq('id', eventId);
+      // rsvp_count incremented atomically by trg_sync_rsvp_count trigger
       setEvents(prev => prev.map(e => e.id !== eventId ? e : {
         ...e, user_rsvpd: true, rsvp_count: e.rsvp_count + 1,
       }));

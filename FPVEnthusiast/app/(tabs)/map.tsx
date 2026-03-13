@@ -437,6 +437,11 @@ export default function MapScreen() {
   const [reportDetail,       setReportDetail]       = useState('');
   const [reportSubmitting,   setReportSubmitting]   = useState(false);
 
+  // ── Community Guidelines modal state ──────────────────────────────────────
+  const [showGuidelinesModal, setShowGuidelinesModal] = useState(false);
+  const [guidelinesPendingAction, setGuidelinesPendingAction] = useState<'spot' | 'event' | null>(null);
+  const [guidelinesChecked, setGuidelinesChecked] = useState(false);
+
   // ── DateTime picker state ────────────────────────────────────────────────
   const [evtStartYear,  setEvtStartYear]  = useState(new Date().getFullYear());
   const [evtStartMonth, setEvtStartMonth] = useState(new Date().getMonth() + 1);
@@ -546,6 +551,43 @@ export default function MapScreen() {
     if (showSpots)  fetchSpots(latitude, longitude, radiusMiles, spotTypeFilters);
     if (showEvents) fetchEvents(latitude, longitude, radiusMiles, eventTypeFilters);
   }, [userLocation, radiusMiles, showSpots, showEvents, spotTypeFilters, eventTypeFilters]);
+
+  // ── Community Guidelines gate ──────────────────────────────────────────────
+  // Called instead of directly opening the spot/event pin-drop mode.
+  // If user has already accepted (stored in AsyncStorage), proceeds immediately.
+  // Otherwise shows the guidelines modal first; on accept it sets the key and
+  // continues with the pending action.
+  const checkGuidelinesAndProceed = useCallback(async (action: 'spot' | 'event') => {
+    if (AsyncStorage) {
+      try {
+        const accepted = await AsyncStorage.getItem('fpv_guidelines_accepted');
+        if (accepted === 'true') {
+          // Already accepted — go straight to pin-drop mode
+          if (action === 'spot') setSpotPinMode(true);
+          else setEvtPinMode(true);
+          return;
+        }
+      } catch {}
+    }
+    // First time — show guidelines
+    setGuidelinesPendingAction(action);
+    setGuidelinesChecked(false);
+    setShowGuidelinesModal(true);
+  }, []);
+
+  const handleGuidelinesAccept = useCallback(async () => {
+    if (!guidelinesChecked) {
+      Alert.alert('Agreement Required', 'Please check the box to confirm you have read and agree to the Community Guidelines.');
+      return;
+    }
+    if (AsyncStorage) {
+      try { await AsyncStorage.setItem('fpv_guidelines_accepted', 'true'); } catch {}
+    }
+    setShowGuidelinesModal(false);
+    if (guidelinesPendingAction === 'spot') setSpotPinMode(true);
+    else if (guidelinesPendingAction === 'event') setEvtPinMode(true);
+    setGuidelinesPendingAction(null);
+  }, [guidelinesChecked, guidelinesPendingAction]);
 
   // ── Map press ────────────────────────────────────────────────────────────
   const handleMapPress = (e: MapPressEvent) => {
@@ -662,7 +704,7 @@ export default function MapScreen() {
     const { data, error } = await addSpot(
       { name, description: desc, spot_type: spotType,
         hazard_level: spotHazard, latitude: spotPin.latitude, longitude: spotPin.longitude },
-      user?.email ?? 'Pilot',
+      (user as any)?.user_metadata?.username ?? (user as any)?.username ?? 'Pilot',
     );
     setSubmitting(false);
     if (error) {
@@ -708,8 +750,12 @@ export default function MapScreen() {
       }
     }
 
-    // ── 3. Event name length ──────────────────────────────────────────────────
+    // ── 3. Event name length + description URL block ───────────────────────────
     if (evtName.trim().length > 80) { Alert.alert('Name too long', 'Max 80 characters.'); return; }
+    if (evtDesc.trim().length > 500) { Alert.alert('Description too long', 'Max 500 characters.'); return; }
+    if (/https?:\/\//i.test(evtDesc.trim())) {
+      Alert.alert('No links allowed', 'URLs are not permitted in event descriptions.'); return;
+    }
 
     // Build ISO strings from picker values
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -731,6 +777,9 @@ export default function MapScreen() {
     const endIso = evtHasEnd
       ? safeIso(`${evtEndYear}-${pad(evtEndMonth)}-${pad(evtEndDay)}T${pad(evtEndHour)}:${pad(evtEndMin)}:00`)
       : '';
+    if (evtHasEnd && endIso && new Date(endIso) <= startDate) {
+      Alert.alert('Invalid End Time', 'End time must be after the start time.'); return;
+    }
     setSubmitting(true);
     const { data, error } = await addEvent({
       name: evtName.trim(), description: evtDesc.trim(), event_type: evtType,
@@ -764,8 +813,15 @@ export default function MapScreen() {
   // ── Comment ───────────────────────────────────────────────────────────────
   const handlePostComment = async () => {
     if (!selectedSpot || !commentText.trim()) return;
+    const trimmed = commentText.trim();
+    if (trimmed.length > 280) {
+      Alert.alert('Too Long', 'Comments are limited to 280 characters.'); return;
+    }
+    if (/https?:\/\//i.test(trimmed)) {
+      Alert.alert('No Links', 'URLs are not allowed in comments.'); return;
+    }
     setPostingComment(true);
-    await addComment(selectedSpot.id, commentText.trim(), isAnonymous);
+    await addComment(selectedSpot.id, trimmed, isAnonymous);
     setCommentText(''); setPostingComment(false);
   };
 
@@ -865,8 +921,16 @@ export default function MapScreen() {
     const typeFilter =
       eventPanelFilter === 'race'   ? RACE_TYPES :
       eventPanelFilter === 'meetup' ? MEETUP_TYPES : ALL_EVENT_TYPES;
-    return events.filter(e => typeFilter.includes(e.event_type));
-  }, [events, eventPanelFilter]);
+    return events
+      .filter(e => typeFilter.includes(e.event_type))
+      .filter(e =>
+        !userLocation ||
+        haversineDistance(
+          userLocation.latitude, userLocation.longitude,
+          e.latitude, e.longitude,
+        ) <= panelDistance,
+      );
+  }, [events, eventPanelFilter, panelDistance, userLocation]);
 
   // Count badges for quick-filter buttons
   const raceCount   = events.filter(e => RACE_TYPES.includes(e.event_type)).length;
@@ -901,6 +965,16 @@ export default function MapScreen() {
         showsUserLocation
         showsMyLocationButton={false}
         onPress={handleMapPress}
+        onRegionChangeComplete={(region) => {
+          if (showAirspace) {
+            loadAirspaceZones(
+              region.latitude  - region.latitudeDelta,
+              region.longitude - region.longitudeDelta,
+              region.latitude  + region.latitudeDelta,
+              region.longitude + region.longitudeDelta,
+            );
+          }
+        }}
       >
         {userLocation && (
           <Circle
@@ -1220,7 +1294,7 @@ export default function MapScreen() {
               {/* Schedule Event button inside panel */}
               <TouchableOpacity
                 style={styles.scheduleBtn}
-                onPress={() => { closePanel(); setTimeout(() => setEvtPinMode(true), 350); }}
+                onPress={() => { closePanel(); setTimeout(() => checkGuidelinesAndProceed('event'), 350); }}
               >
                 <Ionicons name="add" size={15} color="#fff" />
                 <Text style={styles.scheduleBtnText}>Schedule</Text>
@@ -1306,11 +1380,11 @@ export default function MapScreen() {
       {/* ─── FABs ─────────────────────────────────────────────────────────── */}
       {!spotPinMode && !evtPinMode && !showEventsPanel && (
         <View style={styles.fabGroup}>
-          <TouchableOpacity style={[styles.fab, styles.fabEvent]} onPress={() => { setEvtPinMode(true); }}>
+          <TouchableOpacity style={[styles.fab, styles.fabEvent]} onPress={() => checkGuidelinesAndProceed('event')}>
             <Ionicons name="calendar-outline" size={18} color="#fff" />
             <Text style={styles.fabLabel}>Event</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.fab} onPress={() => { setSpotPinMode(true); }}>
+          <TouchableOpacity style={styles.fab} onPress={() => checkGuidelinesAndProceed('spot')}>
             <Ionicons name="add" size={20} color="#fff" />
             <Text style={styles.fabLabel}>Spot</Text>
           </TouchableOpacity>
@@ -1424,7 +1498,7 @@ export default function MapScreen() {
                   <View style={{ gap: 8, marginBottom: 12 }}>
                     <TouchableOpacity
                       style={styles.evtLocBtn}
-                      onPress={() => { setShowAddEvent(false); setTimeout(() => setEvtPinMode(true), 200); }}
+                      onPress={() => { setShowAddEvent(false); setTimeout(() => checkGuidelinesAndProceed('event'), 200); }}
                     >
                       <Ionicons name="map-outline" size={16} color="#ff4500" />
                       <Text style={styles.evtLocBtnText}>Tap map to drop a new pin</Text>
@@ -1771,8 +1845,8 @@ export default function MapScreen() {
               <TouchableOpacity style={styles.reportCancelBtn} onPress={() => setReportModalVisible(false)}>
                 <Text style={{ color: '#888', fontWeight: '600' }}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.reportSubmitBtn} onPress={handleReportSpot} disabled={submitting}>
-                {submitting
+              <TouchableOpacity style={styles.reportSubmitBtn} onPress={handleReportSpot} disabled={reportSubmitting}>
+                {reportSubmitting
                   ? <ActivityIndicator size="small" color="#fff" />
                   : <Text style={{ color: '#fff', fontWeight: '700' }}>Submit Report</Text>
                 }
@@ -1781,6 +1855,108 @@ export default function MapScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ─── Community Guidelines Modal ──────────────────────────────────────── */}
+      <Modal
+        visible={showGuidelinesModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGuidelinesModal(false)}
+      >
+        <View style={styles.guidelinesOverlay}>
+          <View style={styles.guidelinesBox}>
+            {/* Header */}
+            <View style={styles.guidelinesHeader}>
+              <Text style={styles.guidelinesIcon}>📋</Text>
+              <Text style={styles.guidelinesTitle}>Community Guidelines</Text>
+            </View>
+            <Text style={styles.guidelinesSub}>
+              Before adding your first pin, please read and agree to our rules.
+            </Text>
+
+            <ScrollView
+              style={styles.guidelinesScroll}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+            >
+              {/* Section: What Makes a Good Pin */}
+              <View style={styles.guidelinesSection}>
+                <Text style={styles.guidelinesSectionTitle}>✅  What Makes a Good Pin</Text>
+                <Text style={styles.guidelinesBullet}>• Spots must be <Text style={styles.guidelinesEm}>real, flyable locations</Text> you have personally verified or know well.</Text>
+                <Text style={styles.guidelinesBullet}>• Place the pin <Text style={styles.guidelinesEm}>accurately</Text> — within walking distance of the actual flying area.</Text>
+                <Text style={styles.guidelinesBullet}>• Use clear, descriptive names (e.g. "Riverside Bando" not "cool spot").</Text>
+                <Text style={styles.guidelinesBullet}>• Set the correct spot type and hazard level honestly.</Text>
+              </View>
+
+              {/* Section: What Is Not Allowed */}
+              <View style={styles.guidelinesSection}>
+                <Text style={styles.guidelinesSectionTitle}>🚫  What Is Not Allowed</Text>
+                <Text style={styles.guidelinesBullet}>• <Text style={styles.guidelinesEm}>Fake or duplicate pins</Text> — check the map before submitting.</Text>
+                <Text style={styles.guidelinesBullet}>• Pins on <Text style={styles.guidelinesEm}>private property without permission</Text> or in no-fly zones.</Text>
+                <Text style={styles.guidelinesBullet}>• Offensive, hateful, or inappropriate names or descriptions.</Text>
+                <Text style={styles.guidelinesBullet}>• URLs, links, phone numbers, or personal contact info in descriptions.</Text>
+                <Text style={styles.guidelinesBullet}>• Deliberately wrong types (e.g. marking a bando as a race track).</Text>
+                <Text style={styles.guidelinesBullet}>• Submitting pins far from your actual location (50-mile limit enforced).</Text>
+              </View>
+
+              {/* Section: Airspace & Safety */}
+              <View style={styles.guidelinesSection}>
+                <Text style={styles.guidelinesSectionTitle}>⚠️  Airspace & Safety</Text>
+                <Text style={styles.guidelinesBullet}>• Always check FAA airspace (use the airspace toggle on the map) before flying.</Text>
+                <Text style={styles.guidelinesBullet}>• Do <Text style={styles.guidelinesEm}>not</Text> add spots inside Class B/C/D airspace without LAANC authorization.</Text>
+                <Text style={styles.guidelinesBullet}>• Pins in hazardous areas should have the hazard level set to "High".</Text>
+              </View>
+
+              {/* Section: Events */}
+              <View style={styles.guidelinesSection}>
+                <Text style={styles.guidelinesSectionTitle}>📅  Events</Text>
+                <Text style={styles.guidelinesBullet}>• Only post events you are actually organising or have authority to list.</Text>
+                <Text style={styles.guidelinesBullet}>• Keep event details accurate — date, location, and type must be correct.</Text>
+                <Text style={styles.guidelinesBullet}>• Do not use event descriptions to advertise unrelated products or services.</Text>
+              </View>
+
+              {/* Section: Enforcement */}
+              <View style={styles.guidelinesSection}>
+                <Text style={styles.guidelinesSectionTitle}>🔨  Enforcement</Text>
+                <Text style={styles.guidelinesBullet}>• Community members can report pins. Spots with 3+ reports are automatically flagged for review.</Text>
+                <Text style={styles.guidelinesBullet}>• Repeated violations may result in account suspension.</Text>
+                <Text style={styles.guidelinesBullet}>• Admins may delete any pin that violates these guidelines without notice.</Text>
+              </View>
+            </ScrollView>
+
+            {/* Agree checkbox row */}
+            <TouchableOpacity
+              style={styles.guidelinesCheckRow}
+              activeOpacity={0.7}
+              onPress={() => setGuidelinesChecked(v => !v)}
+            >
+              <View style={[styles.guidelinesCheckbox, guidelinesChecked && styles.guidelinesCheckboxOn]}>
+                {guidelinesChecked && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
+              <Text style={styles.guidelinesCheckLabel}>
+                I have read and agree to the Community Guidelines
+              </Text>
+            </TouchableOpacity>
+
+            {/* Buttons */}
+            <View style={styles.guidelinesBtns}>
+              <TouchableOpacity
+                style={styles.guidelinesCancelBtn}
+                onPress={() => { setShowGuidelinesModal(false); setGuidelinesPendingAction(null); }}
+              >
+                <Text style={styles.guidelinesCancelTxt}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.guidelinesAcceptBtn, !guidelinesChecked && styles.guidelinesAcceptBtnDisabled]}
+                onPress={handleGuidelinesAccept}
+              >
+                <Text style={styles.guidelinesAcceptTxt}>I Agree – Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
 
     </View>
   );
@@ -1843,6 +2019,7 @@ const styles = StyleSheet.create({
   airspaceLegendLink:   { color: '#ff4500', textDecorationLine: 'underline' },
   iconBtnMgp:       { borderColor: '#2979FF', backgroundColor: 'rgba(41,121,255,0.12)' },
   iconBtnSearchActive: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
+  iconBtnActive:       { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
 
   // Address search bar
   addrSearchRow:   { flexDirection: 'row', alignItems: 'center', marginHorizontal: 12, marginBottom: 6, backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 14, borderWidth: 1, borderColor: '#FFD700', overflow: 'hidden' },
@@ -2053,4 +2230,122 @@ const styles = StyleSheet.create({
   reportModalBtns:    { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   reportCancelBtn:    { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#333' },
   reportSubmitBtn:    { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, backgroundColor: '#FF9800' },
+  // ── Community Guidelines Modal ─────────────────────────────────────────────
+  guidelinesOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 18,
+  },
+  guidelinesBox: {
+    backgroundColor: '#111',
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 480,
+    maxHeight: '90%',
+    borderWidth: 1.5,
+    borderColor: '#ff4500',
+    overflow: 'hidden',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+  },
+  guidelinesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 6,
+  },
+  guidelinesIcon: { fontSize: 26 },
+  guidelinesTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+    flex: 1,
+  },
+  guidelinesSub: {
+    color: '#888',
+    fontSize: 13,
+    marginBottom: 14,
+    lineHeight: 18,
+  },
+  guidelinesScroll: { maxHeight: 340, marginBottom: 14 },
+  guidelinesSection: {
+    marginBottom: 16,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  guidelinesSectionTitle: {
+    color: '#ff4500',
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 8,
+    letterSpacing: 0.3,
+  },
+  guidelinesBullet: {
+    color: '#bbb',
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  guidelinesEm: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  guidelinesCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: '#ff4500',
+    marginBottom: 14,
+  },
+  guidelinesCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#ff4500',
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guidelinesCheckboxOn: { backgroundColor: '#ff4500' },
+  guidelinesCheckLabel: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  guidelinesBtns: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'flex-end',
+  },
+  guidelinesCancelBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  guidelinesCancelTxt: { color: '#888', fontWeight: '600', fontSize: 14 },
+  guidelinesAcceptBtn: {
+    flex: 1,
+    backgroundColor: '#ff4500',
+    paddingVertical: 11,
+    paddingHorizontal: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  guidelinesAcceptBtnDisabled: { backgroundColor: '#4a1a00', opacity: 0.6 },
+  guidelinesAcceptTxt: { color: '#fff', fontWeight: '800', fontSize: 14 },
 });
