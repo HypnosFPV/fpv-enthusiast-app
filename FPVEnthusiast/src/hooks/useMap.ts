@@ -17,6 +17,11 @@ export interface FlySpot {
   thumbs_down: number;
   created_at: string;
   creator_username?: string;
+  // Fraud-prevention fields
+  is_verified:  boolean;
+  is_flagged:   boolean;
+  report_count: number;
+  verified_at:  string | null;
 }
 
 export interface RaceEvent {
@@ -307,27 +312,52 @@ export function useMap(userId?: string) {
     return error ?? null;
   }, [userId]);
 
-  // ── Vote on spot ───────────────────────────────────────────────────────────
+  // ── Vote on spot (rate-limited RPC — max 20 votes/hour) ──────────────────────
   const voteSpot = useCallback(async (
     spotId: string,
     vote: 1 | -1,
     currentVote: 1 | -1 | null,
-  ) => {
-    if (!userId) return;
-    if (vote === currentVote) {
-      await supabase
-        .from('spot_votes')
-        .delete()
-        .eq('spot_id', spotId)
-        .eq('user_id', userId);
-    } else {
-      await supabase
-        .from('spot_votes')
-        .upsert(
-          { spot_id: spotId, user_id: userId, vote },
-          { onConflict: 'spot_id,user_id' },
-        );
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!userId) return { ok: false, error: 'not_logged_in' };
+    // Toggle off = send vote 0, which the RPC treats as delete
+    const effectiveVote = vote === currentVote ? 0 : vote;
+    const { data, error } = await supabase.rpc('vote_spot_ratelimited', {
+      p_spot_id: spotId,
+      p_vote:    effectiveVote,
+      p_user_id: userId,
+    });
+    if (error) return { ok: false, error: error.message };
+    if (data?.error === 'rate_limit') return { ok: false, error: 'rate_limit' };
+    return { ok: true };
+  }, [userId]);
+
+  // ── Report a spot ──────────────────────────────────────────────────────────
+  const reportSpot = useCallback(async (
+    spotId: string,
+    reason: 'wrong_type' | 'wrong_hazard' | 'does_not_exist' | 'dangerous' | 'duplicate' | 'offensive_name' | 'other',
+    detail?: string,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!userId) return { ok: false, error: 'not_logged_in' };
+    const { error } = await supabase.from('spot_reports').insert({
+      spot_id:     spotId,
+      reporter_id: userId,
+      reason,
+      detail:      detail ?? null,
+    });
+    if (error) {
+      // Unique constraint = already reported
+      if (error.message?.includes('unique') || error.code === '23505') {
+        return { ok: false, error: 'already_reported' };
+      }
+      return { ok: false, error: error.message };
     }
+    // Optimistically mark as flagged if ≥3 reports likely
+    setSpots(prev => prev.map(s =>
+      s.id === spotId
+        ? { ...s, report_count: (s.report_count ?? 0) + 1 }
+        : s
+    ));
+    return { ok: true };
   }, [userId]);
 
   // ── Add comment ────────────────────────────────────────────────────────────
@@ -422,7 +452,7 @@ export function useMap(userId?: string) {
     mgpSyncing, mgpSyncCount,
     fetchSpots, fetchEvents, fetchComments,
     syncMultiGPEvents, syncChapterRaces,
-    addSpot, voteSpot, addComment,
+    addSpot, voteSpot, addComment, reportSpot,
     addEvent, toggleRsvp,
     deleteSpot, deleteEvent,
     fetchNewNearbyEvents,

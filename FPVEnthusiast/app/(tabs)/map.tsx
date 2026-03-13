@@ -255,7 +255,7 @@ export default function MapScreen() {
     mgpSyncing, mgpSyncCount,
     fetchSpots, fetchEvents, fetchComments,
     syncMultiGPEvents,
-    addSpot, voteSpot, addComment,
+    addSpot, voteSpot, addComment, reportSpot,
     addEvent, toggleRsvp,
     deleteSpot, deleteEvent,
     fetchNewNearbyEvents,
@@ -431,6 +431,11 @@ export default function MapScreen() {
   const [currentVote,       setCurrentVote]       = useState<1 | -1 | null>(null);
   const [showMgpToast,      setShowMgpToast]      = useState(false);
   const [deletingPin,       setDeletingPin]       = useState(false);
+  // Report modal state
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportReason,       setReportReason]       = useState<string>('wrong_type');
+  const [reportDetail,       setReportDetail]       = useState('');
+  const [reportSubmitting,   setReportSubmitting]   = useState(false);
 
   // ── DateTime picker state ────────────────────────────────────────────────
   const [evtStartYear,  setEvtStartYear]  = useState(new Date().getFullYear());
@@ -600,14 +605,74 @@ export default function MapScreen() {
   // ── Submit spot ──────────────────────────────────────────────────────────
   const handleSubmitSpot = async () => {
     if (!spotPin || !spotName.trim()) { Alert.alert('Missing info', 'Spot name and map pin are required.'); return; }
+
+    // ── 7. Account age gate (24 hours) ────────────────────────────────────────
+    if (user?.created_at) {
+      const ageHours = (Date.now() - new Date(user.created_at).getTime()) / 3_600_000;
+      if (ageHours < 24) {
+        Alert.alert(
+          'Account Too New',
+          'You need an account for at least 24 hours before adding spots.\n\nThis keeps the map trustworthy for everyone.'
+        );
+        return;
+      }
+    }
+
+    // ── 3. Input validation — name/desc length + no URLs ──────────────────────
+    const name = spotName.trim();
+    const desc = spotDesc.trim();
+    if (name.length < 3)   { Alert.alert('Name too short',  'At least 3 characters required.'); return; }
+    if (name.length > 60)  { Alert.alert('Name too long',   'Max 60 characters.'); return; }
+    if (desc.length > 300) { Alert.alert('Description too long', 'Max 300 characters.'); return; }
+    if (/https?:\/\//i.test(desc)) {
+      Alert.alert('No links allowed', 'URLs are not permitted in spot descriptions.'); return;
+    }
+
+    // ── 1. Proximity gate — pin must be within 50 miles of user ──────────────
+    if (userLocation) {
+      const dist = haversineDistance(
+        userLocation.latitude, userLocation.longitude,
+        spotPin.latitude, spotPin.longitude,
+      );
+      if (dist > 50) {
+        Alert.alert(
+          'Too Far Away',
+          `Your pin is ${Math.round(dist)} miles from your current location.\n\nYou can only add spots within 50 miles of where you are.`
+        );
+        return;
+      }
+    }
+
+    // ── 2. Duplicate check — no pin within 800 ft (~0.15 miles) ──────────────
+    const DEDUP_MILES = 0.15;
+    const tooClose = spots.some(s =>
+      haversineDistance(spotPin.latitude, spotPin.longitude, s.latitude, s.longitude) < DEDUP_MILES
+    );
+    if (tooClose) {
+      Alert.alert(
+        'Spot Already Exists',
+        'There is already a pin within 800 feet of this location.\n\nTap the existing pin to comment or vote instead.'
+      );
+      return;
+    }
+
     setSubmitting(true);
     const { data, error } = await addSpot(
-      { name: spotName.trim(), description: spotDesc.trim(), spot_type: spotType,
+      { name, description: desc, spot_type: spotType,
         hazard_level: spotHazard, latitude: spotPin.latitude, longitude: spotPin.longitude },
       user?.email ?? 'Pilot',
     );
     setSubmitting(false);
-    if (error) { Alert.alert('Error', 'Could not add spot.'); return; }
+    if (error) {
+      // Unique index violation = exact duplicate coords in DB
+      const msg = (error?.message ?? '');
+      if (msg.includes('idx_fly_spots_location_dedup') || msg.includes('unique')) {
+        Alert.alert('Duplicate Spot', 'A spot already exists at this exact location.');
+      } else {
+        Alert.alert('Error', 'Could not add spot. Please try again.');
+      }
+      return;
+    }
     setShowAddSpot(false);
     setSpotName(''); setSpotDesc(''); setSpotType('freestyle'); setSpotHazard('low'); setSpotPin(null);
     Alert.alert('✅ Spot added!', `"${data?.name}" is now on the map.`);
@@ -621,11 +686,46 @@ export default function MapScreen() {
     if (!evtName.trim()) {
       Alert.alert('Missing info', 'Event name is required.'); return;
     }
+
+    // ── 7. Account age gate ───────────────────────────────────────────────────
+    if (user?.created_at) {
+      const ageHours = (Date.now() - new Date(user.created_at).getTime()) / 3_600_000;
+      if (ageHours < 24) {
+        Alert.alert('Account Too New', 'You need an account for at least 24 hours before posting events.'); return;
+      }
+    }
+
+    // ── 1. Event proximity gate — within 200 miles ────────────────────────────
+    if (userLocation) {
+      const dist = haversineDistance(
+        userLocation.latitude, userLocation.longitude,
+        evtPin.latitude, evtPin.longitude,
+      );
+      if (dist > 200) {
+        Alert.alert('Too Far Away', `Event location is ${Math.round(dist)} miles from you. Max 200 miles.`); return;
+      }
+    }
+
+    // ── 3. Event name length ──────────────────────────────────────────────────
+    if (evtName.trim().length > 80) { Alert.alert('Name too long', 'Max 80 characters.'); return; }
+
     // Build ISO strings from picker values
     const pad = (n: number) => String(n).padStart(2, '0');
     const startStr = `${evtStartYear}-${pad(evtStartMonth)}-${pad(evtStartDay)}T${pad(evtStartHour)}:${pad(evtStartMin)}:00`;
     const startIso = safeIso(startStr);
     if (!startIso) { Alert.alert('Invalid Date', 'Could not build start time. Please check year/month/day.'); return; }
+
+    // ── 5. Event date range validation ────────────────────────────────────────
+    const startDate  = new Date(startIso);
+    const now        = new Date();
+    const maxFuture  = new Date();
+    maxFuture.setFullYear(maxFuture.getFullYear() + 2);
+    if (startDate <= now) {
+      Alert.alert('Invalid Date', 'Event start time must be in the future.'); return;
+    }
+    if (startDate > maxFuture) {
+      Alert.alert('Too Far Ahead', 'Events can only be scheduled up to 2 years in advance.'); return;
+    }
     const endIso = evtHasEnd
       ? safeIso(`${evtEndYear}-${pad(evtEndMonth)}-${pad(evtEndDay)}T${pad(evtEndHour)}:${pad(evtEndMin)}:00`)
       : '';
@@ -670,7 +770,13 @@ export default function MapScreen() {
   // ── Vote ──────────────────────────────────────────────────────────────────
   const handleVote = async (v: 1 | -1) => {
     if (!selectedSpot) return;
-    await voteSpot(selectedSpot.id, v, currentVote);
+    const result = await voteSpot(selectedSpot.id, v, currentVote);
+    if (!result.ok) {
+      if (result.error === 'rate_limit') {
+        Alert.alert('Slow down!', 'You can vote on up to 20 spots per hour. Come back soon.');
+      }
+      return;
+    }
     setCurrentVote(prev => prev === v ? null : v);
     setSelectedSpot(prev => {
       if (!prev) return null;
@@ -679,6 +785,29 @@ export default function MapScreen() {
       if (v !== currentVote) { if (v === 1) up++; else down++; }
       return { ...prev, thumbs_up: Math.max(0, up), thumbs_down: Math.max(0, down) };
     });
+  };
+
+  // ── Handle spot report ────────────────────────────────────────────────────
+  const handleReportSpot = async () => {
+    if (!selectedSpot) return;
+    setReportSubmitting(true);
+    const result = await reportSpot(
+      selectedSpot.id,
+      reportReason as any,
+      reportDetail.trim() || undefined,
+    );
+    setReportSubmitting(false);
+    setReportModalVisible(false);
+    setReportReason('wrong_type'); setReportDetail('');
+    if (!result.ok) {
+      if (result.error === 'already_reported') {
+        Alert.alert('Already Reported', 'You have already reported this spot. Thanks for keeping the map clean!');
+      } else {
+        Alert.alert('Error', 'Could not submit report. Please try again.');
+      }
+      return;
+    }
+    Alert.alert('Report Submitted', 'Thanks! Our community moderators will review this spot.');
   };
 
   // ── Delete spot ───────────────────────────────────────────────────────────
@@ -1453,7 +1582,15 @@ export default function MapScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
-                <Text style={styles.detailName}>{selectedSpot.name}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 2 }}>
+                  <Text style={styles.detailName}>{selectedSpot.name}</Text>
+                  {selectedSpot.is_verified && (
+                    <View style={styles.verifiedBadge}><Text style={styles.verifiedBadgeTxt}>✅ Verified</Text></View>
+                  )}
+                  {selectedSpot.is_flagged && (
+                    <View style={styles.flaggedBadge}><Text style={styles.flaggedBadgeTxt}>🚩 Flagged</Text></View>
+                  )}
+                </View>
                 {/* ── Schedule at this Spot — Race OR Meetup ── */}
                 <View style={styles.scheduleAtSpotRow}>
                   <TouchableOpacity
@@ -1497,6 +1634,16 @@ export default function MapScreen() {
                     <Text style={[styles.voteCount, currentVote === -1 && { color: '#fff' }]}>{selectedSpot.thumbs_down}</Text>
                   </TouchableOpacity>
                 </View>
+                {/* Report spot button */}
+                {selectedSpot.created_by !== user?.id && (
+                  <TouchableOpacity
+                    style={styles.reportSpotBtn}
+                    onPress={() => { setReportModalVisible(true); }}
+                  >
+                    <Ionicons name="flag-outline" size={14} color="#FF9800" />
+                    <Text style={styles.reportSpotBtnTxt}>Report this spot</Text>
+                  </TouchableOpacity>
+                )}
                 <Text style={styles.commentsHeader}>Comments ({comments.length})</Text>
                 <FlatList
                   data={comments}
@@ -1582,6 +1729,53 @@ export default function MapScreen() {
                 {selectedEvent.registration_url ? <Text style={styles.regLink} numberOfLines={1}>🔗 {selectedEvent.registration_url}</Text> : null}
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── Report Spot Modal ──────────────────────────────────────────────── */}
+      <Modal visible={reportModalVisible} transparent animationType="fade" onRequestClose={() => setReportModalVisible(false)}>
+        <View style={styles.reportModalOverlay}>
+          <View style={styles.reportModalBox}>
+            <Text style={styles.reportModalTitle}>🚩 Report Spot</Text>
+            <Text style={styles.reportModalSub}>Help keep the map accurate. Select a reason:</Text>
+            {([
+              ['wrong_type',     '🏷  Wrong spot type'],
+              ['wrong_hazard',   '⚠️  Wrong hazard level'],
+              ['does_not_exist', '❌  Location doesn't exist'],
+              ['dangerous',      '☠️  Dangerous / restricted airspace'],
+              ['duplicate',      '📍 Duplicate pin nearby'],
+              ['offensive_name', '🤬  Offensive name'],
+              ['other',          '💬  Other'],
+            ] as [string, string][]).map(([val, label]) => (
+              <TouchableOpacity
+                key={val}
+                style={[styles.reportOption, reportReason === val && styles.reportOptionActive]}
+                onPress={() => setReportReason(val)}
+              >
+                <Text style={[styles.reportOptionTxt, reportReason === val && { color: '#fff' }]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+            <TextInput
+              style={styles.reportDetailInput}
+              placeholder="Additional details (optional)..."
+              placeholderTextColor="#555"
+              value={reportDetail}
+              onChangeText={setReportDetail}
+              multiline
+              numberOfLines={2}
+            />
+            <View style={styles.reportModalBtns}>
+              <TouchableOpacity style={styles.reportCancelBtn} onPress={() => setReportModalVisible(false)}>
+                <Text style={{ color: '#888', fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.reportSubmitBtn} onPress={handleReportSpot} disabled={submitting}>
+                {submitting
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={{ color: '#fff', fontWeight: '700' }}>Submit Report</Text>
+                }
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -1837,5 +2031,24 @@ const styles = StyleSheet.create({
   spotPickerRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   spotPickerDot:  { width: 12, height: 12, borderRadius: 6 },
   spotPickerName: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  spotPickerType: { color: '#555', fontSize: 11, marginTop: 2 },
+  spotPickerType: { color: '#555', fontSize: 11, marginTop: 2 },,
+
+  // ── Map fraud-prevention UI ──────────────────────────────────────────────
+  verifiedBadge:      { backgroundColor: '#00C853', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
+  verifiedBadgeTxt:   { color: '#fff', fontSize: 10, fontWeight: '700' },
+  flaggedBadge:       { backgroundColor: '#FF9800', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
+  flaggedBadgeTxt:    { color: '#fff', fontSize: 10, fontWeight: '700' },
+  reportSpotBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', marginTop: 4, marginBottom: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: '#FF9800' },
+  reportSpotBtnTxt:   { color: '#FF9800', fontSize: 12, fontWeight: '600' },
+  reportModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  reportModalBox:     { backgroundColor: '#111', borderRadius: 16, padding: 20, width: '100%', maxWidth: 420 },
+  reportModalTitle:   { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 4 },
+  reportModalSub:     { color: '#888', fontSize: 13, marginBottom: 12 },
+  reportOption:       { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#2a2a2a', marginBottom: 6 },
+  reportOptionActive: { backgroundColor: '#FF9800', borderColor: '#FF9800' },
+  reportOptionTxt:    { color: '#ccc', fontSize: 14 },
+  reportDetailInput:  { backgroundColor: '#1a1a1a', borderRadius: 10, borderWidth: 1, borderColor: '#2a2a2a', color: '#fff', padding: 10, marginTop: 8, marginBottom: 12, fontSize: 13, minHeight: 52 },
+  reportModalBtns:    { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  reportCancelBtn:    { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#333' },
+  reportSubmitBtn:    { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, backgroundColor: '#FF9800' },
 });
