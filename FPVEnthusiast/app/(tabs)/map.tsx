@@ -1693,6 +1693,16 @@ export default function MapScreen() {
                       }
                     </TouchableOpacity>
                   )}
+                  {/* Report button — visible to everyone except the owner */}
+                  {selectedSpot.created_by !== user?.id && (
+                    <TouchableOpacity
+                      style={styles.reportHeaderBtn}
+                      onPress={() => { setReportTargetType('spot'); setReportReason('wrong_type'); setReportDetail(''); setReportModalVisible(true); }}
+                    >
+                      <Ionicons name="flag-outline" size={15} color="#FF9800" />
+                      <Text style={styles.reportHeaderBtnTxt}>Report</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 2 }}>
                   <Text style={styles.detailName}>{selectedSpot.name}</Text>
@@ -1746,16 +1756,7 @@ export default function MapScreen() {
                     <Text style={[styles.voteCount, currentVote === -1 && { color: '#fff' }]}>{selectedSpot.thumbs_down}</Text>
                   </TouchableOpacity>
                 </View>
-                {/* Report spot button */}
-                {selectedSpot.created_by !== user?.id && (
-                  <TouchableOpacity
-                    style={styles.reportSpotBtn}
-                    onPress={() => { setReportTargetType('spot'); setReportReason('wrong_type'); setReportDetail(''); setReportModalVisible(true); }}
-                  >
-                    <Ionicons name="flag-outline" size={14} color="#FF9800" />
-                    <Text style={styles.reportSpotBtnTxt}>Report this spot</Text>
-                  </TouchableOpacity>
-                )}
+
                 <Text style={styles.commentsHeader}>Comments ({comments.length})</Text>
                 <FlatList
                   data={comments}
@@ -1813,6 +1814,16 @@ export default function MapScreen() {
                       }
                     </TouchableOpacity>
                   )}
+                  {/* Report button — visible to non-organizers on non-MultiGP events */}
+                  {selectedEvent.organizer_id !== user?.id && selectedEvent.event_source !== 'multigp' && (
+                    <TouchableOpacity
+                      style={styles.reportHeaderBtn}
+                      onPress={() => { setReportTargetType('event'); setReportReason('wrong_type'); setReportDetail(''); setReportModalVisible(true); }}
+                    >
+                      <Ionicons name="flag-outline" size={15} color="#FF9800" />
+                      <Text style={styles.reportHeaderBtnTxt}>Report</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
                 <Text style={styles.detailName}>{selectedEvent.name}</Text>
                 <Text style={styles.detailMeta}>🗓 {formatDate(selectedEvent.start_time)}</Text>
@@ -1839,21 +1850,7 @@ export default function MapScreen() {
                   </TouchableOpacity>
                 </View>
                 {selectedEvent.registration_url ? <Text style={styles.regLink} numberOfLines={1}>🔗 {selectedEvent.registration_url}</Text> : null}
-                {/* Report event button — hidden for organizer and MultiGP events */}
-                {selectedEvent.organizer_id !== user?.id && selectedEvent.event_source !== 'multigp' && (
-                  <TouchableOpacity
-                    style={styles.reportSpotBtn}
-                    onPress={() => {
-                      setReportTargetType('event');
-                      setReportReason('wrong_type');
-                      setReportDetail('');
-                      setReportModalVisible(true);
-                    }}
-                  >
-                    <Ionicons name="flag-outline" size={14} color="#FF9800" />
-                    <Text style={styles.reportSpotBtnTxt}>Report this event</Text>
-                  </TouchableOpacity>
-                )}
+
               </>
             )}
           </View>
@@ -2279,6 +2276,8 @@ const styles = StyleSheet.create({
   flaggedBadgeTxt:    { color: '#fff', fontSize: 10, fontWeight: '700' },
   reportSpotBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', marginTop: 4, marginBottom: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: '#FF9800' },
   reportSpotBtnTxt:   { color: '#FF9800', fontSize: 12, fontWeight: '600' },
+  reportHeaderBtn:    { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1, borderColor: '#FF9800', backgroundColor: 'rgba(255,152,0,0.10)' },
+  reportHeaderBtnTxt: { color: '#FF9800', fontSize: 13, fontWeight: '700' },
   reportModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   reportModalBox:     { backgroundColor: '#111', borderRadius: 16, padding: 20, width: '100%', maxWidth: 420 },
   reportModalTitle:   { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 4 },
