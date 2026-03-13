@@ -403,6 +403,10 @@ export default function ChallengesScreen() {
     loadFlaggedEntries,
     approveEntry,
     rejectEntry,
+    overrideToReview,
+    loadAllEntries,
+    allEntries:        allAdminEntries,
+    allLoading:        allAdminLoading,
   } = useAdminModeration();
   const [adminPanelVisible,  setAdminPanelVisible]  = useState(false);
   const [adminTab,           setAdminTab]           = useState<'queue'|'all'>('queue');
