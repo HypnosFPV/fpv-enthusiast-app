@@ -439,6 +439,7 @@ export default function MapScreen() {
   // Report modal state
   const [reportModalVisible,  setReportModalVisible]  = useState(false);
   const [reportTargetType,    setReportTargetType]    = useState<'spot' | 'event'>('spot');
+  const [reportTargetId,      setReportTargetId]      = useState<string | null>(null);
   const [reportReason,        setReportReason]        = useState<string>('wrong_type');
   const [reportDetail,        setReportDetail]        = useState('');
   const [reportSubmitting,    setReportSubmitting]    = useState(false);
@@ -851,16 +852,16 @@ export default function MapScreen() {
 
   // ── Handle spot report ────────────────────────────────────────────────────
   const handleReportSpot = async () => {
-    if (!selectedSpot) return;
+    if (!reportTargetId) return;
     setReportSubmitting(true);
     const result = await reportSpot(
-      selectedSpot.id,
+      reportTargetId,
       reportReason as any,
       reportDetail.trim() || undefined,
     );
     setReportSubmitting(false);
     setReportModalVisible(false);
-    setReportReason('wrong_type'); setReportDetail('');
+    setReportReason('wrong_type'); setReportDetail(''); setReportTargetId(null);
     if (!result.ok) {
       if (result.error === 'already_reported') {
         Alert.alert('Already Reported', 'You have already reported this spot. Thanks for keeping the map clean!');
@@ -874,16 +875,16 @@ export default function MapScreen() {
 
   // ── Handle event report ───────────────────────────────────────────────────
   const handleReportEvent = async () => {
-    if (!selectedEvent) return;
+    if (!reportTargetId) return;
     setReportSubmitting(true);
     const result = await reportEvent(
-      selectedEvent.id,
+      reportTargetId,
       reportReason as any,
       reportDetail.trim() || undefined,
     );
     setReportSubmitting(false);
     setReportModalVisible(false);
-    setReportReason('wrong_type'); setReportDetail('');
+    setReportReason('wrong_type'); setReportDetail(''); setReportTargetId(null);
     if (!result.ok) {
       if (result.error === 'already_reported') {
         Alert.alert('Already Reported', 'You have already reported this event. Thanks for keeping the map clean!');
@@ -1697,7 +1698,14 @@ export default function MapScreen() {
                   {selectedSpot.created_by !== user?.id && (
                     <TouchableOpacity
                       style={styles.reportHeaderBtn}
-                      onPress={() => { setReportTargetType('spot'); setReportReason('wrong_type'); setReportDetail(''); setReportModalVisible(true); }}
+                      onPress={() => {
+                        setReportTargetType('spot');
+                        setReportTargetId(selectedSpot.id);
+                        setReportReason('wrong_type');
+                        setReportDetail('');
+                        setSelectedSpot(null);
+                        setTimeout(() => setReportModalVisible(true), 350);
+                      }}
                     >
                       <Ionicons name="flag-outline" size={15} color="#FF9800" />
                       <Text style={styles.reportHeaderBtnTxt}>Report</Text>
@@ -1818,7 +1826,14 @@ export default function MapScreen() {
                   {selectedEvent.organizer_id !== user?.id && selectedEvent.event_source !== 'multigp' && (
                     <TouchableOpacity
                       style={styles.reportHeaderBtn}
-                      onPress={() => { setReportTargetType('event'); setReportReason('wrong_type'); setReportDetail(''); setReportModalVisible(true); }}
+                      onPress={() => {
+                        setReportTargetType('event');
+                        setReportTargetId(selectedEvent.id);
+                        setReportReason('wrong_type');
+                        setReportDetail('');
+                        setSelectedEvent(null);
+                        setTimeout(() => setReportModalVisible(true), 350);
+                      }}
                     >
                       <Ionicons name="flag-outline" size={15} color="#FF9800" />
                       <Text style={styles.reportHeaderBtnTxt}>Report</Text>
