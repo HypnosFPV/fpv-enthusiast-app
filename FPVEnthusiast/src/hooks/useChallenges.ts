@@ -211,40 +211,21 @@ export function useChallenges(currentUserId?: string) {
   }): Promise<ChallengeEntry | null> => {
     if (!currentUserId) return null;
 
-    // Calculate entry_number using MAX to avoid race conditions with COUNT.
-    // Retry up to 3 times in case of concurrent submissions hitting the unique constraint.
-    let data: any = null;
-    let error: any = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const { data: maxRow } = await supabase
-        .from('challenge_entries')
-        .select('entry_number')
-        .eq('challenge_id', params.challengeId)
-        .order('entry_number', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const entryNumber = (maxRow?.entry_number ?? 0) + 1;
-
-      const res = await supabase
-        .from('challenge_entries')
-        .insert({
-          challenge_id:      params.challengeId,
-          pilot_id:          currentUserId,
-          entry_number:      entryNumber,
-          s3_upload_key:     params.s3UploadKey,
-          thumbnail_s3_key:  params.thumbnailS3Key ?? null,
-          duration_seconds:  params.durationSeconds ? Math.round(params.durationSeconds) : null,
-          original_filename: params.originalFilename ?? null,
-          file_size_bytes:   params.fileSizeBytes ?? null,
-        })
-        .select('*')
-        .single();
-      data  = res.data;
-      error = res.error;
-      // 23505 = unique_violation — retry with a fresh MAX read
-      if (!error || error.code !== '23505') break;
-      await new Promise(r => setTimeout(r, 100 + attempt * 150)); // brief back-off
-    }
+    // entry_number is assigned atomically by the DB trigger (assign_entry_number).
+    // Do NOT include it in the insert payload — the trigger owns it entirely.
+    const { data, error } = await supabase
+      .from('challenge_entries')
+      .insert({
+        challenge_id:      params.challengeId,
+        pilot_id:          currentUserId,
+        s3_upload_key:     params.s3UploadKey,
+        thumbnail_s3_key:  params.thumbnailS3Key ?? null,
+        duration_seconds:  params.durationSeconds ? Math.round(params.durationSeconds) : null,
+        original_filename: params.originalFilename ?? null,
+        file_size_bytes:   params.fileSizeBytes ?? null,
+      })
+      .select('*')
+      .single();
     if (error) { console.error('[useChallenges] submitEntry:', error.message); return null; }
     const entry = data as ChallengeEntry;
     // Derive public URLs for immediate display
