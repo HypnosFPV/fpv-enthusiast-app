@@ -360,6 +360,28 @@ export function useMap(userId?: string) {
     return { ok: true };
   }, [userId]);
 
+  // ── Report an event ────────────────────────────────────────────────────────
+  const reportEvent = useCallback(async (
+    eventId: string,
+    reason: 'wrong_type' | 'does_not_exist' | 'spam' | 'offensive_name' | 'fake_event' | 'wrong_date' | 'other',
+    detail?: string,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!userId) return { ok: false, error: 'not_logged_in' };
+    const { error } = await supabase.from('event_reports').insert({
+      event_id:    eventId,
+      reporter_id: userId,
+      reason,
+      details:     detail ?? null,
+    });
+    if (error) {
+      if (error.message?.includes('unique') || error.code === '23505') {
+        return { ok: false, error: 'already_reported' };
+      }
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  }, [userId]);
+
   // ── Add comment ────────────────────────────────────────────────────────────
   const addComment = useCallback(async (
     spotId: string,
@@ -468,7 +490,7 @@ export function useMap(userId?: string) {
     mgpSyncing, mgpSyncCount,
     fetchSpots, fetchEvents, fetchComments,
     syncMultiGPEvents, syncChapterRaces,
-    addSpot, voteSpot, addComment, reportSpot, checkNearbySpots,
+    addSpot, voteSpot, addComment, reportSpot, reportEvent, checkNearbySpots,
     addEvent, toggleRsvp,
     deleteSpot, deleteEvent,
     fetchNewNearbyEvents,

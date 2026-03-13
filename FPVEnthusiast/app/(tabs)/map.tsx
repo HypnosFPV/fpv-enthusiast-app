@@ -255,7 +255,7 @@ export default function MapScreen() {
     mgpSyncing, mgpSyncCount,
     fetchSpots, fetchEvents, fetchComments,
     syncMultiGPEvents,
-    addSpot, voteSpot, addComment, reportSpot, checkNearbySpots,
+    addSpot, voteSpot, addComment, reportSpot, reportEvent, checkNearbySpots,
     addEvent, toggleRsvp,
     deleteSpot, deleteEvent,
     fetchNewNearbyEvents,
@@ -432,10 +432,11 @@ export default function MapScreen() {
   const [showMgpToast,      setShowMgpToast]      = useState(false);
   const [deletingPin,       setDeletingPin]       = useState(false);
   // Report modal state
-  const [reportModalVisible, setReportModalVisible] = useState(false);
-  const [reportReason,       setReportReason]       = useState<string>('wrong_type');
-  const [reportDetail,       setReportDetail]       = useState('');
-  const [reportSubmitting,   setReportSubmitting]   = useState(false);
+  const [reportModalVisible,  setReportModalVisible]  = useState(false);
+  const [reportTargetType,    setReportTargetType]    = useState<'spot' | 'event'>('spot');
+  const [reportReason,        setReportReason]        = useState<string>('wrong_type');
+  const [reportDetail,        setReportDetail]        = useState('');
+  const [reportSubmitting,    setReportSubmitting]    = useState(false);
 
   // ── Community Guidelines modal state (shown before every pin/event) ────────
   const [showGuidelinesModal, setShowGuidelinesModal] = useState(false);
@@ -852,6 +853,29 @@ export default function MapScreen() {
       return;
     }
     Alert.alert('Report Submitted', 'Thanks! Our community moderators will review this spot.');
+  };
+
+  // ── Handle event report ───────────────────────────────────────────────────
+  const handleReportEvent = async () => {
+    if (!selectedEvent) return;
+    setReportSubmitting(true);
+    const result = await reportEvent(
+      selectedEvent.id,
+      reportReason as any,
+      reportDetail.trim() || undefined,
+    );
+    setReportSubmitting(false);
+    setReportModalVisible(false);
+    setReportReason('wrong_type'); setReportDetail('');
+    if (!result.ok) {
+      if (result.error === 'already_reported') {
+        Alert.alert('Already Reported', 'You have already reported this event. Thanks for keeping the map clean!');
+      } else {
+        Alert.alert('Error', 'Could not submit report. Please try again.');
+      }
+      return;
+    }
+    Alert.alert('Report Submitted', 'Thanks! Our community moderators will review this event.');
   };
 
   // ── Delete spot ───────────────────────────────────────────────────────────
@@ -1700,7 +1724,7 @@ export default function MapScreen() {
                 {selectedSpot.created_by !== user?.id && (
                   <TouchableOpacity
                     style={styles.reportSpotBtn}
-                    onPress={() => { setReportModalVisible(true); }}
+                    onPress={() => { setReportTargetType('spot'); setReportReason('wrong_type'); setReportDetail(''); setReportModalVisible(true); }}
                   >
                     <Ionicons name="flag-outline" size={14} color="#FF9800" />
                     <Text style={styles.reportSpotBtnTxt}>Report this spot</Text>
@@ -1789,6 +1813,21 @@ export default function MapScreen() {
                   </TouchableOpacity>
                 </View>
                 {selectedEvent.registration_url ? <Text style={styles.regLink} numberOfLines={1}>🔗 {selectedEvent.registration_url}</Text> : null}
+                {/* Report event button — hidden for organizer and MultiGP events */}
+                {selectedEvent.organizer_id !== user?.id && selectedEvent.event_source !== 'multigp' && (
+                  <TouchableOpacity
+                    style={styles.reportSpotBtn}
+                    onPress={() => {
+                      setReportTargetType('event');
+                      setReportReason('wrong_type');
+                      setReportDetail('');
+                      setReportModalVisible(true);
+                    }}
+                  >
+                    <Ionicons name="flag-outline" size={14} color="#FF9800" />
+                    <Text style={styles.reportSpotBtnTxt}>Report this event</Text>
+                  </TouchableOpacity>
+                )}
               </>
             )}
           </View>
@@ -1799,9 +1838,17 @@ export default function MapScreen() {
       <Modal visible={reportModalVisible} transparent animationType="fade" onRequestClose={() => setReportModalVisible(false)}>
         <View style={styles.reportModalOverlay}>
           <View style={styles.reportModalBox}>
-            <Text style={styles.reportModalTitle}>🚩 Report Spot</Text>
-            <Text style={styles.reportModalSub}>Help keep the map accurate. Select a reason:</Text>
-            {([
+            <Text style={styles.reportModalTitle}>{reportTargetType === 'event' ? '🚩 Report Event' : '🚩 Report Spot'}</Text>
+            <Text style={styles.reportModalSub}>{reportTargetType === 'event' ? 'Help keep events accurate. Select a reason:' : 'Help keep the map accurate. Select a reason:'}</Text>
+            {(reportTargetType === 'event' ? ([
+              ['wrong_type',     '🏷  Wrong event type'],
+              ['does_not_exist', '❌  Event cancelled / never existed'],
+              ['spam',           '📢  Spam or irrelevant'],
+              ['offensive_name', '🤬  Offensive name'],
+              ['fake_event',     '🎭  Fake or fraudulent event'],
+              ['wrong_date',     '📅  Wrong date / time'],
+              ['other',          '💬  Other'],
+            ] as [string, string][]) : ([
               ['wrong_type',     '🏷  Wrong spot type'],
               ['wrong_hazard',   '⚠️  Wrong hazard level'],
               ['does_not_exist', "❌  Location doesn't exist"],
@@ -1809,7 +1856,7 @@ export default function MapScreen() {
               ['duplicate',      '📍 Duplicate pin nearby'],
               ['offensive_name', '🤬  Offensive name'],
               ['other',          '💬  Other'],
-            ] as [string, string][]).map(([val, label]) => (
+            ] as [string, string][])).map(([val, label]) => (
               <TouchableOpacity
                 key={val}
                 style={[styles.reportOption, reportReason === val && styles.reportOptionActive]}
@@ -1831,7 +1878,7 @@ export default function MapScreen() {
               <TouchableOpacity style={styles.reportCancelBtn} onPress={() => setReportModalVisible(false)}>
                 <Text style={{ color: '#888', fontWeight: '600' }}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.reportSubmitBtn} onPress={handleReportSpot} disabled={reportSubmitting}>
+              <TouchableOpacity style={styles.reportSubmitBtn} onPress={reportTargetType === 'event' ? handleReportEvent : handleReportSpot} disabled={reportSubmitting}>
                 {reportSubmitting
                   ? <ActivityIndicator size="small" color="#fff" />
                   : <Text style={{ color: '#fff', fontWeight: '700' }}>Submit Report</Text>
