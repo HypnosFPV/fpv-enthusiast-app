@@ -20,4 +20,5 @@ export interface UserProfile {
   following_count?:  number;          // maintained by DB trigger
   total_props?:      number;          // maintained manually or via trigger
   created_at?:       string;
+  is_admin?:         boolean;          // admin moderation access
 }

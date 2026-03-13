@@ -25,6 +25,10 @@ import {
   LeaderboardEntry, LeaderboardScope, Season,
   getChallengePhase, timeLeft, propsForPlace,
 } from '../../src/hooks/useChallenges';
+import {
+  useAdminModeration,
+  FlaggedEntry,
+} from '../../src/hooks/useAdminModeration';
 
 const { width: W } = Dimensions.get('window');
 
@@ -155,6 +159,23 @@ export default function ChallengesScreen() {
   // ── Season picker ─────────────────────────────────────────────────────────
   const [seasonPickerVisible, setSeasonPickerVisible] = useState(false);
 
+  // ── Admin moderation panel ────────────────────────────────────────────────
+  const {
+    entries:           flaggedEntries,
+    loading:           adminLoading,
+    isAdmin,
+    actionId:          adminActionId,
+    checkAdmin,
+    loadFlaggedEntries,
+    approveEntry,
+    rejectEntry,
+  } = useAdminModeration();
+  const [adminPanelVisible,  setAdminPanelVisible]  = useState(false);
+  const [adminPreviewEntry,  setAdminPreviewEntry]  = useState<FlaggedEntry | null>(null);
+  const [rejectReason,       setRejectReason]       = useState('');
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectTarget,       setRejectTarget]       = useState<FlaggedEntry | null>(null);
+
   // ── Header animation ──────────────────────────────────────────────────────
   const headerAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -218,6 +239,41 @@ export default function ChallengesScreen() {
   // ─────────────────────────────────────────────────────────────────────────
   // Handlers
   // ─────────────────────────────────────────────────────────────────────────
+
+  // ── Admin: check role on mount + open panel handler ─────────────────────
+  useEffect(() => { checkAdmin(); }, []);
+
+  const handleOpenAdminPanel = async () => {
+    await loadFlaggedEntries();
+    setAdminPanelVisible(true);
+  };
+
+  const handleAdminApprove = async (entry: FlaggedEntry) => {
+    const ok = await approveEntry(entry.id);
+    if (ok) {
+      Alert.alert('✅ Approved', `Entry #${entry.entry_number} is now live.`);
+    } else {
+      Alert.alert('Error', 'Could not approve entry. Try again.');
+    }
+  };
+
+  const handleAdminRejectOpen = (entry: FlaggedEntry) => {
+    setRejectTarget(entry);
+    setRejectReason('');
+    setRejectModalVisible(true);
+  };
+
+  const handleAdminRejectConfirm = async () => {
+    if (!rejectTarget) return;
+    const reason = rejectReason.trim() || 'Pilot name visible in OSD — not removed';
+    const ok = await rejectEntry(rejectTarget.id, reason);
+    setRejectModalVisible(false);
+    if (ok) {
+      Alert.alert('🚫 Rejected', `Entry #${rejectTarget.entry_number} has been rejected.`);
+    } else {
+      Alert.alert('Error', 'Could not reject entry. Try again.');
+    }
+  };
 
   const handlePickVideo = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1434,6 +1490,238 @@ export default function ChallengesScreen() {
       </Modal>
       {/* ── Props award toast ─────────────────────────────────────── */}
       <PropsToast toast={propsToast} />
+
+      {/* ════════════════════════════════════════════════════════════
+          ADMIN: Floating moderation button (only visible to admins)
+          ════════════════════════════════════════════════════════════ */}
+      {isAdmin && (
+        <TouchableOpacity
+          style={styles.adminFAB}
+          onPress={handleOpenAdminPanel}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="shield-checkmark" size={20} color="#fff" />
+          {flaggedEntries.length > 0 && (
+            <View style={styles.adminFABBadge}>
+              <Text style={styles.adminFABBadgeText}>{flaggedEntries.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════
+          ADMIN PANEL MODAL
+          ════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={adminPanelVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setAdminPanelVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { maxHeight: '92%' }]}>
+            {/* Header */}
+            <View style={styles.adminPanelHeader}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="shield-checkmark" size={18} color={C.orange} />
+                  <Text style={styles.adminPanelTitle}>OSD Moderation Queue</Text>
+                </View>
+                <Text style={styles.adminPanelSub}>
+                  {flaggedEntries.length === 0
+                    ? 'All clear — no entries pending review'
+                    : `${flaggedEntries.length} entr${flaggedEntries.length === 1 ? 'y' : 'ies'} need review`}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setAdminPanelVisible(false)}>
+                <Ionicons name="close" size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Refresh button */}
+            <TouchableOpacity
+              style={styles.adminRefreshBtn}
+              onPress={loadFlaggedEntries}
+              disabled={adminLoading}
+            >
+              {adminLoading
+                ? <ActivityIndicator size="small" color={C.cyan} />
+                : <Ionicons name="refresh-outline" size={14} color={C.cyan} />}
+              <Text style={styles.adminRefreshText}>Refresh queue</Text>
+            </TouchableOpacity>
+
+            {/* Empty state */}
+            {!adminLoading && flaggedEntries.length === 0 && (
+              <View style={styles.adminEmpty}>
+                <Ionicons name="checkmark-circle" size={48} color={C.green} />
+                <Text style={styles.adminEmptyTitle}>Queue is clear!</Text>
+                <Text style={styles.adminEmptyText}>All entries have been reviewed.</Text>
+              </View>
+            )}
+
+            {/* Entry list */}
+            <FlatList
+              data={flaggedEntries}
+              keyExtractor={e => e.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: 12, paddingVertical: 8 }}
+              renderItem={({ item: entry }) => {
+                const isActioning = adminActionId === entry.id;
+                const callsignFlags = (entry.moderation_flags ?? [])
+                  .filter((f: any) => f.type === 'pilot_name');
+                const statusColor =
+                  entry.moderation_status === 'needs_review' ? '#ffcc00' :
+                  entry.moderation_status === 'pending'      ? C.muted :
+                  entry.moderation_status === 'processing'   ? C.cyan  : C.text;
+
+                return (
+                  <View style={styles.adminEntryCard}>
+                    {/* Thumbnail + play */}
+                    <TouchableOpacity
+                      onPress={() => setAdminPreviewEntry(entry)}
+                      activeOpacity={0.8}
+                    >
+                      {entry.thumbnail_url ? (
+                        <View style={styles.adminThumbWrap}>
+                          <Image
+                            source={{ uri: entry.thumbnail_url }}
+                            style={styles.adminThumb}
+                            resizeMode="cover"
+                          />
+                          <View style={styles.adminThumbOverlay}>
+                            <Ionicons name="play-circle" size={32} color="rgba(255,255,255,0.9)" />
+                          </View>
+                        </View>
+                      ) : (
+                        <View style={[styles.adminThumbWrap, styles.adminThumbPlaceholder]}>
+                          <Ionicons name="videocam-outline" size={28} color={C.muted} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    {/* Entry info */}
+                    <View style={styles.adminEntryInfo}>
+                      {/* Challenge + entry number */}
+                      <Text style={styles.adminChallengeTitle} numberOfLines={1}>
+                        {entry.challenge_title}
+                      </Text>
+                      <Text style={styles.adminEntryNum}>
+                        Entry #{entry.entry_number}
+                        {entry.duration_seconds ? `  ·  ${entry.duration_seconds}s` : ''}
+                      </Text>
+
+                      {/* Status pill */}
+                      <View style={[styles.adminStatusPill, { borderColor: statusColor + '55' }]}>
+                        <View style={[styles.adminStatusDot, { backgroundColor: statusColor }]} />
+                        <Text style={[styles.adminStatusText, { color: statusColor }]}>
+                          {entry.moderation_status.replace('_', ' ')}
+                        </Text>
+                      </View>
+
+                      {/* Detected callsign flags */}
+                      {callsignFlags.length > 0 && (
+                        <View style={styles.adminFlagsWrap}>
+                          <Text style={styles.adminFlagsLabel}>DETECTED:</Text>
+                          {callsignFlags.map((f: any, i: number) => (
+                            <View key={i} style={styles.adminFlagChip}>
+                              <Ionicons name="eye-off-outline" size={10} color={C.orange} />
+                              <Text style={styles.adminFlagText}>"{f.text}"</Text>
+                              {f.confidence ? (
+                                <Text style={styles.adminFlagConf}>
+                                  {Math.round(f.confidence * 100)}%
+                                </Text>
+                              ) : null}
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Approve / Reject buttons */}
+                      <View style={styles.adminActionRow}>
+                        <TouchableOpacity
+                          style={[styles.adminApproveBtn, isActioning && { opacity: 0.5 }]}
+                          onPress={() => handleAdminApprove(entry)}
+                          disabled={isActioning}
+                        >
+                          {isActioning
+                            ? <ActivityIndicator size={12} color="#fff" />
+                            : <Ionicons name="checkmark-circle" size={14} color="#fff" />}
+                          <Text style={styles.adminApproveBtnText}>Approve</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.adminRejectBtn, isActioning && { opacity: 0.5 }]}
+                          onPress={() => handleAdminRejectOpen(entry)}
+                          disabled={isActioning}
+                        >
+                          <Ionicons name="close-circle" size={14} color="#fff" />
+                          <Text style={styles.adminRejectBtnText}>Reject</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* ════════════════════════════════════════════════════════════
+          ADMIN: Video preview modal (full screen)
+          ════════════════════════════════════════════════════════════ */}
+      {adminPreviewEntry?.video_url && (
+        <EntryVideoPlayer
+          uri={adminPreviewEntry.video_url}
+          onClose={() => setAdminPreviewEntry(null)}
+        />
+      )}
+
+      {/* ════════════════════════════════════════════════════════════
+          ADMIN: Reject reason modal
+          ════════════════════════════════════════════════════════════ */}
+      <Modal
+        visible={rejectModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setRejectModalVisible(false)}
+      >
+        <View style={styles.rejectModalOverlay}>
+          <View style={styles.rejectModalCard}>
+            <Text style={styles.rejectModalTitle}>Reject Entry #{rejectTarget?.entry_number}</Text>
+            <Text style={styles.rejectModalSub}>
+              The pilot will not be told why — only that their entry was not accepted.
+            </Text>
+            <TextInput
+              style={[styles.fieldInput, { marginTop: 12 }]}
+              placeholder="Reason (admin notes only, not shown to pilot)"
+              placeholderTextColor={C.muted}
+              value={rejectReason}
+              onChangeText={setRejectReason}
+              multiline
+              numberOfLines={3}
+              color={C.text}
+            />
+            <View style={styles.rejectModalButtons}>
+              <TouchableOpacity
+                style={styles.rejectModalCancel}
+                onPress={() => setRejectModalVisible(false)}
+              >
+                <Text style={styles.rejectModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.rejectModalConfirm}
+                onPress={handleAdminRejectConfirm}
+                disabled={adminActionId === rejectTarget?.id}
+              >
+                {adminActionId === rejectTarget?.id
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.rejectModalConfirmText}>Confirm Reject</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -1751,4 +2039,139 @@ const styles = StyleSheet.create({
     paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.border },
   seasonPickerRowActive: {},
   seasonPickerRowText:   { color: C.subtext, fontSize: 14 },
+
+  // ── Admin Panel ────────────────────────────────────────────────────────────
+  adminFAB: {
+    position: 'absolute' as const,
+    bottom: 90, right: 18,
+    width: 50, height: 50, borderRadius: 25,
+    backgroundColor: C.orange,
+    justifyContent: 'center' as const, alignItems: 'center' as const,
+    shadowColor: C.orange, shadowOpacity: 0.55, shadowRadius: 10,
+    elevation: 8,
+  },
+  adminFABBadge: {
+    position: 'absolute' as const, top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: '#ff0033',
+    justifyContent: 'center' as const, alignItems: 'center' as const,
+    paddingHorizontal: 4,
+  },
+  adminFABBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' as const },
+
+  adminPanelHeader: {
+    flexDirection: 'row' as const, alignItems: 'flex-start' as const,
+    justifyContent: 'space-between' as const,
+    marginBottom: 10, paddingBottom: 12,
+    borderBottomWidth: 1, borderBottomColor: C.border,
+  },
+  adminPanelTitle: { color: C.text, fontSize: 17, fontWeight: '800' as const },
+  adminPanelSub:   { color: C.subtext, fontSize: 12 },
+
+  adminRefreshBtn: {
+    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6,
+    alignSelf: 'flex-start' as const,
+    paddingHorizontal: 12, paddingVertical: 7,
+    backgroundColor: C.cyan + '15', borderRadius: 10,
+    borderWidth: 1, borderColor: C.cyan + '33', marginBottom: 12,
+  },
+  adminRefreshText: { color: C.cyan, fontSize: 12, fontWeight: '600' as const },
+
+  adminEmpty: {
+    alignItems: 'center' as const, paddingVertical: 40, gap: 10,
+  },
+  adminEmptyTitle: { color: C.text, fontSize: 16, fontWeight: '700' as const },
+  adminEmptyText:  { color: C.subtext, fontSize: 13 },
+
+  adminEntryCard: {
+    flexDirection: 'row' as const, gap: 12,
+    backgroundColor: '#0d0d1f', borderRadius: 14,
+    padding: 10, borderWidth: 1, borderColor: C.border,
+  },
+  adminThumbWrap: {
+    width: 90, height: 70, borderRadius: 10, overflow: 'hidden' as const,
+    backgroundColor: '#0a0f1a',
+  },
+  adminThumbPlaceholder: {
+    justifyContent: 'center' as const, alignItems: 'center' as const,
+  },
+  adminThumb:      { width: '100%', height: '100%' },
+  adminThumbOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center' as const, alignItems: 'center' as const,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+
+  adminEntryInfo:   { flex: 1, gap: 5 },
+  adminChallengeTitle: { color: C.text, fontSize: 13, fontWeight: '700' as const },
+  adminEntryNum:    { color: C.subtext, fontSize: 11 },
+
+  adminStatusPill: {
+    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 5,
+    alignSelf: 'flex-start' as const,
+    borderWidth: 1, borderRadius: 8,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  adminStatusDot:  { width: 6, height: 6, borderRadius: 3 },
+  adminStatusText: { fontSize: 11, fontWeight: '600' as const, textTransform: 'capitalize' as const },
+
+  adminFlagsWrap: { gap: 4 },
+  adminFlagsLabel: {
+    color: C.muted, fontSize: 10, fontWeight: '700' as const,
+    letterSpacing: 0.5, textTransform: 'uppercase' as const,
+  },
+  adminFlagChip: {
+    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4,
+    backgroundColor: C.orange + '18', borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 3, alignSelf: 'flex-start' as const,
+  },
+  adminFlagText: { color: C.orange, fontSize: 11, fontWeight: '600' as const },
+  adminFlagConf: { color: C.muted, fontSize: 10 },
+
+  adminActionRow: {
+    flexDirection: 'row' as const, gap: 8, marginTop: 4,
+  },
+  adminApproveBtn: {
+    flex: 1, flexDirection: 'row' as const, alignItems: 'center' as const,
+    justifyContent: 'center' as const, gap: 5,
+    backgroundColor: '#1a4a2e', borderRadius: 10,
+    borderWidth: 1, borderColor: C.green + '55',
+    paddingVertical: 8,
+  },
+  adminApproveBtnText: { color: C.green, fontSize: 12, fontWeight: '700' as const },
+  adminRejectBtn: {
+    flex: 1, flexDirection: 'row' as const, alignItems: 'center' as const,
+    justifyContent: 'center' as const, gap: 5,
+    backgroundColor: '#3a0a0a', borderRadius: 10,
+    borderWidth: 1, borderColor: '#ff444455',
+    paddingVertical: 8,
+  },
+  adminRejectBtnText: { color: '#ff4444', fontSize: 12, fontWeight: '700' as const },
+
+  // ── Reject reason modal ──────────────────────────────────────────────────
+  rejectModalOverlay: {
+    flex: 1, justifyContent: 'center' as const, alignItems: 'center' as const,
+    backgroundColor: 'rgba(0,0,0,0.75)', padding: 24,
+  },
+  rejectModalCard: {
+    width: '100%', backgroundColor: C.card, borderRadius: 18,
+    padding: 20, borderWidth: 1, borderColor: C.border,
+  },
+  rejectModalTitle: { color: C.text, fontSize: 16, fontWeight: '800' as const, marginBottom: 6 },
+  rejectModalSub:   { color: C.subtext, fontSize: 12, lineHeight: 17 },
+  rejectModalButtons: {
+    flexDirection: 'row' as const, gap: 10, marginTop: 16,
+  },
+  rejectModalCancel: {
+    flex: 1, paddingVertical: 13, borderRadius: 12,
+    backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: C.border,
+    alignItems: 'center' as const,
+  },
+  rejectModalCancelText: { color: C.subtext, fontSize: 14, fontWeight: '600' as const },
+  rejectModalConfirm: {
+    flex: 1, paddingVertical: 13, borderRadius: 12,
+    backgroundColor: '#3a0a0a', borderWidth: 1, borderColor: '#ff444455',
+    alignItems: 'center' as const,
+  },
+  rejectModalConfirmText: { color: '#ff4444', fontSize: 14, fontWeight: '800' as const },
 });
