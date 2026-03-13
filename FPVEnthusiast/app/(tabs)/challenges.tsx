@@ -8,6 +8,7 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   Modal, TextInput, ScrollView, ActivityIndicator, Alert,
   RefreshControl, Image, Dimensions, StatusBar, Animated,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1088,7 +1089,11 @@ export default function ChallengesScreen() {
       {/* ════ Submit Entry Modal ════ */}
       <Modal visible={submitVisible} animationType="slide" transparent
         onRequestClose={() => setSubmitVisible(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+        >
           <View style={styles.modalSheet}>
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalTitle}>Submit Entry</Text>
@@ -1096,7 +1101,7 @@ export default function ChallengesScreen() {
                 <Ionicons name="close" size={22} color="#fff" />
               </TouchableOpacity>
             </View>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {/* Anonymous notice */}
               <View style={styles.infoBox}>
                 <Ionicons name="eye-off-outline" size={14} color={C.cyan} />
@@ -1259,7 +1264,7 @@ export default function ChallengesScreen() {
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ════ Suggest Modal ════ */}
