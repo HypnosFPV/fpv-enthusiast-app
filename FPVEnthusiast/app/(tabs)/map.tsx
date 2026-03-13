@@ -2031,7 +2031,7 @@ const styles = StyleSheet.create({
   spotPickerRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
   spotPickerDot:  { width: 12, height: 12, borderRadius: 6 },
   spotPickerName: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  spotPickerType: { color: '#555', fontSize: 11, marginTop: 2 },,
+  spotPickerType: { color: '#555', fontSize: 11, marginTop: 2 },
 
   // ── Map fraud-prevention UI ──────────────────────────────────────────────
   verifiedBadge:      { backgroundColor: '#00C853', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
