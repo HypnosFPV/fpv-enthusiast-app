@@ -81,7 +81,13 @@ function toFeedPost(p: Post): FeedPost {
 }
 
 function thumbnailUri(post: Post): string | null {
-  if (post.media_type === 'video') return null;
+  // For direct video uploads: thumbnail_url is the frame saved during upload — use it first
+  if (post.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(post.media_url ?? '')) {
+    const t = resolveStorageUrl(post.thumbnail_url);
+    if (t && !t.startsWith('file://')) return t;
+    // No thumbnail saved yet — fall through to show placeholder
+    return null;
+  }
 
   // Check all URL candidates in order
   const candidates = [post.thumbnail_url, post.media_url, post.social_url, post.embed_url];
