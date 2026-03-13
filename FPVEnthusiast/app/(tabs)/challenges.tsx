@@ -644,7 +644,7 @@ export default function ChallengesScreen() {
           <TouchableOpacity style={styles.entriesHeaderBtn} onPress={() => setEntriesModalVisible(true)} activeOpacity={0.75}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Ionicons name="videocam-outline" size={15} color="#ff4500" />
-              <Text style={[styles.sectionLabel, { color: '#ff4500' }]}>ENTRIES ({entries.length})</Text>
+              <Text style={[styles.sectionLabel, { color: '#ff4500' }]}>ENTRIES ({weeklyChallenge?.entry_count ?? entries.length})</Text>
               {phase === 'submission' && (
                 <Text style={styles.anonNote}>🎭 Anonymous</Text>
               )}
@@ -1053,7 +1053,7 @@ export default function ChallengesScreen() {
         <View style={{ flex: 1, backgroundColor: '#070710', paddingTop: 52 }}>
           <View style={styles.modalHeaderRow}>
             <Text style={styles.modalTitle}>
-              Entries ({entries.length})
+              Entries ({detailChallenge?.entry_count ?? weeklyChallenge?.entry_count ?? entries.length})
               {currentPhase === 'submission' ? '  🎭 Anonymous' : ''}
             </Text>
             <TouchableOpacity onPress={() => setEntriesModalVisible(false)}>
