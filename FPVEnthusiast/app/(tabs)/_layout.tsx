@@ -100,6 +100,13 @@ export default function TabLayout() {
           title: 'Search',
         }}
       />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          href: null,
+          title: 'Admin',
+        }}
+      />
     </Tabs>
   );
 }

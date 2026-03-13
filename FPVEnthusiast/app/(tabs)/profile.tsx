@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import PropIcon from '../../src/components/icons/PropIcon';
+import { useRouter }        from 'expo-router';
 import { useAuth }          from '../../src/context/AuthContext';
 import { useProfile }       from '../../src/hooks/useProfile';
 import { useYouTubeAuth }   from '../../src/hooks/useYouTubeAuth';
@@ -277,10 +278,17 @@ type TabKey = typeof TABS[number]['key'];
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { user, signOut } = useAuth() as {
     user: { id: string; email?: string } | null;
     signOut: () => void;
   };
+  const [isAdmin, setIsAdmin] = React.useState(false);
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('users').select('is_admin').eq('id', user.id).single()
+      .then(({ data }) => setIsAdmin(data?.is_admin === true));
+  }, [user?.id]);
 
   const {
     profile, loading: profileLoading, updating,
@@ -1001,6 +1009,15 @@ export default function ProfileScreen() {
               </View>
             </View>
 
+            {isAdmin && (
+              <TouchableOpacity
+                style={styles.adminBtn}
+                onPress={() => router.push('/(tabs)/admin')}
+              >
+                <Ionicons name="shield-checkmark-outline" size={18} color="#FF9800" />
+                <Text style={styles.adminBtnTxt}>🛡 Map Moderation</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.signOutBtn} onPress={signOut}>
               <Ionicons name="log-out-outline" size={18} color="#e74c3c" />
               <Text style={styles.signOutText}>Sign Out</Text>
@@ -1447,6 +1464,8 @@ const styles = StyleSheet.create({
   ytAuthBtnUnlink: { backgroundColor: '#3a1e1e', borderWidth: 1, borderColor: '#e74c3c' },
   ytAuthBtnText:   { color: '#fff', fontSize: 12, fontWeight: '600' },
 
+  adminBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: '#3d2b00', backgroundColor: '#1a1100' },
+  adminBtnTxt:{ color: '#FF9800', fontWeight: '700', fontSize: 14 },
   signOutBtn:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: '#3a1e1e', backgroundColor: '#1a0a0a' },
   signOutText: { color: '#e74c3c', fontWeight: '600', fontSize: 14 },
 
