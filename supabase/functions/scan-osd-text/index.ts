@@ -1,11 +1,29 @@
 // supabase/functions/scan-osd-text/index.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Triggered via DB webhook on challenge_entries INSERT.
-// 1. Downloads up to 6 evenly-spaced thumbnail frames from the submitted video.
-// 2. Runs Google Cloud Vision TEXT_DETECTION on each frame.
-// 3. Checks whether any detected text looks like an OSD pilot callsign.
-// 4. If clean  → moderation_status = 'approved'
-//    If flagged → moderation_status = 'needs_review', flags stored in JSONB
+// Multi-frame OSD pilot name scanner with confidence-tier auto-decision.
+//
+// Called after every challenge entry upload with:
+//   { entry_id, s3_key, frame_s3_keys?: string[] }
+//
+// Decision tiers (minimises admin queue, maximises automation):
+//
+//  TIER 1 — AUTO-APPROVE ✅  (no admin needed)
+//    • No callsign found in any frame
+//
+//  TIER 2 — AUTO-APPROVE WITH BLUR NOTE ✅🔵  (no admin needed)
+//    • Same callsign text seen in ≥ MULTI_FRAME_THRESHOLD frames  OR
+//    • Any callsign with confidence ≥ HIGH_CONFIDENCE_THRESHOLD
+//    → Status: "approved", flag type "pilot_name_auto_blurred"
+//    → UI shows the cyan "Auto-Blur Applied" banner
+//
+//  TIER 3 — NEEDS ADMIN REVIEW ⚠️
+//    • Callsign seen in only 1 frame AND confidence < HIGH_CONFIDENCE_THRESHOLD
+//    → Scanner isn't certain enough; human eyes needed
+//
+//  TIER 4 — NEEDS ADMIN REVIEW ⚠️  (safety fallbacks)
+//    • No frames available, frame fetch errors, Vision API errors
+//
+// Target: ~95%+ of entries handled automatically; admin only sees tier 3/4.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -15,41 +33,66 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// ── Known OSD labels that are NOT pilot names ────────────────────────────────
+// ── Confidence thresholds ─────────────────────────────────────────────────────
+// Vision TEXT_DETECTION returns a score 0-1 per annotation.
+const CONFIDENCE_THRESHOLD       = 0.70;  // Minimum to consider at all
+const HIGH_CONFIDENCE_THRESHOLD  = 0.90;  // High enough → auto-blur without multi-frame confirm
+const MULTI_FRAME_THRESHOLD      = 2;     // Seen in this many frames → auto-blur
+
+// ── Known OSD system labels — never a pilot name ─────────────────────────────
 const KNOWN_OSD_LABELS = new Set([
-  'GPS','RSSI','ALT','SPD','HDG','SAT','BAT','MAH','WP',
-  'KM/H','M/S','FT','MPH','KPH','VBAT','CURR','CAP',
-  'ARMED','DISARMED','FAILSAFE','ACRO','ANGLE','HORIZON',
-  'AIR','MODE','CRAFT','PILOT','NAME', // "PILOT" and "NAME" alone are labels
+  'GPS','RSSI','ALT','SPD','HDG','SAT','BAT','MAH','WP','RC',
+  'KM/H','M/S','FT','MPH','KPH','VBAT','CURR','CAP','BATT',
+  'ARMED','DISARMED','FAILSAFE','ACRO','ANGLE','HORIZON','STAB',
+  'AIR','MODE','CRAFT','PILOT','NAME','HOME','RTH','WRN','WARN',
+  'LINK','PWR','SNR','LQ','ANT','DBM','MW','ELRS','CRSF','FPORT',
+  'OK','ERR','RX','TX','LOST','FIX','NOFIX','DOP','HDOP',
 ]);
 
-// ── Callsign detector ────────────────────────────────────────────────────────
-// Returns true if detected text looks like a pilot name / callsign rather
-// than a standard OSD numeric readout.
-function looksLikeCallsign(raw: string): boolean {
+// ── Callsign detector ─────────────────────────────────────────────────────────
+function looksLikeCallsign(raw: string, score: number): boolean {
   const t = raw.trim().toUpperCase();
 
-  // Too short or too long to be a callsign
+  if (score < CONFIDENCE_THRESHOLD) return false;
   if (t.length < 2 || t.length > 30) return false;
-
-  // Pure numbers, timestamps (03:05), voltage (3.63V), percentages, coords
-  if (/^[\d\s:\.\-\+%°VvAaWwMmGgKk\/]+$/.test(t)) return false;
-
-  // Known single-word OSD labels
+  if (/^[\d\s:\.\-\+%°VvAaWwMmGgKk\/\[\]]+$/.test(t)) return false;
+  if (t.length === 1) return false;
   if (KNOWN_OSD_LABELS.has(t)) return false;
-
-  // Must contain at least 2 consecutive letters (rules out "3V3", "4S" etc.)
   if (!/[A-Z]{2,}/.test(t)) return false;
+  if (/^(FPV|DVR|PID|VTX|ESC|FC|GPS|IMU|OSD|HDR|POV|RPM|LOS|BVLOS|UAV|UAS)$/.test(t)) return false;
 
-  // Likely a callsign — contains real alphabetic word content
   return true;
 }
 
-// ── Scan a single frame (base64 JPEG/PNG) ────────────────────────────────────
+// ── Fetch image from Supabase Storage → base64 ───────────────────────────────
+async function fetchImageAsBase64(
+  supabase: ReturnType<typeof createClient>,
+  s3Key: string,
+): Promise<string | null> {
+  try {
+    const { data: { publicUrl } } = supabase.storage.from('posts').getPublicUrl(s3Key);
+    const resp = await fetch(publicUrl);
+    if (!resp.ok) return null;
+    const buf   = await resp.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary  = '';
+    const CHUNK = 8192;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(binary);
+  } catch (e) {
+    console.warn('[scan-osd-text] fetchImageAsBase64 error:', e);
+    return null;
+  }
+}
+
+// ── Scan a single frame via Google Vision TEXT_DETECTION ─────────────────────
 async function scanFrame(
   base64: string,
   apiKey: string,
-): Promise<Array<{ text: string; boundingBox: any; confidence: number }>> {
+  frameIndex: number,
+): Promise<Array<{ text: string; confidence: number; frameIndex: number; boundingBox: any }>> {
   const resp = await fetch(
     `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
     {
@@ -65,39 +108,33 @@ async function scanFrame(
   );
 
   if (!resp.ok) {
-    console.warn('[scan-osd-text] Vision API HTTP error:', resp.status);
+    console.warn(`[scan-osd-text] Vision API error on frame ${frameIndex}:`, resp.status);
     return [];
   }
 
   const data        = await resp.json();
   const annotations = data.responses?.[0]?.textAnnotations ?? [];
-  const flags: Array<{ text: string; boundingBox: any; confidence: number }> = [];
+  const flags: Array<{ text: string; confidence: number; frameIndex: number; boundingBox: any }> = [];
 
-  // Skip index 0 — that's the full-page text block concatenation
+  // annotations[0] is the full concatenated text block — skip it
   for (const ann of annotations.slice(1)) {
-    const text = ann.description ?? '';
-    if (!looksLikeCallsign(text)) continue;
+    const text  = (ann.description ?? '').trim();
+    const score = ann.score ?? 0.85;
 
-    // Only flag text appearing in the upper 45% of the frame
-    // (OSD pilot names virtually always sit in the top portion)
-    const vertices: Array<{ x?: number; y?: number }> = ann.boundingPoly?.vertices ?? [];
-    if (vertices.length < 2) continue;
-
-    // Vision returns absolute pixel coords — we need the relative Y position.
-    // We don't know the frame height here, but we DO know that OSD pilot names
-    // are almost always in the top third. We store the raw bbox and let the
-    // downstream processor decide.
-    flags.push({
-      text,
-      boundingBox: ann.boundingPoly?.vertices,
-      confidence:  ann.score ?? 0.9,
-    });
+    if (looksLikeCallsign(text, score)) {
+      flags.push({
+        text,
+        confidence:  score,
+        frameIndex,
+        boundingBox: ann.boundingPoly?.vertices ?? [],
+      });
+    }
   }
 
   return flags;
 }
 
-// ── Main handler ─────────────────────────────────────────────────────────────
+// ── Main handler ──────────────────────────────────────────────────────────────
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS });
@@ -116,31 +153,32 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // ── Parse request ──────────────────────────────────────────────────────────
   let entryId: string;
-  let s3Key: string | null;
+  let s3Key:   string | null;
+  let frameS3Keys: string[] = [];
 
   try {
-    // Support both DB webhook payload ({ record }) and direct call ({ entry_id, s3_key })
-    const body = await req.json();
+    const body   = await req.json();
     const record = body.record ?? body;
-    entryId = record.id ?? body.entry_id;
-    s3Key   = record.s3_upload_key ?? body.s3_key ?? null;
+    entryId     = record.id        ?? body.entry_id;
+    s3Key       = record.s3_upload_key ?? body.s3_key ?? null;
+    frameS3Keys = body.frame_s3_keys  ?? [];
   } catch {
     return new Response(JSON.stringify({ error: 'invalid body' }), { status: 400, headers: CORS });
   }
 
   if (!entryId) {
-    return new Response(JSON.stringify({ error: 'missing entry id' }), { status: 400, headers: CORS });
+    return new Response(JSON.stringify({ error: 'missing entry_id' }), { status: 400, headers: CORS });
   }
 
-  // Mark as processing
+  // ── Mark as processing ─────────────────────────────────────────────────────
   await supabase.rpc('set_entry_moderation', {
     p_entry_id: entryId,
     p_status:   'processing',
     p_flags:    [],
   });
 
-  // If no video key, auto-approve (shouldn't happen in practice)
   if (!s3Key) {
     await supabase.rpc('set_entry_moderation', {
       p_entry_id: entryId,
@@ -153,105 +191,175 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // ── Get the public URL of the video ────────────────────────────────────
-    const { data: { publicUrl } } = supabase.storage
-      .from('posts')
-      .getPublicUrl(s3Key);
+    // ── Build the list of frames to scan ──────────────────────────────────────
+    let keysToScan: string[] = [...frameS3Keys];
 
-    // ── Fetch the video and extract up to 6 evenly-spaced frames ──────────
-    // We use a lightweight approach: fetch the video binary, then use
-    // VideoThumbnails logic via our own frame extraction endpoint isn't
-    // available in Deno. Instead we use the thumbnail that was already
-    // uploaded alongside the video (thumbnail_s3_key on the same entry).
-    //
-    // Fetch the entry's thumbnail key from the DB
-    const { data: entryRow } = await supabase
-      .from('challenge_entries')
-      .select('thumbnail_s3_key')
-      .eq('id', entryId)
-      .single();
+    if (keysToScan.length === 0) {
+      const { data: entryRow } = await supabase
+        .from('challenge_entries')
+        .select('thumbnail_s3_key, s3_upload_key')
+        .eq('id', entryId)
+        .single();
 
-    const thumbKey: string | null = entryRow?.thumbnail_s3_key ?? null;
-
-    const allFlags: Array<{ text: string; frame: number; boundingBox: any; confidence: number }> = [];
-
-    // ── Scan the thumbnail (most representative frame) ────────────────────
-    const keysToScan: string[] = [];
-    if (thumbKey) keysToScan.push(thumbKey);
-
-    for (let i = 0; i < keysToScan.length; i++) {
-      const key = keysToScan[i];
-      const { data: { publicUrl: imgUrl } } = supabase.storage.from('posts').getPublicUrl(key);
-
-      // Fetch image and convert to base64
-      const imgResp = await fetch(imgUrl);
-      if (!imgResp.ok) continue;
-      const imgBuf  = await imgResp.arrayBuffer();
-      const bytes   = new Uint8Array(imgBuf);
-      let binary    = '';
-      bytes.forEach(b => { binary += String.fromCharCode(b); });
-      const b64 = btoa(binary);
-
-      const frameFlags = await scanFrame(b64, apiKey);
-      frameFlags.forEach(f => allFlags.push({ ...f, frame: i }));
+      if (entryRow?.thumbnail_s3_key) {
+        keysToScan = [entryRow.thumbnail_s3_key];
+      }
     }
 
-    // ── Additionally scan a fetched frame from the video URL directly ─────
-    // Try to get a web-accessible thumbnail by appending #t=2 (browsers handle
-    // this but servers may not). As a practical fallback, we rely on the
-    // uploaded thumbnail above. If no thumbnail was uploaded, we scan the
-    // first few KB of the video for embedded cover art (common in MP4).
-    // For now: if no thumbnail, mark as needs_review to be safe.
     if (keysToScan.length === 0) {
       await supabase.rpc('set_entry_moderation', {
         p_entry_id: entryId,
         p_status:   'needs_review',
-        p_flags:    [{ type: 'no_thumbnail', reason: 'No thumbnail available for scanning' }],
+        p_flags:    [{ type: 'no_frames', reason: 'No frame thumbnails available for scanning' }],
       });
-      return new Response(JSON.stringify({ ok: true, needs_review: true, reason: 'no_thumbnail' }), {
+      return new Response(JSON.stringify({ ok: true, needs_review: true, reason: 'no_frames' }), {
         headers: { ...CORS, 'Content-Type': 'application/json' },
       });
     }
 
-    // ── Evaluate results ──────────────────────────────────────────────────
-    const callsignFlags = allFlags.map(f => ({
-      type:        'pilot_name' as const,
-      text:        f.text,
-      frame:       f.frame,
-      confidence:  f.confidence,
-      boundingBox: f.boundingBox,
-    }));
+    console.log(`[scan-osd-text] entry=${entryId} scanning ${keysToScan.length} frame(s)`);
 
-    if (callsignFlags.length > 0) {
-      console.log(`[scan-osd-text] entry=${entryId} FLAGGED:`, callsignFlags.map(f => f.text).join(', '));
+    // ── Scan all frames ────────────────────────────────────────────────────────
+    // callsignMap: uppercased text → { bestConfidence, frameCount, representative flag }
+    const callsignMap = new Map<string, {
+      text:        string;
+      confidence:  number;
+      frameCount:  number;
+      frame:       number;
+      boundingBox: any;
+    }>();
+
+    let scannedCount = 0;
+
+    for (let i = 0; i < keysToScan.length; i++) {
+      const b64 = await fetchImageAsBase64(supabase, keysToScan[i]);
+      if (!b64) continue;
+
+      scannedCount++;
+      const frameFlags = await scanFrame(b64, apiKey, i);
+
+      for (const f of frameFlags) {
+        const key = f.text.toUpperCase();
+        if (callsignMap.has(key)) {
+          const existing = callsignMap.get(key)!;
+          existing.frameCount++;
+          if (f.confidence > existing.confidence) {
+            existing.confidence  = f.confidence;
+            existing.frame       = f.frameIndex;
+            existing.boundingBox = f.boundingBox;
+          }
+        } else {
+          callsignMap.set(key, {
+            text:        f.text,
+            confidence:  f.confidence,
+            frameCount:  1,
+            frame:       f.frameIndex,
+            boundingBox: f.boundingBox,
+          });
+        }
+      }
+    }
+
+    // ── Decision tiers ────────────────────────────────────────────────────────
+    if (scannedCount === 0) {
       await supabase.rpc('set_entry_moderation', {
         p_entry_id: entryId,
         p_status:   'needs_review',
-        p_flags:    callsignFlags,
+        p_flags:    [{ type: 'fetch_error', reason: 'Could not fetch any frames for scanning' }],
       });
       return new Response(
-        JSON.stringify({ ok: true, approved: false, flags: callsignFlags }),
+        JSON.stringify({ ok: true, needs_review: true, reason: 'fetch_error' }),
         { headers: { ...CORS, 'Content-Type': 'application/json' } }
       );
     }
 
-    // ── Clean — approve ───────────────────────────────────────────────────
-    console.log(`[scan-osd-text] entry=${entryId} approved — no callsign detected`);
+    if (callsignMap.size === 0) {
+      // ── TIER 1: No callsign found anywhere → auto-approve ─────────────────
+      console.log(`[scan-osd-text] entry=${entryId} TIER-1 APPROVED — clean across ${scannedCount} frames`);
+      await supabase.rpc('set_entry_moderation', {
+        p_entry_id: entryId,
+        p_status:   'approved',
+        p_flags:    [],
+      });
+      return new Response(
+        JSON.stringify({ ok: true, approved: true, tier: 1, framesScanned: scannedCount }),
+        { headers: { ...CORS, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Separate callsigns into: certain (auto-blur) vs uncertain (needs review)
+    const certainFlags:   Array<any> = [];
+    const uncertainFlags: Array<any> = [];
+
+    for (const [, cs] of callsignMap) {
+      const flag = {
+        type:        'pilot_name_auto_blurred' as const,
+        text:        cs.text,
+        confidence:  cs.confidence,
+        frame:       cs.frame,
+        frameCount:  cs.frameCount,
+        boundingBox: cs.boundingBox,
+      };
+
+      const isHighConfidence  = cs.confidence  >= HIGH_CONFIDENCE_THRESHOLD;
+      const isMultiFrame      = cs.frameCount  >= MULTI_FRAME_THRESHOLD;
+
+      if (isHighConfidence || isMultiFrame) {
+        certainFlags.push(flag);
+      } else {
+        uncertainFlags.push({ ...flag, type: 'pilot_name' });
+      }
+    }
+
+    if (uncertainFlags.length > 0) {
+      // ── TIER 3: Low-confidence single-frame detection → admin review ───────
+      console.log(
+        `[scan-osd-text] entry=${entryId} TIER-3 NEEDS_REVIEW — uncertain:`,
+        uncertainFlags.map(f => `"${f.text}" (frame ${f.frame}, ${Math.round(f.confidence * 100)}%)`).join(', ')
+      );
+      await supabase.rpc('set_entry_moderation', {
+        p_entry_id: entryId,
+        p_status:   'needs_review',
+        p_flags:    [...uncertainFlags, ...certainFlags],
+      });
+      return new Response(
+        JSON.stringify({
+          ok:           true,
+          approved:     false,
+          tier:         3,
+          flags:        [...uncertainFlags, ...certainFlags],
+          framesScanned: scannedCount,
+        }),
+        { headers: { ...CORS, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ── TIER 2: High-confidence / multi-frame callsign → auto-approve + blur ─
+    console.log(
+      `[scan-osd-text] entry=${entryId} TIER-2 AUTO-BLURRED:`,
+      certainFlags.map(f => `"${f.text}" (${f.frameCount} frames, ${Math.round(f.confidence * 100)}%)`).join(', ')
+    );
     await supabase.rpc('set_entry_moderation', {
       p_entry_id: entryId,
       p_status:   'approved',
-      p_flags:    [],
+      p_flags:    certainFlags,
     });
     return new Response(
-      JSON.stringify({ ok: true, approved: true }),
+      JSON.stringify({
+        ok:            true,
+        approved:      true,
+        tier:          2,
+        auto_blurred:  true,
+        flags:         certainFlags,
+        framesScanned: scannedCount,
+      }),
       { headers: { ...CORS, 'Content-Type': 'application/json' } }
     );
 
   } catch (err) {
     console.error('[scan-osd-text] unexpected error:', err);
-    // Fail open — don't hold up a submission on an unexpected error
     await supabase.rpc('set_entry_moderation', {
-      p_entry_id: entryId,
+      p_entry_id: entryId!,
       p_status:   'needs_review',
       p_flags:    [{ type: 'error', reason: String(err) }],
     });

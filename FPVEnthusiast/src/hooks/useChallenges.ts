@@ -207,6 +207,7 @@ export function useChallenges(currentUserId?: string) {
     challengeId: string;
     s3UploadKey: string;          // storage path returned after upload
     thumbnailS3Key?: string;
+    frameS3Keys?: string[];       // up to 6 evenly-spaced frame thumbnails for OSD scanning
     durationSeconds?: number;
     originalFilename?: string;
     fileSizeBytes?: number;
@@ -234,7 +235,11 @@ export function useChallenges(currentUserId?: string) {
     // ── Trigger OSD pilot-name scan asynchronously ─────────────────────────
     // Fire-and-forget: the edge function updates moderation_status on its own.
     supabase.functions.invoke('scan-osd-text', {
-      body: { entry_id: entry.id, s3_key: params.s3UploadKey },
+      body: {
+        entry_id:       entry.id,
+        s3_key:         params.s3UploadKey,
+        frame_s3_keys:  params.frameS3Keys ?? [],  // multi-frame OSD scan
+      },
     }).catch((e: any) => console.warn('[useChallenges] scan-osd-text invoke failed:', e));
     // Derive public URLs for immediate display
     const videoUrl = params.s3UploadKey

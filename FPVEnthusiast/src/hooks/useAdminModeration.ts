@@ -10,7 +10,7 @@ import { supabase } from '../services/supabase';
 export type ModerationStatus = 'pending' | 'processing' | 'approved' | 'needs_review' | 'rejected';
 
 export interface ModerationFlag {
-  type:        'pilot_name' | 'no_thumbnail' | 'error' | 'admin_rejection';
+  type:        'pilot_name' | 'no_thumbnail' | 'error' | 'admin_rejection' | 'admin_override' | 'no_frames' | 'fetch_error';
   text?:       string;       // detected callsign text
   confidence?: number;
   frame?:      number;
@@ -42,7 +42,9 @@ export function useAdminModeration() {
   const [entries,  setEntries]  = useState<FlaggedEntry[]>([]);
   const [loading,  setLoading]  = useState(false);
   const [isAdmin,  setIsAdmin]  = useState<boolean | null>(null); // null = not yet checked
-  const [actionId, setActionId] = useState<string | null>(null);  // entry being actioned
+  const [actionId,    setActionId]    = useState<string | null>(null);  // entry being actioned
+  const [allEntries,  setAllEntries]  = useState<FlaggedEntry[]>([]);
+  const [allLoading,  setAllLoading]  = useState(false);
 
   // ── Check if current user is an admin ──────────────────────────────────────
   const checkAdmin = useCallback(async (): Promise<boolean> => {
@@ -115,6 +117,56 @@ export function useAdminModeration() {
     }
   }, []);
 
+  // ── Override an auto-approved entry back into the review queue ────────────
+  // Used when a spot-check reveals a missed pilot name in an approved entry.
+  const overrideToReview = useCallback(async (entryId: string, reason = 'admin_spot_check'): Promise<boolean> => {
+    setActionId(entryId);
+    try {
+      const { error } = await supabase.rpc('admin_override_to_review', {
+        p_entry_id: entryId,
+        p_reason:   reason,
+      });
+      if (error) { console.error('[useAdminModeration] override:', error.message); return false; }
+      // Move from allEntries into the flagged queue immediately
+      const moved = allEntries.find(e => e.id === entryId);
+      if (moved) {
+        setAllEntries(prev => prev.filter(e => e.id !== entryId));
+        setEntries(prev => [{ ...moved, moderation_status: 'needs_review' }, ...prev]);
+      }
+      return true;
+    } finally {
+      setActionId(null);
+    }
+  }, [allEntries]);
+
+  // ── Load ALL entries (approved + pending) for spot-checking ───────────────
+  const loadAllEntries = useCallback(async (challengeId?: string): Promise<void> => {
+    setAllLoading(true);
+    try {
+      const { data, error } = await supabase.rpc('admin_get_all_entries', {
+        p_challenge_id: challengeId ?? null,
+      });
+      if (error) {
+        console.error('[useAdminModeration] loadAllEntries:', error.message);
+        setAllEntries([]);
+        return;
+      }
+      const enriched: FlaggedEntry[] = (data ?? []).map((row: any) => ({
+        ...row,
+        moderation_flags: row.moderation_flags ?? [],
+        video_url: row.s3_upload_key
+          ? supabase.storage.from('posts').getPublicUrl(row.s3_upload_key).data.publicUrl
+          : null,
+        thumbnail_url: row.thumbnail_s3_key
+          ? supabase.storage.from('posts').getPublicUrl(row.thumbnail_s3_key).data.publicUrl
+          : null,
+      }));
+      setAllEntries(enriched);
+    } finally {
+      setAllLoading(false);
+    }
+  }, []);
+
   return {
     entries,
     loading,
@@ -124,5 +176,9 @@ export function useAdminModeration() {
     loadFlaggedEntries,
     approveEntry,
     rejectEntry,
+    overrideToReview,
+    loadAllEntries,
+    allEntries,
+    allLoading,
   };
 }
