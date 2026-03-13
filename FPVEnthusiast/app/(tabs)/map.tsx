@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import {
   useMap, FlySpot, RaceEvent, SpotComment,
-  NewSpotData, NewEventData,
+  NewSpotData, NewEventData, haversineDistance,
 } from '../../src/hooks/useMap';
 import { SPOT_PIN_MAP, EVENT_PIN_MAP } from '../../src/components/FPVMapPins';
 import { useMultiGP } from '../../src/hooks/useMultiGP';
