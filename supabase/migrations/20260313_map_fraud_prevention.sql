@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS spot_reports (
                             'dangerous',     'duplicate',      'offensive_name',
                             'other'
                           )),
-  detail      text,
+  details     text,
   created_at  timestamptz NOT NULL DEFAULT now(),
   UNIQUE (spot_id, reporter_id)          -- one report per user per spot
 );
@@ -195,7 +195,7 @@ RETURNS TABLE (
     COALESCE(
       jsonb_agg(jsonb_build_object(
         'reason',     sr.reason,
-        'detail',     sr.detail,
+        'details',    sr.details,
         'created_at', sr.created_at
       ) ORDER BY sr.created_at DESC)
       FILTER (WHERE sr.id IS NOT NULL),
