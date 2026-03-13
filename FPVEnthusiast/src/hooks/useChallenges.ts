@@ -49,6 +49,8 @@ export interface ChallengeEntry {
   pilot_id: string;                        // real column name in live DB
   entry_number: number;
   processing_status: string;               // enum: uploading, processing, ready, failed
+  moderation_status: 'pending' | 'processing' | 'approved' | 'needs_review' | 'rejected'; // OSD scan
+  moderation_flags?: Array<{ type: string; text?: string; confidence?: number }> | null;
   s3_upload_key?: string | null;
   s3_processed_key?: string | null;
   thumbnail_s3_key?: string | null;
@@ -228,6 +230,12 @@ export function useChallenges(currentUserId?: string) {
       .single();
     if (error) { console.error('[useChallenges] submitEntry:', error.message); return null; }
     const entry = data as ChallengeEntry;
+
+    // ── Trigger OSD pilot-name scan asynchronously ─────────────────────────
+    // Fire-and-forget: the edge function updates moderation_status on its own.
+    supabase.functions.invoke('scan-osd-text', {
+      body: { entry_id: entry.id, s3_key: params.s3UploadKey },
+    }).catch((e: any) => console.warn('[useChallenges] scan-osd-text invoke failed:', e));
     // Derive public URLs for immediate display
     const videoUrl = params.s3UploadKey
       ? supabase.storage.from('posts').getPublicUrl(params.s3UploadKey).data.publicUrl

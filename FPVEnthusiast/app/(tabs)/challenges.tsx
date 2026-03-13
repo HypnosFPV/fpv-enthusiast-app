@@ -533,6 +533,11 @@ export default function ChallengesScreen() {
               <Text style={[styles.rulesText, { marginTop: 6, color: '#4a5568' }]}>
                 🏁 Ties in votes are broken by earliest submission time.
               </Text>
+              <Text style={[styles.rulesText, { marginTop: 4, color: C.cyan + 'cc' }]}>
+                🎭 All entries are anonymous during voting. Pilot names visible in OSD
+                are automatically blurred to keep judging fair — remove them from
+                Betaflight OSD before recording for the cleanest result.
+              </Text>
             </View>
           ) : null}
 
@@ -814,6 +819,27 @@ export default function ChallengesScreen() {
               </Text>
             </View>
           ) : null}
+
+          {/* OSD Moderation status badge — only shown to the entry owner */}
+          {isSelf && e.moderation_status === 'pending' && (
+            <View style={styles.moderationBadgePending}>
+              <ActivityIndicator size={9} color={C.subtext} />
+              <Text style={styles.moderationBadgeText}>Scanning OSD…</Text>
+            </View>
+          )}
+          {isSelf && e.moderation_status === 'processing' && (
+            <View style={styles.moderationBadgePending}>
+              <ActivityIndicator size={9} color={C.cyan} />
+              <Text style={[styles.moderationBadgeText, { color: C.cyan }]}>Processing video…</Text>
+            </View>
+          )}
+          {isSelf && e.moderation_status === 'needs_review' && (
+            <View style={styles.moderationBadgeReview}>
+              <Ionicons name="eye-off-outline" size={10} color={C.cyan} />
+              <Text style={[styles.moderationBadgeText, { color: C.cyan }]}>OSD blurring applied</Text>
+            </View>
+          )}
+
           {/* Duration row */}
           {e.duration_seconds ? (
             <Text style={styles.entryDur}>{Math.round(e.duration_seconds)}s</Text>
@@ -1119,7 +1145,7 @@ export default function ChallengesScreen() {
                     Submission Rules
                   </Text>
                   <Text style={styles.infoText}>
-                    {'• Direct video upload only — no links accepted\n• No visible faces or people\n• No logos, branding, or watermarks\n• FPV footage only — skill over identity\n• Violations auto-detected & rejected\n• Ties broken by earliest submission time'}
+                    {'• Direct video upload only — no links accepted\n• No visible faces or people\n• No logos, branding, or watermarks\n• FPV footage only — skill over identity\n• No OSD pilot names / callsigns (auto-blurred if detected)\n• Violations auto-detected & rejected\n• Ties broken by earliest submission time'}
                   </Text>
                 </View>
               </View>
@@ -1154,6 +1180,22 @@ export default function ChallengesScreen() {
                   <Text style={[styles.infoText, { color: C.green }]}>
                     Video passed content check ✓
                   </Text>
+                </View>
+              )}
+
+              {/* OSD pilot name auto-blur notice */}
+              {checkResult?.issues?.some(i => i.includes('OSD pilot name')) && (
+                <View style={[styles.infoBox, { borderColor: C.cyan + '55', backgroundColor: '#001a22' }]}>
+                  <Ionicons name="eye-off-outline" size={15} color={C.cyan} />
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <Text style={[styles.infoText, { color: C.cyan, fontWeight: '700' }]}>
+                      OSD Pilot Name Detected — Auto-Blur Applied
+                    </Text>
+                    <Text style={styles.infoText}>
+                      Your pilot name was found in the OSD. It will be automatically blurred
+                      before your entry goes live. No action needed — your entry is still accepted.
+                    </Text>
+                  </View>
                 </View>
               )}
 
@@ -1619,6 +1661,20 @@ const styles = StyleSheet.create({
   entryCaption: { color: C.subtext, fontSize: 12 },
   winnerBadge:  { alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
   winnerText:   { fontSize: 11, fontWeight: '800' },
+  // ── OSD Moderation badges ──────────────────────────────────────────────────
+  moderationBadgePending: {
+    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4,
+    alignSelf: 'flex-start' as const,
+    backgroundColor: '#1a1a2e', borderRadius: 8,
+    paddingHorizontal: 7, paddingVertical: 3, marginTop: 3,
+  },
+  moderationBadgeReview: {
+    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4,
+    alignSelf: 'flex-start' as const,
+    backgroundColor: '#001a22', borderRadius: 8, borderWidth: 1, borderColor: '#00d4ff44',
+    paddingHorizontal: 7, paddingVertical: 3, marginTop: 3,
+  },
+  moderationBadgeText: { fontSize: 10, color: '#4a5568', fontWeight: '600' as const },
   voteRow:      { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
   voteBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10,
     paddingVertical: 5, borderRadius: 12, backgroundColor: '#1a2030',
