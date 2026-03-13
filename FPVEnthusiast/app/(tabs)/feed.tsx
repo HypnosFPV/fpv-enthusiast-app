@@ -110,6 +110,7 @@ export default function FeedScreen() {
 
   const {
     posts, loading, refreshing,
+    loadingMore, hasMore,
     onRefresh, loadMore,
     toggleLike,
     createPost, createSocialPost, deletePost,
@@ -434,7 +435,7 @@ export default function FeedScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ff4500" />
         }
         onEndReached={loadMore}
-        onEndReachedThreshold={0.4}
+        onEndReachedThreshold={0.6}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={VIEWABILITY_CONFIG}
         showsVerticalScrollIndicator={false}
@@ -445,6 +446,22 @@ export default function FeedScreen() {
             <Text style={styles.emptyTitle}>No posts yet</Text>
             <Text style={styles.emptySubtitle}>Be the first to post!</Text>
           </View>
+        }
+        ListFooterComponent={
+          visiblePosts.length > 0 ? (
+            loadingMore ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color="#ff4500" />
+                <Text style={styles.footerLoaderText}>Loading more posts...</Text>
+              </View>
+            ) : !hasMore ? (
+              <View style={styles.footerEnd}>
+                <View style={styles.footerEndLine} />
+                <Text style={styles.footerEndText}>{"You\u2019re all caught up 🎉"}</Text>
+                <View style={styles.footerEndLine} />
+              </View>
+            ) : null
+          ) : null
         }
       />
 
@@ -913,6 +930,11 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', paddingTop: 80 },
   emptyTitle: { color: '#fff', fontSize: 20, fontWeight: '700', marginTop: 16 },
   emptySubtitle: { color: '#666', fontSize: 14, marginTop: 8 },
+  footerLoader:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 24 },
+  footerLoaderText: { color: '#888', fontSize: 13 },
+  footerEnd:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 28, paddingHorizontal: 24, gap: 12 },
+  footerEndLine:    { flex: 1, height: 1, backgroundColor: '#1e1e1e' },
+  footerEndText:    { color: '#555', fontSize: 12, fontWeight: '500' },
   fab: {
     position: 'absolute', bottom: 24, right: 20,
     width: 56, height: 56, borderRadius: 28,

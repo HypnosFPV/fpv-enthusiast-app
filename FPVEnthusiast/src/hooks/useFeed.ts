@@ -62,6 +62,8 @@ export function useFeed(
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
 
@@ -175,21 +177,33 @@ export function useFeed(
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     setPage(0);
+    setHasMore(true);
     const fresh = await fetchPosts(0);
     setPosts(fresh);
+    setHasMore(fresh.length === PAGE_SIZE);
     setLoading(false);
     setRefreshing(false);
   }, [fetchPosts]);
 
   const loadMore = useCallback(async () => {
-    if (loading || refreshing) return;
+    // Guard: skip if initial load, pull-to-refresh, already fetching more, or no pages left
+    if (loading || refreshing || loadingMore || !hasMore) return;
+    setLoadingMore(true);
     const nextPage = page + 1;
     const more = await fetchPosts(nextPage);
     if (more.length > 0) {
-      setPosts(prev => [...prev, ...more]);
+      // Deduplicate by id in case real-time inserts shifted the window
+      setPosts(prev => {
+        const existingIds = new Set(prev.map(p => p.id));
+        const unique = more.filter(p => !existingIds.has(p.id));
+        return [...prev, ...unique];
+      });
       setPage(nextPage);
     }
-  }, [loading, refreshing, page, fetchPosts]);
+    // If we got fewer than PAGE_SIZE posts, there's nothing left
+    setHasMore(more.length === PAGE_SIZE);
+    setLoadingMore(false);
+  }, [loading, refreshing, loadingMore, hasMore, page, fetchPosts]);
 
   const toggleLike = useCallback(async (postId: string) => {
     if (!currentUserId) return;
@@ -430,6 +444,8 @@ export function useFeed(
     posts,
     loading,
     refreshing,
+    loadingMore,
+    hasMore,
     onRefresh,
     loadMore,
     toggleLike,
