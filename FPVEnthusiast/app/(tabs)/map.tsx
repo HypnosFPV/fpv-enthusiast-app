@@ -12,6 +12,7 @@ import MapView, { Marker, Circle, Polygon, PROVIDER_GOOGLE, MapPressEvent } from
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
+import { supabase } from '../../src/services/supabase';
 import {
   useMap, FlySpot, RaceEvent, SpotComment,
   NewSpotData, NewEventData, haversineDistance,
@@ -466,8 +467,10 @@ export default function MapScreen() {
   // ── Location + initial fetch ─────────────────────────────────────────────
   // ── Fetch admin status once on mount ────────────────────────────────────
   useEffect(() => {
-    supabase.from('users').select('is_admin').eq('id', user?.id ?? '').single()
-      .then(({ data }) => setIsAdmin(data?.is_admin === true));
+    if (!user?.id) { setIsAdmin(false); return; }
+    supabase.from('users').select('is_admin').eq('id', user.id).single()
+      .then(({ data }) => setIsAdmin(data?.is_admin === true))
+      .catch(() => setIsAdmin(false));
   }, [user?.id]);
 
   useEffect(() => {
