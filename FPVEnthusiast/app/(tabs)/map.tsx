@@ -746,8 +746,8 @@ export default function MapScreen() {
     setEvtName(''); setEvtDesc(''); setEvtVenue(''); setEvtCity(''); setEvtState('');
     setEvtMax(''); setEvtUrl(''); setEvtPin(null);
     setEvtHasEnd(false); setEvtUseExistingPin(false); setEvtLinkedSpotId(null);
-    const now = new Date();
-    setEvtStartYear(now.getFullYear()); setEvtStartMonth(now.getMonth()+1); setEvtStartDay(now.getDate());
+    const resetNow = new Date();
+    setEvtStartYear(resetNow.getFullYear()); setEvtStartMonth(resetNow.getMonth()+1); setEvtStartDay(resetNow.getDate());
     setEvtStartHour(10); setEvtStartMin(0);
     setEvtEndHour(14); setEvtEndMin(0);
     Alert.alert('✅ Event published!', `"${data?.name}" is live on the map.`);
