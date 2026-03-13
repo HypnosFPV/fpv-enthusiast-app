@@ -437,7 +437,7 @@ export default function MapScreen() {
   const [reportDetail,       setReportDetail]       = useState('');
   const [reportSubmitting,   setReportSubmitting]   = useState(false);
 
-  // ── Community Guidelines modal state ──────────────────────────────────────
+  // ── Community Guidelines modal state (shown before every pin/event) ────────
   const [showGuidelinesModal, setShowGuidelinesModal] = useState(false);
   const [guidelinesPendingAction, setGuidelinesPendingAction] = useState<'spot' | 'event' | null>(null);
   const [guidelinesChecked, setGuidelinesChecked] = useState(false);
@@ -557,31 +557,17 @@ export default function MapScreen() {
   // If user has already accepted (stored in AsyncStorage), proceeds immediately.
   // Otherwise shows the guidelines modal first; on accept it sets the key and
   // continues with the pending action.
-  const checkGuidelinesAndProceed = useCallback(async (action: 'spot' | 'event') => {
-    if (AsyncStorage) {
-      try {
-        const accepted = await AsyncStorage.getItem('fpv_guidelines_accepted');
-        if (accepted === 'true') {
-          // Already accepted — go straight to pin-drop mode
-          if (action === 'spot') setSpotPinMode(true);
-          else setEvtPinMode(true);
-          return;
-        }
-      } catch {}
-    }
-    // First time — show guidelines
+  const checkGuidelinesAndProceed = useCallback((action: 'spot' | 'event') => {
+    // Show Community Guidelines before every pin/event submission
     setGuidelinesPendingAction(action);
     setGuidelinesChecked(false);
     setShowGuidelinesModal(true);
   }, []);
 
-  const handleGuidelinesAccept = useCallback(async () => {
+  const handleGuidelinesAccept = useCallback(() => {
     if (!guidelinesChecked) {
       Alert.alert('Agreement Required', 'Please check the box to confirm you have read and agree to the Community Guidelines.');
       return;
-    }
-    if (AsyncStorage) {
-      try { await AsyncStorage.setItem('fpv_guidelines_accepted', 'true'); } catch {}
     }
     setShowGuidelinesModal(false);
     if (guidelinesPendingAction === 'spot') setSpotPinMode(true);
@@ -670,23 +656,23 @@ export default function MapScreen() {
       Alert.alert('No links allowed', 'URLs are not permitted in spot descriptions.'); return;
     }
 
-    // ── 1. Proximity gate — pin must be within 50 miles of user ──────────────
+    // ── 1. Proximity gate — pin must be within 100 miles of user ─────────────
     if (userLocation) {
       const dist = haversineDistance(
         userLocation.latitude, userLocation.longitude,
         spotPin.latitude, spotPin.longitude,
       );
-      if (dist > 50) {
+      if (dist > 100) {
         Alert.alert(
           'Too Far Away',
-          `Your pin is ${Math.round(dist)} miles from your current location.\n\nYou can only add spots within 50 miles of where you are.`
+          `Your pin is ${Math.round(dist)} miles from your current location.\n\nYou can only add spots within 100 miles of where you are.`
         );
         return;
       }
     }
 
-    // ── 2. Duplicate check — live DB query, ALL spot types, 800 ft (~0.15 mi) ──
-    const DEDUP_MILES = 0.15;
+    // ── 2. Duplicate check — live DB query, ALL spot types, ½ mile radius ───────
+    const DEDUP_MILES = 0.5;
     const { tooClose, nearestName } = await checkNearbySpots(
       spotPin.latitude, spotPin.longitude, DEDUP_MILES,
     );
@@ -694,8 +680,8 @@ export default function MapScreen() {
       Alert.alert(
         'Spot Already Exists',
         nearestName
-          ? `"${nearestName}" is already within 800 feet.\n\nTap the existing pin to comment or vote instead.`
-          : 'There is already a pin within 800 feet of this location.\n\nTap the existing pin to comment or vote instead.'
+          ? `"${nearestName}" is already within ½ mile.\n\nTap the existing pin to comment or vote instead.`
+          : 'There is already a pin within ½ mile of this location.\n\nTap the existing pin to comment or vote instead.'
       );
       return;
     }
@@ -1871,7 +1857,7 @@ export default function MapScreen() {
               <Text style={styles.guidelinesTitle}>Community Guidelines</Text>
             </View>
             <Text style={styles.guidelinesSub}>
-              Before adding your first pin, please read and agree to our rules.
+              Please read and agree to our Community Guidelines before every pin or event you submit.
             </Text>
 
             <ScrollView
