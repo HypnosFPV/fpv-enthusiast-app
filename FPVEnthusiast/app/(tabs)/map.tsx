@@ -1742,7 +1742,7 @@ export default function MapScreen() {
             {([
               ['wrong_type',     '🏷  Wrong spot type'],
               ['wrong_hazard',   '⚠️  Wrong hazard level'],
-              ['does_not_exist', '❌  Location doesn't exist'],
+              ['does_not_exist', "❌  Location doesn't exist"],
               ['dangerous',      '☠️  Dangerous / restricted airspace'],
               ['duplicate',      '📍 Duplicate pin nearby'],
               ['offensive_name', '🤬  Offensive name'],
