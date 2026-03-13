@@ -696,6 +696,8 @@ export default function MapScreen() {
           ? `"${nearestName}" is already within ½ mile.\n\nTap the existing pin to comment or vote instead.`
           : 'There is already a pin within ½ mile of this location.\n\nTap the existing pin to comment or vote instead.'
       );
+      setShowAddSpot(false);   // dismiss form
+      setSpotPin(null);        // ← remove ghost orange marker
       return;
     }
 
@@ -1209,7 +1211,7 @@ export default function MapScreen() {
                 style={[styles.iconBtn, styles.iconBtnAdmin]}
                 onPress={() => router.push('/(tabs)/admin')}
               >
-                <Ionicons name="shield-checkmark-outline" size={20} color="#FF9800" />
+                <Ionicons name="shield-checkmark" size={20} color="#FF9800" />
               </TouchableOpacity>
             )}
           </View>
@@ -1467,9 +1469,9 @@ export default function MapScreen() {
       </Modal>
 
       {/* ─── Add Spot modal ───────────────────────────────────────────────── */}
-      <Modal visible={showAddSpot} transparent animationType="slide" onRequestClose={() => setShowAddSpot(false)}>
+      <Modal visible={showAddSpot} transparent animationType="slide" onRequestClose={() => { setShowAddSpot(false); setSpotPin(null); }}>
         <View style={styles.modalWrap} pointerEvents="box-none">
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setShowAddSpot(false)} />
+          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => { setShowAddSpot(false); setSpotPin(null); }} />
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             <View style={styles.sheet}>
               <View style={styles.sheetHandle} />
