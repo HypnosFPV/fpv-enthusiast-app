@@ -1,5 +1,6 @@
 // app/(tabs)/map.tsx
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useRouter }           from 'expo-router';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
   FlatList, ActivityIndicator, Platform, Alert, ScrollView,
@@ -250,6 +251,9 @@ function geoJsonToCoords(geometry: any): { latitude: number; longitude: number }
 
 export default function MapScreen() {
   const { user } = useAuth();
+  const router   = useRouter();
+  const [isAdmin, setIsAdmin] = useState(false);
+
   const {
     spots, events, comments, loading,
     mgpSyncing, mgpSyncCount,
@@ -460,6 +464,12 @@ export default function MapScreen() {
   const [evtLinkedSpotId, setEvtLinkedSpotId] = useState<string | null>(null); // spot this event is anchored to
 
   // ── Location + initial fetch ─────────────────────────────────────────────
+  // ── Fetch admin status once on mount ────────────────────────────────────
+  useEffect(() => {
+    supabase.from('users').select('is_admin').eq('id', user?.id ?? '').single()
+      .then(({ data }) => setIsAdmin(data?.is_admin === true));
+  }, [user?.id]);
+
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -678,6 +688,8 @@ export default function MapScreen() {
       spotPin.latitude, spotPin.longitude, DEDUP_MILES,
     );
     if (tooClose) {
+      setShowAddSpot(false);
+      setSpotPin(null);
       Alert.alert(
         'Spot Already Exists',
         nearestName
@@ -1191,6 +1203,15 @@ export default function MapScreen() {
             <TouchableOpacity style={styles.iconBtn} onPress={() => { if (userLocation) mapRef.current?.animateToRegion({ ...userLocation, latitudeDelta: 0.3, longitudeDelta: 0.3 }, 600); }}>
               <Ionicons name="navigate" size={20} color="#fff" />
             </TouchableOpacity>
+            {/* Admin moderation button — only visible to admins */}
+            {isAdmin && (
+              <TouchableOpacity
+                style={[styles.iconBtn, styles.iconBtnAdmin]}
+                onPress={() => router.push('/(tabs)/admin')}
+              >
+                <Ionicons name="shield-checkmark-outline" size={20} color="#FF9800" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
         {/* ── Airspace: slim loading badge (top-right, unobtrusive) ─────── */}
@@ -2053,6 +2074,7 @@ const styles = StyleSheet.create({
   iconBtnMgp:       { borderColor: '#2979FF', backgroundColor: 'rgba(41,121,255,0.12)' },
   iconBtnSearchActive: { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
   iconBtnActive:       { borderColor: '#FFD700', backgroundColor: 'rgba(255,215,0,0.15)' },
+  iconBtnAdmin:        { borderColor: '#FF9800', backgroundColor: 'rgba(255,152,0,0.15)' },
 
   // Address search bar
   addrSearchRow:   { flexDirection: 'row', alignItems: 'center', marginHorizontal: 12, marginBottom: 6, backgroundColor: 'rgba(0,0,0,0.8)', borderRadius: 14, borderWidth: 1, borderColor: '#FFD700', overflow: 'hidden' },
