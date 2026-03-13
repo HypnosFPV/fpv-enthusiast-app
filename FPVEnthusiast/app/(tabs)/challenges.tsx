@@ -57,6 +57,240 @@ type LeadTab   = LeaderboardScope;
 type ChallengeSubTab = 'this_week' | 'archive' | 'suggest';
 
 // ─── Entry Video Player ──────────────────────────────────────────────────────
+// ─── AdminVideoActions ────────────────────────────────────────────────────────
+// Bottom bar for AdminVideoPlayer — approve / reject directly on the video screen.
+// Calls the admin RPCs via Supabase directly so no hook re-render is needed.
+function AdminVideoActions({
+  entry,
+  onClose,
+}: {
+  entry: import('../src/hooks/useAdminModeration').FlaggedEntry;
+  onClose: () => void;
+}) {
+  const [acting,        setActing]        = React.useState(false);
+  const [rejectVisible, setRejectVisible] = React.useState(false);
+  const [reason,        setReason]        = React.useState('');
+
+  const doApprove = async () => {
+    setActing(true);
+    await supabase.rpc('admin_approve_entry', { p_entry_id: entry.id }).catch(() => {});
+    setActing(false);
+    onClose();
+  };
+
+  const doReject = async () => {
+    setActing(true);
+    await supabase.rpc('admin_reject_entry', { p_entry_id: entry.id, p_reason: reason || 'admin_rejection' }).catch(() => {});
+    setActing(false);
+    setRejectVisible(false);
+    onClose();
+  };
+
+  return (
+    <>
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
+        flexDirection: 'row', gap: 10, padding: 16, paddingBottom: 36,
+        backgroundColor: 'rgba(0,0,0,0.88)' }}>
+
+        {/* Back */}
+        <TouchableOpacity
+          style={{ paddingHorizontal: 14, paddingVertical: 13,
+            borderRadius: 10, backgroundColor: '#333',
+            flexDirection: 'row', alignItems: 'center', gap: 5 }}
+          onPress={onClose} disabled={acting}
+        >
+          <Ionicons name="arrow-back" size={15} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>Back</Text>
+        </TouchableOpacity>
+
+        {/* Approve */}
+        <TouchableOpacity
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+            gap: 6, paddingVertical: 13, borderRadius: 10,
+            backgroundColor: acting ? '#1a6b3a' : '#27ae60', opacity: acting ? 0.7 : 1 }}
+          onPress={doApprove} disabled={acting}
+        >
+          {acting
+            ? <ActivityIndicator size={14} color="#fff" />
+            : <Ionicons name="checkmark-circle" size={16} color="#fff" />}
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Approve</Text>
+        </TouchableOpacity>
+
+        {/* Reject */}
+        <TouchableOpacity
+          style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+            gap: 6, paddingVertical: 13, borderRadius: 10,
+            backgroundColor: acting ? '#7a1a1a' : '#c0392b', opacity: acting ? 0.7 : 1 }}
+          onPress={() => setRejectVisible(true)} disabled={acting}
+        >
+          <Ionicons name="close-circle" size={16} color="#fff" />
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Reject</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Reject reason sub-modal — uses animationType="fade" so it layers over the video */}
+      <Modal
+        visible={rejectVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setRejectVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+          justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <View style={{ width: '100%', backgroundColor: '#1a1a2e', borderRadius: 14,
+            padding: 20, gap: 12 }}>
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
+              Reject Entry #{entry.entry_number}
+            </Text>
+            <Text style={{ color: '#888', fontSize: 12 }}>
+              The pilot won't see this reason — it's for your records only.
+            </Text>
+            <TextInput
+              style={{ backgroundColor: '#0d0d1a', color: '#fff', borderRadius: 8,
+                paddingHorizontal: 12, paddingVertical: 10, fontSize: 13,
+                borderWidth: 1, borderColor: '#333' }}
+              placeholder="Reason (e.g. pilot callsign visible)"
+              placeholderTextColor="#555"
+              value={reason}
+              onChangeText={setReason}
+            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 11,
+                  borderRadius: 8, backgroundColor: '#333' }}
+                onPress={() => setRejectVisible(false)}
+              >
+                <Text style={{ color: '#fff', fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 11,
+                  borderRadius: 8, backgroundColor: '#c0392b' }}
+                onPress={doReject}
+                disabled={acting}
+              >
+                {acting
+                  ? <ActivityIndicator size={14} color="#fff" />
+                  : <Text style={{ color: '#fff', fontWeight: '700' }}>Confirm Reject</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+// ─── AdminVideoPlayer ──────────────────────────────────────────────────────────
+// Dedicated video player for admin review — rendered outside any parent Modal
+// to avoid nested Modal conflicts on iOS.
+// Shows video full-screen with entry metadata (challenge, entry #, detected flags)
+// and Approve / Reject quick-actions so admin never needs to reopen the panel
+// just to take action.
+function AdminVideoPlayer({
+  entry,
+  onClose,
+}: {
+  entry: import('../src/hooks/useAdminModeration').FlaggedEntry;
+  onClose: () => void;
+}) {
+  const [buffering, setBuffering] = React.useState(true);
+  const [hasError,  setHasError]  = React.useState(false);
+
+  // Only attempt to play if there's a video URL
+  const videoUri = entry.video_url ?? '';
+  const player   = useVideoPlayer(videoUri, p => {
+    if (videoUri) { p.loop = false; p.play(); }
+  });
+
+  React.useEffect(() => {
+    if (!videoUri) return;
+    const sub = player.addListener('statusChange', ({ status }: { status: string }) => {
+      setBuffering(status === 'loading' || status === 'idle');
+      if (status === 'error') setHasError(true);
+    });
+    return () => sub.remove();
+  }, [player, videoUri]);
+
+  const flags = (entry.moderation_flags ?? []).filter(
+    (f: any) => f.type === 'pilot_name' || f.type === 'pilot_name_auto_blurred'
+  );
+
+  return (
+    <Modal visible animationType="fade" transparent={false} onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+
+        {/* Close button */}
+        <TouchableOpacity
+          style={{ position: 'absolute', top: 52, right: 20, zIndex: 20,
+            padding: 8, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 20 }}
+          onPress={onClose}
+        >
+          <Ionicons name="close" size={26} color="#fff" />
+        </TouchableOpacity>
+
+        {/* Entry meta strip at top */}
+        <View style={{ position: 'absolute', top: 50, left: 16, zIndex: 20,
+          backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 10,
+          paddingHorizontal: 12, paddingVertical: 6, maxWidth: W - 80 }}>
+          <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700' }} numberOfLines={1}>
+            {entry.challenge_title}
+          </Text>
+          <Text style={{ color: '#aaa', fontSize: 11 }}>
+            Entry #{entry.entry_number}{entry.duration_seconds ? `  ·  ${entry.duration_seconds}s` : ''}
+          </Text>
+          {flags.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+              {flags.map((f: any, i: number) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 3,
+                  backgroundColor: '#ff660033', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 }}>
+                  <Ionicons name="eye-off-outline" size={10} color="#ff6600" />
+                  <Text style={{ color: '#ff6600', fontSize: 10, fontWeight: '600' }}>
+                    "{f.text}"{f.confidence ? ` ${Math.round(f.confidence * 100)}%` : ''}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Video or error state */}
+        {!videoUri || hasError ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 }}>
+            <Ionicons name="videocam-off-outline" size={52} color="#555" />
+            <Text style={{ color: '#888', fontSize: 14 }}>
+              {!videoUri ? 'No video URL available for this entry.' : 'Could not load video.'}
+            </Text>
+            {entry.s3_upload_key ? (
+              <Text style={{ color: '#555', fontSize: 11, textAlign: 'center', paddingHorizontal: 32 }}>
+                Key: {entry.s3_upload_key}
+              </Text>
+            ) : null}
+          </View>
+        ) : (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <VideoView
+              player={player}
+              style={{ width: W, height: W * (9 / 16) > 500 ? 500 : W * (9 / 16) }}
+              allowsFullscreen
+              allowsPictureInPicture
+              contentFit="contain"
+            />
+            {buffering && (
+              <View style={{ position: 'absolute' }}>
+                <ActivityIndicator size="large" color="#ff4500" />
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Bottom action bar — Approve / Reject without reopening the panel */}
+        <AdminVideoActions entry={entry} onClose={onClose} />
+
+      </View>
+    </Modal>
+  );
+}
+
 function EntryVideoPlayer({ uri, onClose }: { uri: string; onClose: () => void }) {
   const [buffering, setBuffering] = React.useState(true);
   const player = useVideoPlayer(uri, p => { p.loop = false; p.play(); });
@@ -1630,7 +1864,13 @@ export default function ChallengesScreen() {
                   <View style={styles.adminEntryCard}>
                     {/* Thumbnail + play */}
                     <TouchableOpacity
-                      onPress={() => setAdminPreviewEntry(entry)}
+                      onPress={() => {
+                        // Close admin panel first to avoid nested-Modal conflict on iOS,
+                        // then launch the full-screen video player.
+                        // We stash the entry so it can be restored when player closes.
+                        setAdminPreviewEntry(entry);
+                        setAdminPanelVisible(false);
+                      }}
                       activeOpacity={0.8}
                     >
                       {entry.thumbnail_url ? (
@@ -1735,10 +1975,15 @@ export default function ChallengesScreen() {
       {/* ════════════════════════════════════════════════════════════
           ADMIN: Video preview modal (full screen)
           ════════════════════════════════════════════════════════════ */}
-      {adminPreviewEntry?.video_url && (
-        <EntryVideoPlayer
-          uri={adminPreviewEntry.video_url}
-          onClose={() => setAdminPreviewEntry(null)}
+      {/* Admin video preview — rendered OUTSIDE admin panel modal to avoid nesting */}
+      {adminPreviewEntry !== null && (
+        <AdminVideoPlayer
+          entry={adminPreviewEntry}
+          onClose={() => {
+            setAdminPreviewEntry(null);
+            // Reopen the admin panel so admin can continue reviewing
+            setAdminPanelVisible(true);
+          }}
         />
       )}
 
