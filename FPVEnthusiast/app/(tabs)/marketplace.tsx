@@ -895,7 +895,13 @@ export default function MarketplaceScreen() {
     outputRange: ['#ff4500', '#ff8c00', '#ffcc00', '#ff6600', '#ff4500'],
   });
 
-  // ── Pull-to-refresh custom spinner ────────────────────────────────────────
+  const {
+    listings, loading, refreshing, loadingMore, hasMore,
+    filters, loadListings, loadMore, applyFilters, onRefresh,
+    toggleWatch, createListing,
+  } = useMarketplace(user?.id);
+
+  // ── Pull-to-refresh custom spinner (must be after `refreshing` is declared) ─
   const spinAnim = useRef(new Animated.Value(0)).current;
   const spinLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   useEffect(() => {
@@ -912,24 +918,19 @@ export default function MarketplaceScreen() {
   }, [refreshing]);
   const spinRotate = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
-  // ── FAB bounce when new listings land ─────────────────────────────────────
+  // ── FAB bounce when new listings land (must be after `listings` is declared) ─
   const fabScale       = useRef(new Animated.Value(1)).current;
   const prevListingLen = useRef(0);
+  const safeLen        = listings?.length ?? 0;
   useEffect(() => {
-    if (listings.length > prevListingLen.current && prevListingLen.current > 0) {
+    if (safeLen > prevListingLen.current && prevListingLen.current > 0) {
       Animated.sequence([
         Animated.spring(fabScale, { toValue: 1.28, friction: 4, tension: 90, useNativeDriver: true }),
         Animated.spring(fabScale, { toValue: 1,    friction: 5, tension: 70, useNativeDriver: true }),
       ]).start();
     }
-    prevListingLen.current = listings.length;
-  }, [listings.length]);
-
-  const {
-    listings, loading, refreshing, loadingMore, hasMore,
-    filters, loadListings, loadMore, applyFilters, onRefresh,
-    toggleWatch, createListing,
-  } = useMarketplace(user?.id);
+    prevListingLen.current = safeLen;
+  }, [safeLen]);
 
   const [searchText, setSearchText]     = useState('');
   const [selectedCat, setSelectedCat]   = useState<CategorySlug | null>(null);
@@ -988,7 +989,7 @@ export default function MarketplaceScreen() {
         <Text style={styles.footerLoaderTxt}>Loading more...</Text>
       </View>
     );
-    if (!hasMore && listings.length > 0) return (
+    if (!hasMore && (listings?.length ?? 0) > 0) return (
       <View style={styles.footerEnd}>
         <View style={styles.footerEndLine} />
         <Text style={styles.footerEndTxt}>You've seen it all</Text>
@@ -996,7 +997,7 @@ export default function MarketplaceScreen() {
       </View>
     );
     return null;
-  }, [loadingMore, hasMore, listings.length]);
+  }, [loadingMore, hasMore, listings?.length]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
   const EmptyStateWrapper = useCallback(() => (
@@ -1127,7 +1128,7 @@ export default function MarketplaceScreen() {
         }
         onEndReached={() => { if (hasMore && !loadingMore) loadMore(); }}
         onEndReachedThreshold={0.4}
-        contentContainerStyle={listings.length === 0 ? { flex: 1 } : { paddingBottom: 100 }}
+        contentContainerStyle={(listings?.length ?? 0) === 0 ? { flex: 1 } : { paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       />
 
