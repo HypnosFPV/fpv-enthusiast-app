@@ -287,6 +287,52 @@ function MessageSheet({
               </Text>
             }
             renderItem={({ item }) => {
+              // Offer card (special message type)
+              if (item.body?.startsWith('__OFFER__:')) {
+                let offerData: {amount_cents: number; note?: string; offer_id?: string; status?: string} = {amount_cents: 0};
+                try { offerData = JSON.parse(item.body.slice(10)); } catch {}
+                const isBuyerMsg = item.sender_id === item.buyer_id;
+                const isSeller   = currentUserId === item.seller_id;
+                const status     = offerData.status ?? 'pending';
+                const statusColors: Record<string,string> = {pending:'#f59e0b', accepted:'#22c55e', declined:'#ef4444', cancelled:'#6b7280', expired:'#6b7280'};
+                const statusLabels: Record<string,string> = {pending:'Pending', accepted:'Accepted ✓', declined:'Declined', cancelled:'Cancelled', expired:'Expired'};
+                return (
+                  <View style={[styles.offerCard, isBuyerMsg ? styles.offerCardBuyer : styles.offerCardSeller]}>
+                    <View style={styles.offerCardHeader}>
+                      <Ionicons name="pricetag-outline" size={14} color="#f59e0b" />
+                      <Text style={styles.offerCardLabel}>Offer</Text>
+                      <View style={[styles.offerStatusPill, {backgroundColor: (statusColors[status] ?? '#6b7280') + '33', borderColor: statusColors[status] ?? '#6b7280'}]}>
+                        <Text style={[styles.offerStatusTxt, {color: statusColors[status] ?? '#6b7280'}]}>{statusLabels[status] ?? status}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.offerAmount}>${(offerData.amount_cents / 100).toFixed(2)}</Text>
+                    {!!offerData.note && <Text style={styles.offerNote}>{offerData.note}</Text>}
+                    {isSeller && status === 'pending' && !!offerData.offer_id && (
+                      <View style={styles.offerActions}>
+                        <TouchableOpacity
+                          style={styles.offerAcceptBtn}
+                          onPress={async () => {
+                            const res = await acceptOffer(offerData.offer_id!);
+                            if (!res?.ok) Alert.alert('Error', res?.error ?? 'Could not accept offer');
+                          }}
+                        >
+                          <Text style={styles.offerAcceptTxt}>Accept</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.offerDeclineBtn}
+                          onPress={async () => {
+                            const res = await declineOffer(offerData.offer_id!);
+                            if (!res?.ok) Alert.alert('Error', res?.error ?? 'Could not decline');
+                          }}
+                        >
+                          <Text style={styles.offerDeclineTxt}>Decline</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              }
+              // Normal message bubble
               const isMine = item.sender_id === currentUserId;
               return (
                 <View style={[styles.msgBubbleWrap, isMine && styles.msgBubbleWrapMe]}>
@@ -336,6 +382,119 @@ function MessageSheet({
 }
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
+// ─── OfferSheet ────────────────────────────────────────────────────────────────
+interface OfferSheetProps {
+  visible:       boolean;
+  listingPrice:  number;
+  listingTitle:  string;
+  sellerId:      string;
+  saving:        boolean;
+  onClose:       () => void;
+  onSubmit:      (amountCents: number, note: string) => void;
+}
+function OfferSheet({ visible, listingPrice, listingTitle, saving, onClose, onSubmit }: OfferSheetProps) {
+  const [amount, setAmount] = React.useState('');
+  const [note,   setNote]   = React.useState('');
+  const amountNum   = parseFloat(amount.replace(/[^0-9.]/g, '')) || 0;
+  const amountCents = Math.round(amountNum * 100);
+  const isValid     = amountCents >= 1;
+  const pctOfAsk    = listingPrice > 0 ? Math.round((amountNum / listingPrice) * 100) : 0;
+
+  // Reset on open
+  React.useEffect(() => {
+    if (visible) { setAmount(''); setNote(''); }
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <TouchableOpacity style={styles.offerOverlay} activeOpacity={1} onPress={onClose} />
+        <View style={styles.offerSheet}>
+          {/* Handle */}
+          <View style={styles.offerHandle} />
+
+          <Text style={styles.offerSheetTitle}>Make an Offer</Text>
+          <Text style={styles.offerSheetSub} numberOfLines={1}>{listingTitle}</Text>
+          <Text style={styles.offerAskPrice}>Ask price: ${listingPrice.toFixed(2)}</Text>
+
+          {/* Amount input */}
+          <Text style={styles.offerFieldLabel}>Your offer amount</Text>
+          <View style={styles.offerAmountRow}>
+            <Text style={styles.offerDollar}>$</Text>
+            <TextInput
+              style={styles.offerAmountInput}
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor="#444"
+              maxLength={8}
+            />
+            {isValid && (
+              <View style={[
+                styles.offerPctPill,
+                pctOfAsk >= 90 ? styles.offerPctGreen :
+                pctOfAsk >= 70 ? styles.offerPctAmber : styles.offerPctRed
+              ]}>
+                <Text style={styles.offerPctTxt}>{pctOfAsk}% of ask</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Optional note */}
+          <Text style={styles.offerFieldLabel}>Note to seller (optional)</Text>
+          <TextInput
+            style={styles.offerNoteInput}
+            value={note}
+            onChangeText={setNote}
+            placeholder="e.g. Can pick up locally, or add a note..."
+            placeholderTextColor="#444"
+            multiline
+            maxLength={300}
+          />
+
+          {/* Quick price chips */}
+          <View style={styles.offerChips}>
+            {[90, 80, 70].map(pct => {
+              const v = ((listingPrice * pct) / 100).toFixed(2);
+              return (
+                <TouchableOpacity
+                  key={pct}
+                  style={styles.offerChip}
+                  onPress={() => setAmount(v)}
+                >
+                  <Text style={styles.offerChipTxt}>{pct}% · ${v}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Actions */}
+          <View style={styles.offerBtnRow}>
+            <TouchableOpacity style={styles.offerCancelBtn} onPress={onClose} disabled={saving}>
+              <Text style={styles.offerCancelTxt}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.offerSubmitBtn, !isValid && styles.offerSubmitDisabled]}
+              onPress={() => isValid && onSubmit(amountCents, note.trim())}
+              disabled={!isValid || saving}
+            >
+              {saving
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.offerSubmitTxt}>Send Offer</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+
 export default function ListingDetailScreen() {
   const { id }   = useLocalSearchParams<{ id: string }>();
   const router   = useRouter();
@@ -348,6 +507,7 @@ export default function ListingDetailScreen() {
     activeOrder, fetchOrder,
     markShipped, confirmReceipt,
     submitReview,
+    sendOffer, acceptOffer, declineOffer, offers,
     updateListing, deletePhoto,
   } = useListingDetail(id ?? '', user?.id);
 
@@ -382,6 +542,8 @@ export default function ListingDetailScreen() {
   const [receiptLoad,  setReceiptLoad]  = useState(false);
   const [showReview,   setShowReview]   = useState(false);
   const [reviewDone,   setReviewDone]   = useState(false);
+  const [showOffer,    setShowOffer]    = useState(false);
+  const [offerSaving,  setOfferSaving]  = useState(false);
   const [reviewSaving, setReviewSaving] = useState(false);
   const propsToast   = usePropsToast();
   const shownBonusRef = useRef(false);
@@ -903,21 +1065,36 @@ export default function ListingDetailScreen() {
           >
             <Ionicons name="chatbubble-outline" size={18} color="#fff" />
             <Text style={styles.ctaBtnTxt}>Message</Text>
+            {offers.filter(o => o.status === 'pending').length > 0 && (
+              <View style={styles.offerBadge}>
+                <Text style={styles.offerBadgeTxt}>
+                  {offers.filter(o => o.status === 'pending').length}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.ctaBuyBtn}
-            onPress={() =>
-              Alert.alert(
-                'Buy Now',
-                `Pay $${listing.price.toFixed(2)} for "${listing.title}"?\n\nStripe checkout coming in Phase 2.`,
-              )
-            }
-          >
-            <Ionicons name="card-outline" size={18} color="#fff" />
-            <Text style={styles.ctaBtnTxt}>
-              {listing.listing_type === 'offer' ? 'Make Offer' : `Buy · $${listing.price.toFixed(2)}`}
-            </Text>
-          </TouchableOpacity>
+          {listing.listing_type === 'offer' ? (
+            <TouchableOpacity
+              style={styles.ctaBuyBtn}
+              onPress={() => setShowOffer(true)}
+            >
+              <Ionicons name="pricetag-outline" size={18} color="#fff" />
+              <Text style={styles.ctaBtnTxt}>Make Offer</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.ctaBuyBtn}
+              onPress={() =>
+                Alert.alert(
+                  'Buy Now',
+                  `Pay $${listing.price.toFixed(2)} for "${listing.title}"?\n\nStripe checkout coming in Phase 2.`,
+                )
+              }
+            >
+              <Ionicons name="card-outline" size={18} color="#fff" />
+              <Text style={styles.ctaBtnTxt}>{`Buy · $${listing.price.toFixed(2)}`}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -995,6 +1172,30 @@ export default function ListingDetailScreen() {
         onSubmit={handleShipped}
         loading={shipLoading}
       />
+
+      {/* OfferSheet */}
+      {listing && (
+        <OfferSheet
+          visible={showOffer}
+          listingPrice={listing.price}
+          listingTitle={listing.title}
+          sellerId={listing.seller_id}
+          saving={offerSaving}
+          onClose={() => setShowOffer(false)}
+          onSubmit={async (amountCents, note) => {
+            if (!listing) return;
+            setOfferSaving(true);
+            const res = await sendOffer(listing.seller_id, amountCents, note);
+            setOfferSaving(false);
+            if (res?.ok) {
+              setShowOffer(false);
+              Alert.alert('Offer Sent! \u{1F389}', `Your offer of $${(amountCents / 100).toFixed(2)} has been sent to the seller. You\'ll be notified when they respond.`);
+            } else {
+              Alert.alert('Error', res?.error ?? 'Could not send offer. Try again.');
+            }
+          }}
+        />
+      )}
 
       <ReviewModal
         visible={showReview}
@@ -1349,6 +1550,49 @@ const styles = StyleSheet.create({
   condPillTxt:      { color: '#888', fontSize: 12, fontWeight: '600' },
 
   // ── Review modal ──────────────────────────────────────────────────────────
+  // ── Offer Sheet ──
+  offerOverlay:      { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)' },
+  offerSheet:        { backgroundColor: '#111', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 36, paddingTop: 12 },
+  offerHandle:       { width: 40, height: 4, backgroundColor: '#333', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  offerSheetTitle:   { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 4 },
+  offerSheetSub:     { color: '#888', fontSize: 13, marginBottom: 2 },
+  offerAskPrice:     { color: '#f59e0b', fontSize: 13, fontWeight: '600', marginBottom: 16 },
+  offerFieldLabel:   { color: '#aaa', fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 4 },
+  offerAmountRow:    { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a1a', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 14, gap: 6 },
+  offerDollar:       { color: '#f59e0b', fontSize: 22, fontWeight: '800' },
+  offerAmountInput:  { flex: 1, color: '#fff', fontSize: 22, fontWeight: '700' },
+  offerPctPill:      { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1 },
+  offerPctGreen:     { backgroundColor: '#22c55e22', borderColor: '#22c55e' },
+  offerPctAmber:     { backgroundColor: '#f59e0b22', borderColor: '#f59e0b' },
+  offerPctRed:       { backgroundColor: '#ef444422', borderColor: '#ef4444' },
+  offerPctTxt:       { color: '#fff', fontSize: 11, fontWeight: '700' },
+  offerNoteInput:    { backgroundColor: '#1a1a1a', borderRadius: 10, padding: 12, color: '#fff', fontSize: 14, minHeight: 72, textAlignVertical: 'top', marginBottom: 14 },
+  offerChips:        { flexDirection: 'row', gap: 8, marginBottom: 18 },
+  offerChip:         { flex: 1, backgroundColor: '#1e2a3a', borderRadius: 8, paddingVertical: 7, alignItems: 'center', borderWidth: 1, borderColor: '#2a3a4a' },
+  offerChipTxt:      { color: '#7dd3fc', fontSize: 12, fontWeight: '600' },
+  offerBtnRow:       { flexDirection: 'row', gap: 10 },
+  offerCancelBtn:    { flex: 1, backgroundColor: '#1e1e1e', borderRadius: 12, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: '#2a2a2a' },
+  offerCancelTxt:    { color: '#aaa', fontSize: 15, fontWeight: '600' },
+  offerSubmitBtn:    { flex: 2, backgroundColor: '#f59e0b', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  offerSubmitDisabled: { backgroundColor: '#3a3a1a', opacity: 0.6 },
+  offerSubmitTxt:    { color: '#000', fontSize: 15, fontWeight: '800' },
+  offerBadge:        { position: 'absolute', top: -4, right: -4, backgroundColor: '#ef4444', borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  offerBadgeTxt:     { color: '#fff', fontSize: 10, fontWeight: '800' },
+  // ── Offer card in message thread ──
+  offerCard:         { marginVertical: 6, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: '#f59e0b55', backgroundColor: '#1a140a' },
+  offerCardBuyer:    { alignSelf: 'flex-end', maxWidth: '85%' },
+  offerCardSeller:   { alignSelf: 'flex-start', maxWidth: '85%' },
+  offerCardHeader:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  offerCardLabel:    { color: '#f59e0b', fontSize: 12, fontWeight: '700', flex: 1 },
+  offerStatusPill:   { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, borderWidth: 1 },
+  offerStatusTxt:    { fontSize: 11, fontWeight: '700' },
+  offerAmount:       { color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 4 },
+  offerNote:         { color: '#aaa', fontSize: 13, marginBottom: 8 },
+  offerActions:      { flexDirection: 'row', gap: 8, marginTop: 6 },
+  offerAcceptBtn:    { flex: 1, backgroundColor: '#22c55e', borderRadius: 10, paddingVertical: 9, alignItems: 'center' },
+  offerAcceptTxt:    { color: '#000', fontSize: 13, fontWeight: '800' },
+  offerDeclineBtn:   { flex: 1, backgroundColor: '#1e1e1e', borderRadius: 10, paddingVertical: 9, alignItems: 'center', borderWidth: 1, borderColor: '#ef444488' },
+  offerDeclineTxt:   { color: '#ef4444', fontSize: 13, fontWeight: '700' },
   reviewBanner:      { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12, paddingBottom: Platform.OS === 'ios' ? 28 : 12, backgroundColor: '#1a1200', borderTopWidth: 1, borderTopColor: '#f59e0b44' },
   reviewBannerStar:  { fontSize: 26 },
   reviewBannerTitle: { color: '#fbbf24', fontSize: 14, fontWeight: '700' },

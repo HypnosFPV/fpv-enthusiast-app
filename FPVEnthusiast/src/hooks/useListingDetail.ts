@@ -37,6 +37,20 @@ export interface ListingOrder {
   created_at:       string;
 }
 
+// ─── Offer ────────────────────────────────────────────────────────────────────
+export interface MarketplaceOffer {
+  id:           string;
+  listing_id:   string;
+  buyer_id:     string;
+  seller_id:    string;
+  amount_cents: number;
+  note?:        string | null;
+  status:       'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled';
+  order_id?:    string | null;
+  created_at:   string;
+  updated_at:   string;
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 // ── base64 → Uint8Array helper (bypasses Hermes Blob bugs in RN 0.81) ────────
 
@@ -57,6 +71,7 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
   const [sending,      setSending]      = useState(false);
   const [activeOrder,  setActiveOrder]  = useState<ListingOrder | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const [offers,       setOffers]       = useState<MarketplaceOffer[]>([]);
 
   // ── Fetch listing ─────────────────────────────────────────────────────────
   const fetchListing = useCallback(async () => {
@@ -275,11 +290,12 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     fetchWatchStatus();
     fetchOrder();
     fetchMessages();
+    fetchOffers();
     subscribeMessages();
     return () => {
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
-  }, [fetchListing, fetchWatchStatus, fetchOrder, fetchMessages, subscribeMessages]);
+  }, [fetchListing, fetchWatchStatus, fetchOrder, fetchMessages, fetchOffers, subscribeMessages]);
 
   // ── Add photos to an existing listing (owner only) ────────────────────
   const addPhotos = useCallback(async (
@@ -446,6 +462,101 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     return { ok: true };
   }, [fetchListing]);
 
+
+  // ── Offers ────────────────────────────────────────────────────────────────
+  const fetchOffers = useCallback(async () => {
+    if (!currentUserId || !listingId) return;
+    const { data } = await supabase
+      .from('marketplace_offers')
+      .select('*')
+      .eq('listing_id', listingId)
+      .or(`buyer_id.eq.${currentUserId},seller_id.eq.${currentUserId}`)
+      .order('created_at', { ascending: false });
+    if (data) setOffers(data as MarketplaceOffer[]);
+  }, [currentUserId, listingId]);
+
+  const sendOffer = useCallback(async (
+    sellerId: string,
+    amountCents: number,
+    note: string,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUserId || !listingId) return { ok: false, error: 'Not logged in' };
+
+    // 1. Insert into marketplace_offers
+    const { data: offerData, error: offerErr } = await supabase
+      .from('marketplace_offers')
+      .insert({
+        listing_id:   listingId,
+        buyer_id:     currentUserId,
+        seller_id:    sellerId,
+        amount_cents: amountCents,
+        note:         note || null,
+      })
+      .select()
+      .single();
+
+    if (offerErr || !offerData) {
+      return { ok: false, error: offerErr?.message ?? 'Failed to create offer' };
+    }
+
+    // 2. Also send as a special message so it appears in the thread
+    const msgBody = JSON.stringify({
+      amount_cents: amountCents,
+      note:         note || undefined,
+      offer_id:     (offerData as any).id,
+      status:       'pending',
+    });
+    await supabase.from('marketplace_messages').insert({
+      listing_id: listingId,
+      sender_id:  currentUserId,
+      buyer_id:   currentUserId,
+      seller_id:  sellerId,
+      body:       `__OFFER__:${msgBody}`,
+    });
+
+    await fetchOffers();
+    await fetchMessages();
+    return { ok: true };
+  }, [currentUserId, listingId, fetchOffers, fetchMessages]);
+
+  const acceptOffer = useCallback(async (offerId: string): Promise<{ ok: boolean; error?: string } | null> => {
+    const { data, error } = await supabase.rpc('accept_offer', { p_offer_id: offerId });
+    if (!error && (data as any)?.ok) {
+      await fetchOffers();
+      await fetchOrder();
+      // Update status in messages
+      setMessages(prev => prev.map(m => {
+        if (!m.body?.startsWith('__OFFER__:')) return m;
+        try {
+          const d = JSON.parse(m.body.slice(10));
+          if (d.offer_id === offerId) {
+            return { ...m, body: `__OFFER__:${JSON.stringify({ ...d, status: 'accepted' })}` };
+          }
+        } catch {}
+        return m;
+      }));
+    }
+    return data as { ok: boolean; error?: string } | null;
+  }, [fetchOffers, fetchOrder]);
+
+  const declineOffer = useCallback(async (offerId: string): Promise<{ ok: boolean; error?: string } | null> => {
+    const { data, error } = await supabase.rpc('decline_offer', { p_offer_id: offerId });
+    if (!error && (data as any)?.ok) {
+      await fetchOffers();
+      setMessages(prev => prev.map(m => {
+        if (!m.body?.startsWith('__OFFER__:')) return m;
+        try {
+          const d = JSON.parse(m.body.slice(10));
+          if (d.offer_id === offerId) {
+            return { ...m, body: `__OFFER__:${JSON.stringify({ ...d, status: 'declined' })}` };
+          }
+        } catch {}
+        return m;
+      }));
+    }
+    return data as { ok: boolean; error?: string } | null;
+  }, [fetchOffers]);
+
   return {
     listing, loading, fetchListing,
     isWatched, toggleWatch,
@@ -456,5 +567,6 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     addPhotos,
     updateListing,
     deletePhoto,
+    offers, sendOffer, acceptOffer, declineOffer,
   };
 }
