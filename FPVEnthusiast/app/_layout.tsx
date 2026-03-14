@@ -16,6 +16,7 @@ export default function RootLayout() {
             <Stack.Screen name="signup"   options={{ headerShown: false }} />
             <Stack.Screen name="user/[id]" options={{ headerShown: false }} />
             <Stack.Screen name="post/[id]" options={{ headerShown: false }} />
+            <Stack.Screen name="listing/[id]" options={{ headerShown: false }} />
           </Stack>
         </NotificationsProvider>
       </AuthProvider>

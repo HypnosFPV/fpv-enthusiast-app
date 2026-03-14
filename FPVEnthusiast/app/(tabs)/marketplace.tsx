@@ -1386,9 +1386,7 @@ export default function MarketplaceScreen() {
         items={featured}
         loading={featLoading}
         currentUserId={user?.id}
-        onItemPress={item =>
-          Alert.alert(item.title, `$${item.price.toFixed(2)} · ${conditionLabel(item.condition)}\n\n${item.description}`)
-        }
+        onItemPress={item => router.push({ pathname: '/listing/[id]', params: { id: item.id } })}
         onBoostPress={() => handleOpenBoost()}
       />
       {/* Category row */}
@@ -1471,10 +1469,7 @@ export default function MarketplaceScreen() {
             item={item}
             index={index}
             isOwner={item.seller_id === user?.id}
-            onPress={() => {
-              // Phase 2: router.push(`/marketplace/${item.id}`)
-              Alert.alert(item.title, `$${item.price.toFixed(2)} · ${conditionLabel(item.condition)}\n\n${item.description}`);
-            }}
+            onPress={() => router.push({ pathname: '/listing/[id]', params: { id: item.id } })}
             onWatch={() => user
               ? toggleWatch(item.id)
               : Alert.alert('Sign in', 'Sign in to save listings to your watchlist.')
