@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
+import { supabase } from '../../src/services/supabase';
 import {
   useMarketplace,
   MarketplaceListing,
@@ -24,9 +25,14 @@ import {
   CategorySlug,
   ConditionValue,
   CreateListingParams,
+  useFeaturedListings,
+  FeaturedListing,
+  FEATURED_PROPS_COST,
+  FEATURED_PAID_TIERS,
 } from '../../src/hooks/useMarketplace';
 
 const { width: SW } = Dimensions.get('window');
+const CAROUSEL_H = 210;
 
 // ─── Trust value-prop data ────────────────────────────────────────────────────
 const TRUST_BULLETS = [
@@ -69,6 +75,321 @@ function conditionColor(c: string) {
 function conditionLabel(c: string) {
   return CONDITIONS.find(x => x.value === c)?.label ?? c;
 }
+
+// ─── Boost Modal ──────────────────────────────────────────────────────────────
+// Lets the listing owner choose: spend props for 24 h  |  pay via Stripe
+const BoostModal = ({
+  visible,
+  listingId,
+  listingTitle,
+  userProps,
+  onClose,
+  onSpendProps,
+}: {
+  visible: boolean;
+  listingId: string;
+  listingTitle: string;
+  userProps: number;
+  onClose: () => void;
+  onSpendProps: () => Promise<void>;
+}) => {
+  const [spending, setSpending] = useState(false);
+  const canAfford = userProps >= FEATURED_PROPS_COST;
+
+  const handleSpendProps = async () => {
+    setSpending(true);
+    await onSpendProps();
+    setSpending(false);
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={styles.boostModal}>
+        <View style={styles.boostHandle} />
+
+        {/* Header */}
+        <View style={styles.boostHeader}>
+          <Text style={styles.boostTitle}>⚡ Boost Listing</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="close" size={24} color="#666" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.boostSubtitle} numberOfLines={2}>{listingTitle}</Text>
+
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}>
+
+          {/* ── Props option ─────────────────────────────────────────────── */}
+          <View style={[styles.boostCard, !canAfford && styles.boostCardDim]}>
+            <View style={styles.boostCardHeader}>
+              <Text style={styles.boostCardIcon}>🌀</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.boostCardTitle}>24-Hour Feature</Text>
+                <Text style={styles.boostCardMeta}>Spend Props · Community currency</Text>
+              </View>
+              <View style={styles.boostPropsPill}>
+                <Text style={styles.boostPropsCost}>{FEATURED_PROPS_COST.toLocaleString()}</Text>
+                <Text style={styles.boostPropsLabel}>props</Text>
+              </View>
+            </View>
+            <Text style={styles.boostCardBody}>
+              Your listing appears in the Featured carousel at the top of the marketplace for 24 hours,
+              seen by every user who opens the tab.
+            </Text>
+
+            {/* Balance row */}
+            <View style={styles.boostBalanceRow}>
+              <Text style={styles.boostBalanceLabel}>Your balance</Text>
+              <Text style={[styles.boostBalanceVal, !canAfford && { color: '#ff4444' }]}>
+                {userProps.toLocaleString()} props {!canAfford ? '(not enough)' : ''}
+              </Text>
+            </View>
+
+            {!canAfford && (
+              <View style={styles.boostHint}>
+                <Ionicons name="information-circle-outline" size={14} color="#888" />
+                <Text style={styles.boostHintTxt}>
+                  Earn props by winning challenges, gaining followers, and engaging with the community.
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.boostPropsBtn, (!canAfford || spending) && styles.boostBtnDisabled]}
+              onPress={handleSpendProps}
+              disabled={!canAfford || spending}
+            >
+              {spending
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.boostBtnTxt}>
+                    {canAfford ? `Spend ${FEATURED_PROPS_COST.toLocaleString()} Props` : 'Not Enough Props'}
+                  </Text>
+              }
+            </TouchableOpacity>
+          </View>
+
+          {/* ── Paid tiers ────────────────────────────────────────────────── */}
+          <Text style={styles.boostSectionLabel}>Or pay to feature</Text>
+          {FEATURED_PAID_TIERS.map(tier => (
+            <TouchableOpacity
+              key={tier.hours}
+              style={styles.boostPaidRow}
+              onPress={() =>
+                Alert.alert(
+                  'Paid Feature Coming Soon',
+                  `Paid featured slots ($${tier.price_usd} for ${tier.label}) will be available once Stripe is connected. Check back soon!`
+                )
+              }
+              activeOpacity={0.8}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.boostPaidLabel}>{tier.label}</Text>
+                <Text style={styles.boostPaidMeta}>Guaranteed placement · Stripe checkout</Text>
+              </View>
+              <Text style={styles.boostPaidPrice}>${tier.price_usd}</Text>
+              <Ionicons name="chevron-forward" size={16} color="#444" style={{ marginLeft: 8 }} />
+            </TouchableOpacity>
+          ))}
+
+          {/* Explainer */}
+          <View style={styles.boostExplainer}>
+            <Text style={styles.boostExplainerTitle}>How Featured works</Text>
+            <Text style={styles.boostExplainerBody}>
+              Featured listings appear in the auto-scrolling carousel at the very top of the marketplace,
+              before all search results and category filters. They include a golden ⭐ badge visible to
+              every buyer. Props-funded slots last exactly 24 hours; paid slots run for the purchased
+              duration. When your window expires, the listing returns to normal ranking automatically.
+            </Text>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+};
+
+// ─── Featured Carousel ────────────────────────────────────────────────────────
+const FeaturedCarousel = ({
+  items,
+  loading,
+  currentUserId,
+  onItemPress,
+  onBoostPress,
+}: {
+  items: FeaturedListing[];
+  loading: boolean;
+  currentUserId?: string;
+  onItemPress: (item: FeaturedListing) => void;
+  onBoostPress: () => void;
+}) => {
+  const scrollRef    = useRef<ScrollView>(null);
+  const autoTimer    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentIndex = useRef(0);
+  const itemW        = SW - 32; // full-width card with 16 px side margins
+
+  // ── Auto-scroll every 3.5 s ──────────────────────────────────────────────
+  useEffect(() => {
+    if (items.length < 2) return;
+    autoTimer.current = setInterval(() => {
+      currentIndex.current = (currentIndex.current + 1) % items.length;
+      scrollRef.current?.scrollTo({ x: currentIndex.current * (itemW + 12), animated: true });
+    }, 3500);
+    return () => { if (autoTimer.current) clearInterval(autoTimer.current); };
+  }, [items.length, itemW]);
+
+  // ── Pause auto on user touch ──────────────────────────────────────────────
+  const pauseAuto = () => {
+    if (autoTimer.current) clearInterval(autoTimer.current);
+    // resume after 6 s of no interaction
+    setTimeout(() => {
+      if (items.length < 2) return;
+      autoTimer.current = setInterval(() => {
+        currentIndex.current = (currentIndex.current + 1) % items.length;
+        scrollRef.current?.scrollTo({ x: currentIndex.current * (itemW + 12), animated: true });
+      }, 3500);
+    }, 6000);
+  };
+
+  // ── Entry animation ───────────────────────────────────────────────────────
+  const entryOpacity = useRef(new Animated.Value(0)).current;
+  const entryTransY  = useRef(new Animated.Value(-18)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(entryOpacity, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.spring(entryTransY,  { toValue: 0, friction: 8, tension: 70, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={styles.featuredShimmerWrap}>
+        <View style={styles.featuredShimmerLabel} />
+        <View style={styles.featuredShimmerCard} />
+      </View>
+    );
+  }
+
+  return (
+    <Animated.View style={{ opacity: entryOpacity, transform: [{ translateY: entryTransY }] }}>
+      {/* Section header */}
+      <View style={styles.featuredHeader}>
+        <View style={styles.featuredHeaderLeft}>
+          <Text style={styles.featuredHeaderIcon}>⭐</Text>
+          <Text style={styles.featuredHeaderTitle}>Featured</Text>
+          <View style={styles.featuredLiveDot} />
+        </View>
+        <TouchableOpacity style={styles.featuredBoostBtn} onPress={onBoostPress} activeOpacity={0.8}>
+          <Ionicons name="flash" size={13} color="#ffcc00" />
+          <Text style={styles.featuredBoostTxt}>Boost your listing</Text>
+        </TouchableOpacity>
+      </View>
+
+      {items.length === 0 ? (
+        /* Empty state — invite first boost */
+        <TouchableOpacity style={styles.featuredEmptyCard} onPress={onBoostPress} activeOpacity={0.85}>
+          <Text style={styles.featuredEmptyIcon}>🚀</Text>
+          <Text style={styles.featuredEmptyTitle}>Be the first featured listing</Text>
+          <Text style={styles.featuredEmptyBody}>
+            Spend props or pay to pin your listing here for every buyer to see.
+          </Text>
+          <View style={styles.featuredEmptyBtn}>
+            <Ionicons name="flash" size={14} color="#ffcc00" />
+            <Text style={styles.featuredEmptyBtnTxt}>Boost a listing</Text>
+          </View>
+        </TouchableOpacity>
+      ) : (
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          pagingEnabled={false}
+          decelerationRate="fast"
+          snapToInterval={itemW + 12}
+          snapToAlignment="start"
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingBottom: 4 }}
+          onScrollBeginDrag={pauseAuto}
+        >
+          {items.map((item, idx) => {
+            const image = item.listing_images?.find(i => i.is_primary) ?? item.listing_images?.[0];
+            const isOwn = item.seller_id === currentUserId;
+            const remaining = item.featured_until
+              ? Math.max(0, Math.ceil((new Date(item.featured_until).getTime() - Date.now()) / 3_600_000))
+              : 0;
+
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.featuredCard, { width: itemW }]}
+                onPress={() => onItemPress(item)}
+                activeOpacity={0.9}
+              >
+                {/* Background image */}
+                {image ? (
+                  <Image source={{ uri: image.url }} style={styles.featuredCardImg} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.featuredCardImg, styles.featuredCardImgPlaceholder]}>
+                    <Text style={{ fontSize: 48 }}>
+                      {CATEGORIES.find(c => c.slug === item.category)?.icon ?? '📦'}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Dark gradient overlay */}
+                <View style={styles.featuredGradient} />
+
+                {/* Top badges */}
+                <View style={styles.featuredTopRow}>
+                  <View style={styles.featuredBadge}>
+                    <Text style={styles.featuredBadgeTxt}>⭐ FEATURED</Text>
+                  </View>
+                  {item.featured_type === 'props' && (
+                    <View style={styles.featuredPropsBadge}>
+                      <Text style={styles.featuredPropsBadgeTxt}>🌀 Props</Text>
+                    </View>
+                  )}
+                  {isOwn && (
+                    <View style={styles.featuredYoursBadge}>
+                      <Text style={styles.featuredYoursBadgeTxt}>Your listing</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Bottom info */}
+                <View style={styles.featuredCardFooter}>
+                  <Text style={styles.featuredCardTitle} numberOfLines={2}>{item.title}</Text>
+                  <View style={styles.featuredCardPriceRow}>
+                    <Text style={styles.featuredCardPrice}>
+                      {item.listing_type === 'auction' && item.current_bid
+                        ? `$${item.current_bid.toFixed(2)} bid`
+                        : `$${item.price.toFixed(2)}`}
+                    </Text>
+                    {item.seller?.username && (
+                      <Text style={styles.featuredCardSeller}>
+                        {(item.seller.verification_tier ?? 0) >= 3 ? '✅ ' : ''}
+                        {item.seller.username}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.featuredTimeLeft}>
+                    ⏱ {remaining}h remaining
+                  </Text>
+                </View>
+
+                {/* Dot indicators */}
+                {items.length > 1 && (
+                  <View style={styles.featuredDots}>
+                    {items.map((_, di) => (
+                      <View key={di} style={[styles.featuredDot, di === idx % items.length && styles.featuredDotActive]} />
+                    ))}
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+    </Animated.View>
+  );
+};
 
 // ─── Animated Empty State ─────────────────────────────────────────────────────
 const EmptyState = ({
@@ -932,6 +1253,37 @@ export default function MarketplaceScreen() {
     prevListingLen.current = safeLen;
   }, [safeLen]);
 
+  // ── Featured listings ──────────────────────────────────────────────────────
+  const {
+    featured, loading: featLoading, reload: reloadFeatured, spendPropsForFeatured,
+  } = useFeaturedListings();
+  const [showBoost, setShowBoost]       = useState(false);
+  const [boostTarget, setBoostTarget]   = useState<{ id: string; title: string } | null>(null);
+  // User's own props balance (fetched once)
+  const [userProps, setUserProps]       = useState(0);
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase.from('users').select('total_props').eq('id', user.id).single()
+      .then(({ data }) => setUserProps(data?.total_props ?? 0));
+  }, [user?.id]);
+
+  const handleOpenBoost = useCallback((listingId?: string, listingTitle?: string) => {
+    // If called from a specific card, pre-select that listing
+    // Otherwise let user pick from their own listings (future phase)
+    if (listingId && listingTitle) {
+      setBoostTarget({ id: listingId, title: listingTitle });
+    } else {
+      // Find first active listing owned by user
+      const own = listings?.find(l => l.seller_id === user?.id);
+      if (own) setBoostTarget({ id: own.id, title: own.title });
+      else {
+        Alert.alert('No active listing', 'Create a listing first, then boost it to the Featured carousel.');
+        return;
+      }
+    }
+    setShowBoost(true);
+  }, [listings, user?.id]);
+
   const [searchText, setSearchText]     = useState('');
   const [selectedCat, setSelectedCat]   = useState<CategorySlug | null>(null);
   const [showFilter, setShowFilter]     = useState(false);
@@ -1011,12 +1363,22 @@ export default function MarketplaceScreen() {
   // ── Header component inside FlatList ──────────────────────────────────────
   const ListHeader = useCallback(() => (
     <View>
+      {/* Featured carousel */}
+      <FeaturedCarousel
+        items={featured}
+        loading={featLoading}
+        currentUserId={user?.id}
+        onItemPress={item =>
+          Alert.alert(item.title, `$${item.price.toFixed(2)} · ${conditionLabel(item.condition)}\n\n${item.description}`)
+        }
+        onBoostPress={() => handleOpenBoost()}
+      />
       {/* Trust panel */}
       {showTrust && <TrustPanel onDismiss={() => setShowTrust(false)} />}
       {/* Category row */}
       <CategoryGrid selected={selectedCat} onSelect={handleCatSelect} />
     </View>
-  ), [showTrust, selectedCat, handleCatSelect]);
+  ), [showTrust, selectedCat, handleCatSelect, featured, featLoading, user?.id, handleOpenBoost]);
 
   if (loading) {
     return (
@@ -1156,6 +1518,29 @@ export default function MarketplaceScreen() {
         onApply={f => applyFilters({ ...filters, ...f })}
         current={filters}
       />
+      {boostTarget && (
+        <BoostModal
+          visible={showBoost}
+          listingId={boostTarget.id}
+          listingTitle={boostTarget.title}
+          userProps={userProps}
+          onClose={() => setShowBoost(false)}
+          onSpendProps={async () => {
+            if (!user?.id || !boostTarget) return;
+            const res = await spendPropsForFeatured(boostTarget.id, user.id);
+            if (res.ok) {
+              setUserProps(p => Math.max(0, p - FEATURED_PROPS_COST));
+              reloadFeatured();
+              Alert.alert('🎉 Listing featured!', 'Your listing will appear in the carousel for the next 24 hours.');
+            } else {
+              const msg = res.error === 'insufficient_props'
+                ? `You need ${FEATURED_PROPS_COST.toLocaleString()} props. Keep flying and earning!`
+                : res.error ?? 'Something went wrong.';
+              Alert.alert('Could not boost listing', msg);
+            }
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -1350,6 +1735,81 @@ const styles = StyleSheet.create({
   nextBtn:           { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 12, backgroundColor: '#ff4500' },
   nextBtnDisabled:   { backgroundColor: '#3a1a0a', opacity: 0.6 },
   nextBtnTxt:        { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // ── Featured carousel
+  featuredShimmerWrap:   { marginHorizontal: 16, marginTop: 14, marginBottom: 4 },
+  featuredShimmerLabel:  { width: 120, height: 14, backgroundColor: '#1e1e1e', borderRadius: 7, marginBottom: 10 },
+  featuredShimmerCard:   { width: '100%', height: CAROUSEL_H, backgroundColor: '#111', borderRadius: 16 },
+  featuredHeader:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 },
+  featuredHeaderLeft:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  featuredHeaderIcon:    { fontSize: 16 },
+  featuredHeaderTitle:   { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.4 },
+  featuredLiveDot:       { width: 7, height: 7, borderRadius: 4, backgroundColor: '#ff4500', marginLeft: 2 },
+  featuredBoostBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#1a1400', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: '#ffcc0044' },
+  featuredBoostTxt:      { color: '#ffcc00', fontSize: 12, fontWeight: '700' },
+  // empty carousel state
+  featuredEmptyCard:     { marginHorizontal: 16, marginBottom: 4, height: CAROUSEL_H, backgroundColor: '#111', borderRadius: 16, borderWidth: 1, borderColor: '#1e2a3a', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 32 },
+  featuredEmptyIcon:     { fontSize: 36, marginBottom: 4 },
+  featuredEmptyTitle:    { color: '#fff', fontSize: 15, fontWeight: '700', textAlign: 'center' },
+  featuredEmptyBody:     { color: '#666', fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 4 },
+  featuredEmptyBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#1a1400', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: '#ffcc0066' },
+  featuredEmptyBtnTxt:   { color: '#ffcc00', fontSize: 13, fontWeight: '700' },
+  // carousel card
+  featuredCard:          { height: CAROUSEL_H, borderRadius: 16, overflow: 'hidden', position: 'relative', backgroundColor: '#111' },
+  featuredCardImg:       { ...StyleSheet.absoluteFillObject },
+  featuredCardImgPlaceholder: { backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' },
+  featuredGradient:      { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent',
+                            // Top fade + bottom fade via multiple overlapping Views below
+                           },
+  featuredTopRow:        { position: 'absolute', top: 10, left: 10, right: 10, flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  featuredBadge:         { backgroundColor: '#00000099', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#ffcc0066' },
+  featuredBadgeTxt:      { color: '#ffcc00', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  featuredPropsBadge:    { backgroundColor: '#00000099', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  featuredPropsBadgeTxt: { color: '#aaa', fontSize: 10, fontWeight: '700' },
+  featuredYoursBadge:    { backgroundColor: '#ff450099', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  featuredYoursBadgeTxt: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  featuredCardFooter:    { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#00000088', padding: 12, gap: 2 },
+  featuredCardTitle:     { color: '#fff', fontSize: 14, fontWeight: '700', lineHeight: 19 },
+  featuredCardPriceRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  featuredCardPrice:     { color: '#ff4500', fontSize: 16, fontWeight: '800' },
+  featuredCardSeller:    { color: '#aaa', fontSize: 11 },
+  featuredTimeLeft:      { color: '#888', fontSize: 10, marginTop: 2 },
+  featuredDots:          { position: 'absolute', bottom: 78, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 4 },
+  featuredDot:           { width: 5, height: 5, borderRadius: 3, backgroundColor: '#ffffff44' },
+  featuredDotActive:     { backgroundColor: '#fff', width: 14 },
+
+  // ── Boost modal
+  boostModal:            { flex: 1, backgroundColor: '#0a0a0a', paddingTop: 12 },
+  boostHandle:           { width: 40, height: 4, borderRadius: 2, backgroundColor: '#333', alignSelf: 'center', marginBottom: 16 },
+  boostHeader:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 4 },
+  boostTitle:            { color: '#fff', fontSize: 18, fontWeight: '800' },
+  boostSubtitle:         { color: '#666', fontSize: 13, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#1a1a1a', marginBottom: 20 },
+  boostCard:             { backgroundColor: '#111', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#1e2a3a' },
+  boostCardDim:          { opacity: 0.7 },
+  boostCardHeader:       { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+  boostCardIcon:         { fontSize: 28 },
+  boostCardTitle:        { color: '#fff', fontSize: 15, fontWeight: '700' },
+  boostCardMeta:         { color: '#666', fontSize: 12 },
+  boostPropsPill:        { backgroundColor: '#1a1400', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, alignItems: 'center', borderWidth: 1, borderColor: '#ffcc0033' },
+  boostPropsCost:        { color: '#ffcc00', fontSize: 16, fontWeight: '800' },
+  boostPropsLabel:       { color: '#888', fontSize: 10 },
+  boostCardBody:         { color: '#888', fontSize: 13, lineHeight: 19, marginBottom: 12 },
+  boostBalanceRow:       { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#0d1117', borderRadius: 10, padding: 12, marginBottom: 10 },
+  boostBalanceLabel:     { color: '#666', fontSize: 13 },
+  boostBalanceVal:       { color: '#00e676', fontSize: 13, fontWeight: '700' },
+  boostHint:             { flexDirection: 'row', gap: 8, backgroundColor: '#1a1a1a', borderRadius: 10, padding: 10, marginBottom: 12, alignItems: 'flex-start' },
+  boostHintTxt:          { flex: 1, color: '#888', fontSize: 12, lineHeight: 17 },
+  boostPropsBtn:         { backgroundColor: '#ffcc00', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  boostBtnDisabled:      { backgroundColor: '#2a2a00', opacity: 0.6 },
+  boostBtnTxt:           { color: '#000', fontSize: 15, fontWeight: '800' },
+  boostSectionLabel:     { color: '#555', fontSize: 12, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginVertical: 10 },
+  boostPaidRow:          { flexDirection: 'row', alignItems: 'center', backgroundColor: '#111', borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#1e1e1e' },
+  boostPaidLabel:        { color: '#fff', fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  boostPaidMeta:         { color: '#666', fontSize: 12 },
+  boostPaidPrice:        { color: '#ff4500', fontSize: 18, fontWeight: '800' },
+  boostExplainer:        { backgroundColor: '#111', borderRadius: 14, padding: 16, marginTop: 6, borderWidth: 1, borderColor: '#1e2a3a' },
+  boostExplainerTitle:   { color: '#aaa', fontSize: 13, fontWeight: '700', marginBottom: 8 },
+  boostExplainerBody:    { color: '#666', fontSize: 13, lineHeight: 20 },
 
   // ── Filter modal
   filterModal:       { flex: 1, backgroundColor: '#0a0a0a' },

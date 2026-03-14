@@ -76,6 +76,9 @@ export interface MarketplaceListing {
     verification_tier?: number;
   } | null;
   is_watched?: boolean;
+  is_featured?: boolean;
+  featured_until?: string | null;
+  featured_type?: 'paid' | 'props' | null;
 }
 
 export interface CreateListingParams {
@@ -347,4 +350,72 @@ export function useMarketplace(currentUserId?: string) {
     createListing,
     deleteListing,
   };
+}
+
+// ─── Featured listings hook ───────────────────────────────────────────────────
+
+export interface FeaturedListing extends MarketplaceListing {
+  is_featured: true;
+  featured_until: string;
+}
+
+export const FEATURED_PROPS_COST = 4_800;   // must match SQL constant
+export const FEATURED_PAID_TIERS = [
+  { hours: 24,  label: '24 hours',  price_usd: 4.99  },
+  { hours: 72,  label: '3 days',    price_usd: 9.99  },
+  { hours: 168, label: '7 days',    price_usd: 19.99 },
+] as const;
+
+export function useFeaturedListings() {
+  const [featured, setFeatured]   = useState<FeaturedListing[]>([]);
+  const [loading,  setLoading]    = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from('marketplace_listings')
+      .select(`
+        id, seller_id, title, description, category, condition, price,
+        buy_now_price, listing_type, status, current_bid, bid_count,
+        ships_from_state, free_shipping, lipo_hazmat, view_count,
+        is_featured, featured_until, featured_type, created_at, updated_at,
+        listing_images (id, url, position, is_primary),
+        users:seller_id (id, username, avatar_url)
+      `)
+      .eq('is_featured', true)
+      .eq('status', 'active')
+      .gt('featured_until', new Date().toISOString())
+      .order('featured_until', { ascending: false })
+      .limit(20);
+
+    if (data) {
+      const normalized = data.map((raw: any) => {
+        const users = Array.isArray(raw.users) ? raw.users[0] : raw.users;
+        return {
+          ...raw,
+          listing_images: (raw.listing_images ?? []).sort((a: any, b: any) => a.position - b.position),
+          seller: users ? { id: users.id, username: users.username, avatar_url: users.avatar_url } : null,
+        } as FeaturedListing;
+      });
+      setFeatured(normalized);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, []);
+
+  // Spend props to feature a listing for 24 hours
+  const spendPropsForFeatured = useCallback(async (listingId: string, userId: string) => {
+    const { data, error } = await supabase
+      .rpc('spend_props_for_featured', {
+        p_listing_id: listingId,
+        p_user_id:    userId,
+      });
+    if (error) return { ok: false, error: error.message };
+    if (!data?.ok) return { ok: false, error: data?.error ?? 'unknown' };
+    await load(); // refresh carousel
+    return { ok: true, endsAt: data.ends_at };
+  }, [load]);
+
+  return { featured, loading, reload: load, spendPropsForFeatured };
 }
