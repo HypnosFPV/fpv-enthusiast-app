@@ -1,6 +1,6 @@
 // src/hooks/useMarketplace.ts
 import { useState, useCallback, useEffect } from 'react';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../services/supabase';
 
 // ─── Category taxonomy ────────────────────────────────────────────────────────

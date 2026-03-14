@@ -3,7 +3,7 @@
 // and provides the buyer↔seller message thread for that listing.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../services/supabase';
 import type { MarketplaceListing } from './useMarketplace';
 

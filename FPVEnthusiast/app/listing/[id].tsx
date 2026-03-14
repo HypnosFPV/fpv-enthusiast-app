@@ -27,7 +27,7 @@ import ImageZoomModal        from '../../src/components/ImageZoomModal';
 import {
   CATEGORIES, CONDITIONS,
 } from '../../src/hooks/useMarketplace';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase }    from '../../src/services/supabase';
 
 const { width: W } = Dimensions.get('window');
