@@ -1446,10 +1446,13 @@ export default function MarketplaceScreen() {
       .limit(5);
     if (!data?.length) return;
 
-    // Filter to IDs not yet seen
+    // Deduplicate by reference_id (listing UUID) — not props_log row id.
+    // This means: "have I already celebrated THIS listing's sale?"
+    // Robust against cleanup+re-seed (new props_log row, same listing = no re-fire)
+    // and against app restarts (AsyncStorage persists across sessions).
     const seenRaw  = await AsyncStorage.getItem('seen_sold_bonuses') ?? '[]';
     const seen: string[] = JSON.parse(seenRaw);
-    const unseen   = data.filter(r => !seen.includes(r.id));
+    const unseen   = data.filter(r => !seen.includes(r.reference_id));
     if (!unseen.length) return;
 
     const bonus = unseen[0];
@@ -1460,13 +1463,13 @@ export default function MarketplaceScreen() {
       .eq('id', bonus.reference_id)
       .maybeSingle();
 
-    // Mark as seen
-    const next = [...seen, bonus.id].slice(-50);
+    // Mark listing as seen (by reference_id, not props_log row id)
+    const next = [...seen, bonus.reference_id].slice(-50);
     await AsyncStorage.setItem('seen_sold_bonuses', JSON.stringify(next));
 
     // Trigger celebration modal
     setSoldCelebration({
-      id:            bonus.id,
+      id:            bonus.reference_id,
       listingTitle:  listing?.title ?? 'Your listing',
       bonus:         bonus.amount ?? 500,
     });
