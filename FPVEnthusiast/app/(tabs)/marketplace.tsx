@@ -73,10 +73,12 @@ function conditionLabel(c: string) {
 // ─── Listing card ─────────────────────────────────────────────────────────────
 const ListingCard = React.memo(({
   item,
+  index,
   onPress,
   onWatch,
 }: {
   item: MarketplaceListing;
+  index: number;
   onPress: () => void;
   onWatch: () => void;
 }) => {
@@ -89,7 +91,32 @@ const ListingCard = React.memo(({
     : `$${item.price.toFixed(2)}`;
   const cat = CATEGORIES.find(c => c.slug === item.category);
 
+  // ── Staggered slide-up entry animation ────────────────────────────────────
+  const cardOpacity    = useRef(new Animated.Value(0)).current;
+  const cardTranslateY = useRef(new Animated.Value(28)).current;
+  const cardScale      = useRef(new Animated.Value(0.94)).current;
+
+  useEffect(() => {
+    const delay = Math.min(index, 8) * 60; // cap stagger at 8 cards (480ms max)
+    Animated.parallel([
+      Animated.timing(cardOpacity, {
+        toValue: 1, duration: 260, delay, useNativeDriver: true,
+      }),
+      Animated.spring(cardTranslateY, {
+        toValue: 0, friction: 8, tension: 65, delay, useNativeDriver: true,
+      }),
+      Animated.spring(cardScale, {
+        toValue: 1, friction: 7, tension: 70, delay, useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
   return (
+    <Animated.View style={{
+      opacity:   cardOpacity,
+      transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
+      flex: 1,
+    }}>
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
       {/* Image */}
       <View style={styles.cardImageWrap}>
@@ -150,6 +177,7 @@ const ListingCard = React.memo(({
         </View>
       </View>
     </TouchableOpacity>
+    </Animated.View>
   );
 });
 
@@ -936,9 +964,10 @@ export default function MarketplaceScreen() {
         ListHeaderComponent={ListHeader}
         ListEmptyComponent={EmptyState}
         ListFooterComponent={ListFooter}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <ListingCard
             item={item}
+            index={index}
             onPress={() => {
               // Phase 2: router.push(`/marketplace/${item.id}`)
               Alert.alert(item.title, `$${item.price.toFixed(2)} · ${conditionLabel(item.condition)}\n\n${item.description}`);
