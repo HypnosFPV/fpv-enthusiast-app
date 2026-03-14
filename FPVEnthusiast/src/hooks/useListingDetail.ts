@@ -3,6 +3,7 @@
 // and provides the buyer↔seller message thread for that listing.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../services/supabase';
 import type { MarketplaceListing } from './useMarketplace';
 
@@ -37,16 +38,14 @@ export interface ListingOrder {
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
-// ── XHR blob helper ──────────────────────────────────────────────────────────
-function uriToBlob(uri: string): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.onload  = () => resolve(xhr.response as Blob);
-    xhr.onerror = () => reject(new Error('XHR blob failed: ' + uri));
-    xhr.responseType = 'blob';
-    xhr.open('GET', uri);
-    xhr.send();
-  });
+// ── base64 → Uint8Array helper (bypasses Hermes Blob bugs in RN 0.81) ────────
+
+async function uriToUint8Array(uri: string): Promise<Uint8Array> {
+  const b64 = await (FileSystem as any).readAsStringAsync(uri, { encoding: 'base64' });
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
 }
 
 export function useListingDetail(listingId: string, currentUserId?: string) {
@@ -302,7 +301,7 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
         const mime   = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
         const path   = `marketplace/${listingId}/${Date.now()}_${existingCount + i}.${ext}`;
 
-        const blob      = await uriToBlob(uri);
+        const blob      = await uriToUint8Array(uri);
 
         const { error: upErr } = await supabase.storage
           .from('media')

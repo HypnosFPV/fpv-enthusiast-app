@@ -28,6 +28,7 @@ import {
   CATEGORIES, CONDITIONS,
 } from '../../src/hooks/useMarketplace';
 import { supabase }    from '../../src/services/supabase';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const { width: W } = Dimensions.get('window');
 const IMG_H        = W * 0.78;   // ~78 % wide = square-ish hero
@@ -351,7 +352,7 @@ export default function ListingDetailScreen() {
         const mime   = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
         const path   = `marketplace/${listingIdVal}/${Date.now()}_${existingCount + i}.${ext}`;
 
-        const blob      = await uriToBlob(uri);
+        const blob = await uriToUint8Array(uri);
 
         const { error: upErr } = await supabase.storage
           .from('media')
@@ -1016,16 +1017,13 @@ export default function ListingDetailScreen() {
 }
 
 
-// ── Read a local URI as a Blob via XHR (avoids zero-byte data-URI issue) ──────
-function uriToBlob(uri: string): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.onload  = () => resolve(xhr.response as Blob);
-    xhr.onerror = () => reject(new Error('XHR blob conversion failed for: ' + uri));
-    xhr.responseType = 'blob';
-    xhr.open('GET', uri);
-    xhr.send();
-  });
+// ── base64 → Uint8Array helper (bypasses Hermes Blob bugs in RN 0.81) ────────
+async function uriToUint8Array(uri: string): Promise<Uint8Array> {
+  const b64 = await (FileSystem as any).readAsStringAsync(uri, { encoding: 'base64' });
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
 }
 
 // ─── MetaRow helper ───────────────────────────────────────────────────────────
