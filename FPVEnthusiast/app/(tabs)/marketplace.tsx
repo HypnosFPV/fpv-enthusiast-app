@@ -11,6 +11,7 @@ import {
   Image, Animated, Easing, Pressable, Alert, KeyboardAvoidingView,
   Platform, Dimensions, PanResponder,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -331,8 +332,14 @@ const FeaturedCarousel = ({
                 activeOpacity={0.9}
               >
                 {/* Background image */}
-                {image ? (
-                  <Image source={{ uri: image.url }} style={styles.featuredCardImg} resizeMode="cover" />
+                {image?.url ? (
+                  <ExpoImage
+                    source={{ uri: image.url }}
+                    style={styles.featuredCardImg}
+                    contentFit="cover"
+                    transition={200}
+                    onError={() => console.warn('[FeaturedCard] failed to load:', image.url)}
+                  />
                 ) : (
                   <View style={[styles.featuredCardImg, styles.featuredCardImgPlaceholder]}>
                     <Text style={{ fontSize: 48 }}>
@@ -539,8 +546,15 @@ const ListingCard = React.memo(({
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
       {/* Image */}
       <View style={styles.cardImageWrap}>
-        {image ? (
-          <Image source={{ uri: image.url }} style={styles.cardImage} resizeMode="cover" />
+        {image?.url ? (
+          <ExpoImage
+            source={{ uri: image.url }}
+            style={styles.cardImage}
+            contentFit="cover"
+            transition={200}
+            placeholder={{ color: '#1a1a1a' }}
+            onError={() => console.warn('[ListingCard] failed to load:', image.url)}
+          />
         ) : (
           <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
             <Text style={{ fontSize: 32 }}>{cat?.icon ?? '📦'}</Text>

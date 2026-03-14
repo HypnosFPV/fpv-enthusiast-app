@@ -1,5 +1,6 @@
 // src/hooks/useMarketplace.ts
 import { useState, useCallback, useEffect } from 'react';
+import * as FileSystem from 'expo-file-system';
 import { supabase } from '../services/supabase';
 
 // ─── Category taxonomy ────────────────────────────────────────────────────────
@@ -330,29 +331,52 @@ export function useMarketplace(currentUserId?: string) {
 
     if (error || !listing) return { ok: false, error: error?.message ?? 'Failed to create listing' };
 
-    // Upload images
+    // ── Upload images via FileSystem (reliable on iOS + Android) ──────────────
     if (imageUris?.length) {
       const imageRows: { listing_id: string; url: string; position: number; is_primary: boolean }[] = [];
       for (let i = 0; i < imageUris.length; i++) {
         const uri = imageUris[i];
         try {
-          const response = await fetch(uri);
-          const blob = await response.blob();
-          const ext = uri.split('.').pop()?.split('?')[0] ?? 'jpg';
-          const path = `marketplace/${listing.id}/${Date.now()}_${i}.${ext}`;
+          // Determine extension – normalise heic/heif → jpeg for broad compatibility
+          const rawExt = (uri.split('.').pop()?.split('?')[0] ?? 'jpg').toLowerCase();
+          const ext    = (rawExt === 'heic' || rawExt === 'heif') ? 'jpeg' : rawExt;
+          const mime   = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+          const path   = `marketplace/${listing.id}/${Date.now()}_${i}.${ext}`;
+
+          // Read as base64 via FileSystem (avoids fetch() blob issues on iOS)
+          const base64 = await FileSystem.readAsStringAsync(uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+
+          // Decode base64 → Uint8Array for Supabase Storage upload
+          const byteChars = atob(base64);
+          const bytes = new Uint8Array(byteChars.length);
+          for (let b = 0; b < byteChars.length; b++) bytes[b] = byteChars.charCodeAt(b);
+
           const { error: upErr } = await supabase.storage
             .from('media')
-            .upload(path, blob, { contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}` });
-          if (!upErr) {
+            .upload(path, bytes, { contentType: mime, upsert: false });
+
+          if (upErr) {
+            console.warn(`[marketplace] upload error for image ${i}:`, upErr.message);
+          } else {
             const { data: urlData } = supabase.storage.from('media').getPublicUrl(path);
-            if (urlData.publicUrl) {
-              imageRows.push({ listing_id: listing.id, url: urlData.publicUrl, position: i, is_primary: i === 0 });
+            if (urlData?.publicUrl) {
+              imageRows.push({
+                listing_id: listing.id,
+                url:        urlData.publicUrl,
+                position:   i,
+                is_primary: i === 0,
+              });
             }
           }
-        } catch (_) {}
+        } catch (e) {
+          console.warn(`[marketplace] image ${i} processing error:`, e);
+        }
       }
       if (imageRows.length) {
-        await supabase.from('listing_images').insert(imageRows);
+        const { error: imgErr } = await supabase.from('listing_images').insert(imageRows);
+        if (imgErr) console.warn('[marketplace] listing_images insert error:', imgErr.message);
       }
     }
 
