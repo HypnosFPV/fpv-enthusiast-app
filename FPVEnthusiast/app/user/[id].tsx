@@ -60,7 +60,7 @@ function thumbUri(post: Post): string | null {
   if (post.thumbnail_url) return post.thumbnail_url;
   if (post.media_url)     return post.media_url;
   if (post.platform === 'youtube' && post.social_url) {
-    const m = post.social_url.match(/(?:v=|youtu\\.be\\/)([A-Za-z0-9_-]{11})/);
+    const m = post.social_url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_\-]{11})/);
     if (m) return `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg`;
   }
   return null;
