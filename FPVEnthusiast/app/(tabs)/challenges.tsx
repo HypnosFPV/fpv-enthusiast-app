@@ -378,6 +378,10 @@ export default function ChallengesScreen() {
   const [refreshing,     setRefreshing]     = useState(false);
 
   const [entriesModalVisible, setEntriesModalVisible] = useState(false);
+  // Per-entry vote state: tracks which entry is currently being voted on
+  const [votingEntryId, setVotingEntryId]   = useState<string | null>(null);
+  const [voteErrorId,   setVoteErrorId]     = useState<string | null>(null);
+  const [voteErrorMsg,  setVoteErrorMsg]    = useState<string>('');
   const [playingEntry,        setPlayingEntry]        = useState<ChallengeEntry | null>(null);
 
   // ── Suggestions list ──────────────────────────────────────────────────────
@@ -709,50 +713,56 @@ export default function ChallengesScreen() {
   };
 
   const handleVote = async (entry: ChallengeEntry) => {
-    if (!user) { Alert.alert('Sign in to vote'); return; }
+    // ── Guards ──────────────────────────────────────────────────────────────
+    if (!user) { Alert.alert('Sign in', 'Please sign in to vote.'); return; }
 
-    // Must have submitted to vote
-    // detailChallenge is only set for archive modals; fall back to weeklyChallenge
-    // for the current-week inline view (where detailChallenge is null)
-    const ch = detailChallenge ?? weeklyChallenge;
-    if (!ch?.my_entry) {
-      Alert.alert(
-        'Entry Required',
-        'You must submit an entry to be eligible to vote.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
+    console.log('[handleVote] start', {
+      entryId:   entry.id,
+      pilotId:   entry.pilot_id,
+      userId:    user?.id,
+      hasVoted:  entry.has_voted,
+      challengeId: entry.challenge_id,
+    });
 
-    // Cannot self-vote
-    if (entry.pilot_id === user.id) {
-      Alert.alert('Not allowed', 'You cannot vote for your own entry.');
-      return;
-    }
+    // Clear previous inline error for this entry
+    setVoteErrorId(null);
+    setVoteErrorMsg('');
+    setVotingEntryId(entry.id);
 
     const result = await vote(
       entry.id,
       entry.pilot_id,
       entry.has_voted ?? false,
-      entry.challenge_id,          // pass challenge_id for per-challenge vote dedup
+      entry.challenge_id,
     );
+
+    console.log('[handleVote] result', result);
+    setVotingEntryId(null);
+
     if (!result.success) {
-      if (result.reason === 'self_vote') Alert.alert('Not allowed', 'Cannot vote for yourself.');
+      const msg =
+        result.reason === 'not_logged_in' ? 'Please sign in to vote.' :
+        result.reason === 'self_vote'     ? 'You cannot vote for your own entry.' :
+        result.reason ?? 'Something went wrong. Please try again.';
+
+      // Show inline error on the button AND an alert so it can't be missed
+      setVoteErrorId(entry.id);
+      setVoteErrorMsg(msg);
+      Alert.alert('Vote failed', msg, [{ text: 'OK', onPress: () => setVoteErrorId(null) }]);
       return;
     }
 
+    // ── Optimistic update ────────────────────────────────────────────────────
     setEntries(prev => prev.map(e => {
       if (e.id !== entry.id) return e;
       const was = e.has_voted ?? false;
-      return { ...e, has_voted: !was, vote_count: e.vote_count + (was ? -1 : 1) };
+      return { ...e, has_voted: !was, vote_count: (e.vote_count ?? 0) + (was ? -1 : 1) };
     }));
 
-    // Show props toast on first vote in this challenge
     if (result.propsAwarded && result.propsAwarded > 0) {
       propsToast.show(`+${result.propsAwarded} Props! Thanks for voting 🗳️`);
     }
 
-    // Mark challenge as voted
     loadChallenges(activeSeason?.id);
   };
 
@@ -1183,20 +1193,37 @@ export default function ChallengesScreen() {
 
           {/* Vote button — full width when voting is open */}
           {canVote ? (
-            <TouchableOpacity
-              style={[styles.voteBtnLarge, e.has_voted && styles.voteBtnLargeActive]}
-              onPress={() => handleVote(e)}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={e.has_voted ? 'thumbs-up' : 'thumbs-up-outline'}
-                size={16}
-                color={e.has_voted ? '#fff' : '#00d4ff'}
-              />
-              <Text style={[styles.voteBtnLargeText, e.has_voted && { color: '#fff' }]}>
-                {e.has_voted ? '✓ Voted' : '👍 Vote'} · {e.vote_count}
-              </Text>
-            </TouchableOpacity>
+            <>
+              <TouchableOpacity
+                style={[
+                  styles.voteBtnLarge,
+                  e.has_voted && styles.voteBtnLargeActive,
+                  votingEntryId === e.id && { opacity: 0.5 },
+                  voteErrorId   === e.id && { borderColor: '#ff4444' },
+                ]}
+                onPress={() => handleVote(e)}
+                activeOpacity={0.75}
+                disabled={votingEntryId === e.id}
+              >
+                {votingEntryId === e.id ? (
+                  <ActivityIndicator size={14} color="#00d4ff" />
+                ) : (
+                  <Ionicons
+                    name={e.has_voted ? 'thumbs-up' : 'thumbs-up-outline'}
+                    size={16}
+                    color={e.has_voted ? '#fff' : '#00d4ff'}
+                  />
+                )}
+                <Text style={[styles.voteBtnLargeText, e.has_voted && { color: '#fff' }]}>
+                  {votingEntryId === e.id ? 'Voting…' : e.has_voted ? '✓ Voted' : '👍 Vote'} · {e.vote_count}
+                </Text>
+              </TouchableOpacity>
+              {voteErrorId === e.id && (
+                <Text style={{ color: '#ff4444', fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+                  ⚠️ {voteErrorMsg}
+                </Text>
+              )}
+            </>
           ) : (
             <View style={styles.voteCount}>
               <Ionicons name="thumbs-up" size={12} color="#4a5568" />
