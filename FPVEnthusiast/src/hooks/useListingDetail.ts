@@ -99,19 +99,26 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
         try {
           // Extract storage paths from the stored public URLs
           const paths = rawImages.map((img: any) => {
-            // URL format: .../storage/v1/object/public/media/<path>
-            // OR signed:  .../storage/v1/object/sign/media/<path>
             const m = img.url.match(/\/object\/(?:public|sign)\/media\/(.+?)(?:\?|$)/);
-            return m ? m[1] : img.url;
+            const extracted = m ? m[1] : null;
+            console.log('[img-debug] raw url:', img.url);
+            console.log('[img-debug] extracted path:', extracted);
+            return extracted ?? img.url;
           });
-          const { data: signed } = await supabase.storage
+
+          console.log('[img-debug] calling createSignedUrls with paths:', JSON.stringify(paths));
+          const { data: signed, error: signErr2 } = await supabase.storage
             .from('media')
             .createSignedUrls(paths, 60 * 60 * 24 * 365); // 1 year
+          console.log('[img-debug] signed result:', JSON.stringify(signed));
+          console.log('[img-debug] signed error:', signErr2);
+
           if (signed && signed.length === rawImages.length) {
             signedImages = rawImages.map((img: any, i: number) => ({
               ...img,
               url: signed[i]?.signedUrl ?? img.url,
             }));
+            console.log('[img-debug] final URLs:', signedImages.map((x: any) => x.url));
           }
         } catch (signErr: any) {
           console.warn('[useListingDetail] signed URL error:', signErr?.message);
