@@ -1055,12 +1055,28 @@ export default function ChallengesScreen() {
   // ── Suggestions ───────────────────────────────────────────────────────────
   const renderSuggestions = () => (
     <View style={{ flex: 1 }}>
-      {/* Info banner */}
+      {/* How-it-works banner — two scannable steps */}
       <View style={styles.suggestBanner}>
-        <Ionicons name="bulb-outline" size={16} color={C.purple} />
-        <Text style={styles.suggestBannerText}>
-          Suggest the next challenge theme! The most-voted suggestion is revealed at the start of voting (Saturday) as next week's challenge.
-        </Text>
+        <View style={styles.suggestBannerRows}>
+          <Text style={styles.suggestBannerHeading}>💡 Shape Next Week's Challenge</Text>
+          <View style={styles.suggestBannerRow}>
+            <Text style={styles.suggestBannerStep}>1</Text>
+            <Text style={styles.suggestBannerText}>
+              <Text style={{ fontWeight: '700', color: C.purple }}>Suggest</Text>
+              {' '}a theme idea using the button below.
+            </Text>
+          </View>
+          <View style={styles.suggestBannerRow}>
+            <Text style={styles.suggestBannerStep}>2</Text>
+            <Text style={styles.suggestBannerText}>
+              <Text style={{ fontWeight: '700', color: C.purple }}>Vote</Text>
+              {' '}on ideas you like — the top suggestion becomes next week's challenge.
+            </Text>
+          </View>
+          <Text style={styles.suggestBannerFootnote}>
+            Winner announced Saturday at voting time.
+          </Text>
+        </View>
       </View>
 
       <TouchableOpacity
@@ -1075,7 +1091,7 @@ export default function ChallengesScreen() {
         }}
       >
         <Ionicons name="add-circle-outline" size={16} color={C.purple} />
-        <Text style={styles.addSugBtnText}>+ Suggest an idea</Text>
+        <Text style={styles.addSugBtnText}>+ Suggest an Idea</Text>
       </TouchableOpacity>
 
       {sugsLoading ? (
@@ -1084,6 +1100,13 @@ export default function ChallengesScreen() {
         <FlatList
           data={suggestions}
           keyExtractor={s => s.id}
+          ListHeaderComponent={
+            suggestions.length > 0 ? (
+              <Text style={styles.sugSectionHeader}>
+                THIS WEEK'S IDEAS · {suggestions.length}
+              </Text>
+            ) : null
+          }
           renderItem={({ item: s }) => (
             <View style={styles.sugCard}>
               <View style={styles.sugLeft}>
@@ -1099,21 +1122,28 @@ export default function ChallengesScreen() {
               >
                 <Ionicons
                   name={s.has_voted ? 'arrow-up-circle' : 'arrow-up-circle-outline'}
-                  size={18}
+                  size={22}
                   color={s.has_voted ? C.purple : C.muted}
                 />
                 <Text style={[styles.sugVoteCount, s.has_voted && { color: C.purple }]}>
                   {s.vote_count}
                 </Text>
+                <Text style={[styles.sugVoteLabel, s.has_voted && { color: C.purple }]}>
+                  {s.has_voted ? 'Voted' : 'Vote'}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
-          contentContainerStyle={{ padding: 12, gap: 10 }}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 20, gap: 10 }}
           ListEmptyComponent={
             <View style={[styles.empty, { paddingTop: 30 }]}>
               <Ionicons name="bulb-outline" size={48} color="#222" />
               <Text style={styles.emptyTitle}>No suggestions yet</Text>
-              <Text style={styles.emptySub}>Be the first to suggest a theme!</Text>
+              <Text style={styles.emptySub}>
+                Tap{' '}
+                <Text style={{ color: C.purple, fontWeight: '700' }}>+ Suggest an Idea</Text>
+                {' '}above to pitch a theme for next week!
+              </Text>
             </View>
           }
         />
@@ -2235,18 +2265,30 @@ const styles = StyleSheet.create({
 
   // Suggestions
   suggestBanner: {
-    flexDirection: 'row', gap: 8, alignItems: 'flex-start',
-    backgroundColor: C.purple + '12', padding: 12, margin: 12, borderRadius: 12,
+    backgroundColor: C.purple + '12', padding: 14, margin: 12, borderRadius: 14,
     borderWidth: 1, borderColor: C.purple + '33',
   },
-  suggestBannerText: { flex: 1, color: C.subtext, fontSize: 12, lineHeight: 17 },
+  suggestBannerRows:    { gap: 8 },
+  suggestBannerHeading: { color: C.text, fontSize: 13, fontWeight: '800', marginBottom: 2 },
+  suggestBannerRow:     { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  suggestBannerStep: {
+    width: 18, height: 18, borderRadius: 9, backgroundColor: C.purple,
+    color: '#fff', fontSize: 11, fontWeight: '800',
+    textAlign: 'center', lineHeight: 18, overflow: 'hidden',
+  },
+  suggestBannerText:     { flex: 1, color: C.subtext, fontSize: 12, lineHeight: 17 },
+  suggestBannerFootnote: { color: C.muted, fontSize: 11, marginTop: 2 },
   addSugBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
     marginHorizontal: 12, marginBottom: 4, paddingVertical: 10,
     backgroundColor: C.purple + '15', borderRadius: 12,
     borderWidth: 1, borderColor: C.purple + '44',
   },
-  addSugBtnText: { color: C.purple, fontSize: 14, fontWeight: '700' },
+  addSugBtnText:    { color: C.purple, fontSize: 14, fontWeight: '700' },
+  sugSectionHeader: {
+    color: C.muted, fontSize: 10, fontWeight: '800', letterSpacing: 1,
+    paddingVertical: 8,
+  },
   sugCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: C.card, borderRadius: 12, padding: 12,
@@ -2256,9 +2298,11 @@ const styles = StyleSheet.create({
   sugTitle:     { color: C.text, fontSize: 14, fontWeight: '700' },
   sugDesc:      { color: C.subtext, fontSize: 12, lineHeight: 16 },
   sugAuthor:    { color: C.muted, fontSize: 11 },
-  sugVoteBtn:   { alignItems: 'center', gap: 2, padding: 6 },
-  sugVoteBtnActive: {},
-  sugVoteCount: { color: C.muted, fontSize: 12, fontWeight: '700' },
+  sugVoteBtn:      { alignItems: 'center', gap: 1, paddingHorizontal: 8, paddingVertical: 6,
+                     borderRadius: 10, borderWidth: 1, borderColor: 'transparent' },
+  sugVoteBtnActive: { borderColor: C.purple + '44', backgroundColor: C.purple + '12' },
+  sugVoteCount:    { color: C.muted, fontSize: 13, fontWeight: '800' },
+  sugVoteLabel:    { color: C.muted, fontSize: 9, fontWeight: '600', letterSpacing: 0.5 },
 
   // Status badges
   badge: { flexDirection: 'row', alignItems: 'center', gap: 5,
