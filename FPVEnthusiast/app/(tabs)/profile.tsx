@@ -805,7 +805,7 @@ export default function ProfileScreen() {
             <TouchableOpacity style={styles.editBtn} onPress={() => setShowEditProfile(true)}>
               <Text style={styles.editBtnText}>Edit Profile</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.gearBtn} onPress={() => setShowSettings(true)}>
+            <TouchableOpacity style={styles.gearBtn} onPress={() => router.push('/settings')}>
               <Ionicons name="settings-outline" size={20} color="#aaa" />
             </TouchableOpacity>
           </View>

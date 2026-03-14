@@ -18,6 +18,7 @@ function AppContent() {
         <Stack.Screen name="user/[id]"    options={{ headerShown: false }} />
         <Stack.Screen name="post/[id]"    options={{ headerShown: false }} />
         <Stack.Screen name="listing/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="settings"      options={{ headerShown: false, animation: 'slide_from_right' }} />
       </Stack>
 
       {/* Push notification pre-prompt modal (iOS only, shown once on first launch) */}
