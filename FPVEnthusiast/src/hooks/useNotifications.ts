@@ -7,10 +7,12 @@ export interface AppNotification {
   id:         string;
   user_id:    string;
   actor_id:   string | null;
-  type:       'like' | 'comment' | 'follow' | 'mention' | 'reply';
+  type:       'like' | 'comment' | 'follow' | 'mention' | 'reply'
+            | 'challenge_voting_open' | 'challenge_voting_closing' | 'challenge_result';
   post_id:    string | null;
   comment_id: string | null;
-  message:    string | null;
+  message:      string | null;
+  challenge_id: string | null;
   read:       boolean;
   created_at: string;
   actor?: { username: string | null; avatar_url: string | null } | null;
@@ -155,10 +157,42 @@ export function useNotifications(userId?: string) {
     });
   }, []);
 
+
+  // ── Notification preferences ───────────────────────────────────────────────
+  const [challengePrefs, setChallengePrefs] = useState<{
+    challenge_voting:  boolean;
+    challenge_closing: boolean;
+    challenge_results: boolean;
+  } | null>(null);
+
+  const loadPreferences = useCallback(async () => {
+    if (!userId) return;
+    const { data } = await supabase
+      .from('notification_preferences')
+      .select('challenge_voting, challenge_closing, challenge_results')
+      .eq('user_id', userId)
+      .single();
+    if (data) setChallengePrefs(data);
+  }, [userId]);
+
+  const updatePreferences = useCallback(async (prefs: Partial<{
+    challenge_voting:  boolean;
+    challenge_closing: boolean;
+    challenge_results: boolean;
+  }>) => {
+    if (!userId) return;
+    await supabase
+      .from('notification_preferences')
+      .upsert({ user_id: userId, ...prefs, updated_at: new Date().toISOString() },
+               { onConflict: 'user_id' });
+    setChallengePrefs(prev => prev ? { ...prev, ...prefs } : null);
+  }, [userId]);
+
   // ── Real-time subscription ─────────────────────────────────────────────────
   useEffect(() => {
     if (!userId) return;
     fetchNotifications();
+    loadPreferences();
 
     const channel = supabase
       .channel(`notifications_user_${userId}`)
@@ -215,5 +249,9 @@ export function useNotifications(userId?: string) {
     deleteNotificationBulk,
     clearAll,
     sendNotification,
+    // Challenge notification preferences
+    challengePrefs,
+    loadPreferences,
+    updatePreferences,
   };
 }

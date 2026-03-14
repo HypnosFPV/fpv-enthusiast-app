@@ -10,7 +10,8 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.fpventhusiast.app"
+      "bundleIdentifier": "com.fpventhusiast.app",
+      "infoPlist": {}
     },
     "android": {
       "adaptiveIcon": {
@@ -49,10 +50,24 @@
           "backgroundColor": "#0a0a0a"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#ff6b35",
+          "sounds": [],
+          "mode": "production"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "YOUR_EAS_PROJECT_ID"
+      }
     }
   }
 }

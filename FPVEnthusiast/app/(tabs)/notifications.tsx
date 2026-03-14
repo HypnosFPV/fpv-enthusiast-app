@@ -108,11 +108,14 @@ function groupNotifications(notifs: AppNotification[]): GroupedNotif[] {
 
 // ─── Label builder ────────────────────────────────────────────────────────────
 const ACTION_VERB: Record<AppNotification['type'], string> = {
-  like:    'liked your post',
-  comment: 'commented on your post',
-  follow:  'started following you',
-  mention: 'mentioned you',
-  reply:   'replied to your comment',
+  like:                    'liked your post',
+  comment:                 'commented on your post',
+  follow:                  'started following you',
+  mention:                 'mentioned you',
+  reply:                   'replied to your comment',
+  challenge_voting_open:   '',
+  challenge_voting_closing:'',
+  challenge_result:        '',
 };
 
 function buildLabel(actors: GroupedNotif['actors'], type: AppNotification['type']): {
@@ -136,6 +139,18 @@ function buildLabel(actors: GroupedNotif['actors'], type: AppNotification['type'
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+/** Returns true if this notification type has no human actor (system message). */
+function isSystemNotif(type: AppNotification['type']): boolean {
+  return type === 'challenge_voting_open' ||
+         type === 'challenge_voting_closing' ||
+         type === 'challenge_result';
+}
+
+/** One-liner label for system notifications that uses the raw message. */
+function systemLabel(g: GroupedNotif): string {
+  return g.message ?? g.type;
+}
+
 function timeAgo(iso: string): string {
   const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (diff < 60)    return `${diff}s`;
@@ -168,11 +183,14 @@ function groupByDate(groups: GroupedNotif[]): Array<{ title: string; data: Group
 
 // ─── Type metadata ─────────────────────────────────────────────────────────
 const TYPE_META: Record<string, { icon: string; color: string }> = {
-  like:    { icon: 'heart',            color: '#e74c3c' },
-  comment: { icon: 'chatbubble',       color: '#3498db' },
-  follow:  { icon: 'person-add',       color: '#2ecc71' },
-  mention: { icon: 'at-circle',        color: '#f39c12' },
-  reply:   { icon: 'return-down-back', color: '#9b59b6' },
+  like:                    { icon: 'heart',            color: '#e74c3c' },
+  comment:                 { icon: 'chatbubble',       color: '#3498db' },
+  follow:                  { icon: 'person-add',       color: '#2ecc71' },
+  mention:                 { icon: 'at-circle',        color: '#f39c12' },
+  reply:                   { icon: 'return-down-back', color: '#9b59b6' },
+  challenge_voting_open:   { icon: 'trophy',           color: '#ff6b35' },
+  challenge_voting_closing:{ icon: 'timer',            color: '#e74c3c' },
+  challenge_result:        { icon: 'medal',            color: '#f1c40f' },
 };
 
 // ─── Avatar Stack ─────────────────────────────────────────────────────────────
@@ -364,11 +382,15 @@ function GroupedNotifRow({
 
           {/* ── Avatar area ─────────────────────────────── */}
           <View style={styles.avatarArea}>
-            {isGrouped ? (
-              // Stacked avatars for grouped
+            {isSystemNotif(item.type) ? (
+              // System notification: show a large coloured icon instead of avatar
+              <View style={[styles.avatar, styles.avatarPlaceholder,
+                            { backgroundColor: meta.color + '22' }]}>
+                <Ionicons name={meta.icon as any} size={22} color={meta.color} />
+              </View>
+            ) : isGrouped ? (
               <AvatarStack actors={item.actors} />
             ) : (
-              // Single avatar with type badge
               <View style={styles.avatarWrap}>
                 {item.actors[0]?.avatar_url ? (
                   <Image source={{ uri: item.actors[0].avatar_url }} style={styles.avatar} />
@@ -379,19 +401,27 @@ function GroupedNotifRow({
                 )}
               </View>
             )}
-            {/* Type badge — always shown, anchored bottom-right of avatar area */}
-            <View style={[styles.iconBadge, { backgroundColor: meta.color }]}>
-              <Ionicons name={meta.icon as any} size={10} color="#fff" />
-            </View>
+            {/* Type badge (skip for system – icon IS the badge) */}
+            {!isSystemNotif(item.type) && (
+              <View style={[styles.iconBadge, { backgroundColor: meta.color }]}>
+                <Ionicons name={meta.icon as any} size={10} color="#fff" />
+              </View>
+            )}
           </View>
 
           {/* ── Text ──────────────────────────────────────── */}
           <View style={styles.rowBody}>
-            <Text style={styles.rowText} numberOfLines={2}>
-              <Text style={styles.bold}>{prefix}</Text>
-              {' '}<Text style={styles.rowTextMuted}>{suffix}</Text>
-            </Text>
-            {item.message ? (
+            {isSystemNotif(item.type) ? (
+              <Text style={styles.rowText} numberOfLines={3}>
+                {systemLabel(item)}
+              </Text>
+            ) : (
+              <Text style={styles.rowText} numberOfLines={2}>
+                <Text style={styles.bold}>{prefix}</Text>
+                {' '}<Text style={styles.rowTextMuted}>{suffix}</Text>
+              </Text>
+            )}
+            {!isSystemNotif(item.type) && item.message ? (
               <Text style={styles.messagePreview} numberOfLines={1}>"{item.message}"</Text>
             ) : null}
             <View style={styles.rowMeta}>
@@ -475,6 +505,13 @@ export default function NotificationsScreen() {
     // Mark all IDs in group as read
     const unreadIds = g.ids; // markReadBulk is idempotent for already-read
     if (!g.read) await markReadBulk(unreadIds);
+
+    if (g.type === 'challenge_voting_open' ||
+        g.type === 'challenge_voting_closing' ||
+        g.type === 'challenge_result') {
+      router.push('/(tabs)/challenges');
+      return;
+    }
 
     if (g.type === 'follow') {
       setFollowSheet({
