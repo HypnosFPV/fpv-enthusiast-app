@@ -18,6 +18,7 @@ import {
   Modal, Alert,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth }           from '../../src/context/AuthContext';
@@ -238,6 +239,7 @@ export default function ListingDetailScreen() {
     messages, messagesLoad, sendMessage, sending,
     activeOrder, fetchOrder,
     markShipped, confirmReceipt,
+    addPhotos,
   } = useListingDetail(id ?? '', user?.id);
 
   // ── Gallery state ─────────────────────────────────────────────────────────
@@ -249,7 +251,8 @@ export default function ListingDetailScreen() {
   const [showMsg,     setShowMsg]     = useState(false);
   const [showShip,    setShowShip]    = useState(false);
   const [shipLoading, setShipLoading] = useState(false);
-  const [receiptLoad, setReceiptLoad] = useState(false);
+  const [receiptLoad,    setReceiptLoad]    = useState(false);
+  const [addingPhotos,   setAddingPhotos]   = useState(false);
 
   const isOwner  = user?.id === listing?.seller_id;
   const isBuyer  = activeOrder?.buyer_id === user?.id;
@@ -304,6 +307,31 @@ export default function ListingDetailScreen() {
       ],
     );
   }, [activeOrder, confirmReceipt]);
+
+  // ── Add photos (owner only) ───────────────────────────────────────────────
+  const handleAddPhotos = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission required', 'Please allow photo library access in Settings.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.85,
+      selectionLimit: 8,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const uris = result.assets.map(a => a.uri);
+    setAddingPhotos(true);
+    const res = await addPhotos(uris, user!.id);
+    setAddingPhotos(false);
+    if (res.ok) {
+      Alert.alert('✅ Photos added', `${res.uploaded} photo${res.uploaded === 1 ? '' : 's'} uploaded successfully.`);
+    } else {
+      Alert.alert('Upload failed', res.error ?? 'Could not upload photos. Please try again.');
+    }
+  }, [addPhotos, user]);
 
   // ── Loading / not found ───────────────────────────────────────────────────
   if (loading) {
@@ -392,6 +420,27 @@ export default function ListingDetailScreen() {
                 <Ionicons name="expand-outline" size={12} color="#ffffffaa" />
                 <Text style={styles.zoomHintTxt}>Tap to zoom</Text>
               </View>
+              {/* Owner: add more photos */}
+              {isOwner && (
+                <TouchableOpacity
+                  onPress={handleAddPhotos}
+                  disabled={addingPhotos}
+                  style={{
+                    position: 'absolute', top: 12, right: 12,
+                    flexDirection: 'row', alignItems: 'center', gap: 4,
+                    backgroundColor: 'rgba(0,0,0,0.65)', borderWidth: 1, borderColor: '#ff6b35',
+                    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16,
+                  }}
+                >
+                  {addingPhotos
+                    ? <ActivityIndicator size="small" color="#ff6b35" />
+                    : <Ionicons name="camera-outline" size={14} color="#ff6b35" />
+                  }
+                  <Text style={{ color: '#ff6b35', fontSize: 12, fontWeight: '600' }}>
+                    {addingPhotos ? 'Uploading…' : 'Add Photos'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </>
           ) : (
             <View style={[styles.heroImg, styles.heroPlaceholder]}>
@@ -399,6 +448,25 @@ export default function ListingDetailScreen() {
               <Text style={{ color: '#555', fontSize: 12, marginTop: 8, textAlign: 'center', paddingHorizontal: 20 }}>
                 No photos added to this listing yet.
               </Text>
+              {isOwner && (
+                <TouchableOpacity
+                  onPress={handleAddPhotos}
+                  disabled={addingPhotos}
+                  style={{
+                    marginTop: 14, flexDirection: 'row', alignItems: 'center', gap: 6,
+                    backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#ff6b35',
+                    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+                  }}
+                >
+                  {addingPhotos
+                    ? <ActivityIndicator size="small" color="#ff6b35" />
+                    : <Ionicons name="camera-outline" size={16} color="#ff6b35" />
+                  }
+                  <Text style={{ color: '#ff6b35', fontSize: 13, fontWeight: '600' }}>
+                    {addingPhotos ? 'Uploading…' : 'Add Photos'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </View>
