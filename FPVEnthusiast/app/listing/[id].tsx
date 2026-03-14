@@ -24,6 +24,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth }           from '../../src/context/AuthContext';
 import { useListingDetail }  from '../../src/hooks/useListingDetail';
 import ImageZoomModal        from '../../src/components/ImageZoomModal';
+import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
 import {
   CATEGORIES, CONDITIONS,
 } from '../../src/hooks/useMarketplace';
@@ -244,6 +245,25 @@ export default function ListingDetailScreen() {
     updateListing, deletePhoto,
   } = useListingDetail(id ?? '', user?.id);
 
+  // ── Sold-while-featured bonus toast (seller only) ──────────────────────────
+  useEffect(() => {
+    if (!user?.id || !listing || listing.status !== 'sold') return;
+    if (listing.seller_id !== user.id) return;   // only show to seller
+    if (shownBonusRef.current) return;
+    shownBonusRef.current = true;
+    // Check if we logged a featured_sold_bonus for this listing
+    supabase
+      .from('props_log')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('reason', 'featured_sold_bonus')
+      .eq('reference_id', listing.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) propsToast.show('+500 Props! Sold while featured 🚀');
+      });
+  }, [listing?.status, listing?.id, user?.id]);
+
   // ── Gallery state ─────────────────────────────────────────────────────────
   const [activeImg,   setActiveImg]   = useState(0);
   const [zoomUri,     setZoomUri]     = useState<string | null>(null);
@@ -254,6 +274,8 @@ export default function ListingDetailScreen() {
   const [showShip,    setShowShip]    = useState(false);
   const [shipLoading, setShipLoading] = useState(false);
   const [receiptLoad,    setReceiptLoad]    = useState(false);
+  const propsToast   = usePropsToast();
+  const shownBonusRef = useRef(false);
   const [addingPhotos,   setAddingPhotos]   = useState(false);
 
   // ── Edit listing sheet state ─────────────────────────────────────────────
@@ -822,6 +844,7 @@ export default function ListingDetailScreen() {
       )}
 
       {/* ── Modals ── */}
+      <PropsToast toast={propsToast} />
       <ImageZoomModal
         visible={showZoom}
         uri={zoomUri}
