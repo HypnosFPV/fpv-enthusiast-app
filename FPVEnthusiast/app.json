@@ -63,6 +63,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "27d2cb13-af97-47cf-b887-c863f5f486d2"
+      }
+    },
+    "owner": "hypnosfpv"
   }
 }
