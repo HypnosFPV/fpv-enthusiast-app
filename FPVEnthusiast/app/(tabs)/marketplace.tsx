@@ -1689,7 +1689,7 @@ export default function MarketplaceScreen() {
               if (res.endsAt) {
                 scheduleBoostExpiryNotification(boostTarget.title, res.endsAt);
               }
-              Alert.alert('🎉 Listing featured!', 'Your listing will appear in the carousel for the next 24 hours. You'll get a notification 2 hours before it expires.');
+              Alert.alert('🎉 Listing featured!', `Your listing will appear in the carousel for the next 24 hours. You'll get a notification 2 hours before it expires.`);
             } else {
               const msg = res.error === 'insufficient_props'
                 ? `You need ${FEATURED_PROPS_COST.toLocaleString()} props. Keep flying and earning!`
