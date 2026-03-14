@@ -462,12 +462,11 @@ const FeaturedCarousel = ({
                   height: CAROUSEL_H + 8,
                   position: 'relative',
                   overflow: 'visible',
-                  marginVertical: 4,
                 }}
               >
                 <AnimatedBorder width={itemW} height={CAROUSEL_H} style={{ top: 4 }} />
                 <TouchableOpacity
-                  style={[styles.featuredCard, { width: itemW, marginTop: 4 }]}
+                  style={[styles.featuredCard, { width: itemW, marginTop: 4, marginLeft: 0, marginRight: 0, marginBottom: 0 }]}
                   onPress={() => onItemPress(item)}
                   activeOpacity={0.9}
                 >
@@ -2184,7 +2183,7 @@ const styles = StyleSheet.create({
   featuredEmptyBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#1a1400', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: '#ffcc0066' },
   featuredEmptyBtnTxt:   { color: '#ffcc00', fontSize: 13, fontWeight: '700' },
   // carousel card
-  featuredCard:          { height: CAROUSEL_H, borderRadius: 16, overflow: 'hidden', position: 'relative', backgroundColor: '#111', margin: 2 },
+  featuredCard:          { height: CAROUSEL_H, borderRadius: 16, overflow: 'hidden', position: 'relative', backgroundColor: '#111' },
   featuredCardImg:       { ...StyleSheet.absoluteFillObject },
   featuredCardImgPlaceholder: { backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' },
   featuredGradient:      { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent',
