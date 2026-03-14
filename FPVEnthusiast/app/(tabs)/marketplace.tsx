@@ -218,50 +218,118 @@ const BoostModal = ({
 };
 
 
-// ─── Animated shimmer border for featured cards ───────────────────────────────
-function AnimatedBorder({ width, height, style }: { width: number; height: number; style?: any }) {
-  const anim = useRef(new Animated.Value(0)).current;
+// ─── Animated 3-layer glowing border for featured cards ──────────────────────
+function AnimatedBorder({ width, height }: { width: number; height: number }) {
+  const colorAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    // Continuous color sweep: gold → orange → red → orange → gold
     Animated.loop(
-      Animated.timing(anim, {
+      Animated.timing(colorAnim, {
         toValue: 1,
-        duration: 2200,
+        duration: 2000,
         easing: Easing.linear,
         useNativeDriver: false,
       })
     ).start();
+
+    // Slow breathe: dims and brightens the outer glow
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+      ])
+    ).start();
   }, []);
 
-  // Interpolate border color through gold → orange → red → orange → gold
-  const borderColor = anim.interpolate({
-    inputRange:  [0,   0.25,      0.5,       0.75,      1],
-    outputRange: ['#ffcc00', '#ff8c00', '#ff4500', '#ff8c00', '#ffcc00'],
+  const borderColor = colorAnim.interpolate({
+    inputRange:  [0,    0.25,      0.5,       0.75,      1],
+    outputRange: ['#ffe040', '#ff9500', '#ff4500', '#ff9500', '#ffe040'],
   });
 
-  const shadowOpacity = anim.interpolate({
-    inputRange:  [0, 0.5, 1],
-    outputRange: [0.6, 1.0, 0.6],
+  // Outer diffuse glow opacity breathes 0.35 → 0.85
+  const outerOpacity = pulseAnim.interpolate({
+    inputRange:  [0, 1],
+    outputRange: [0.35, 0.85],
   });
+
+  // Middle glow opacity breathes 0.55 → 1.0
+  const midOpacity = pulseAnim.interpolate({
+    inputRange:  [0, 1],
+    outputRange: [0.55, 1.0],
+  });
+
+  const R = 20; // matches card borderRadius (16) + a little extra
 
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        style,
-        {
-          position: 'absolute', top: -2, left: -2,
-          width: width + 4, height: height + 4,
-          borderRadius: 18, borderWidth: 2,
+    <>
+      {/* Layer 1 — outermost diffuse glow ring (widest, softest) */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: -10, left: -10,
+          width: width + 20, height: height + 20,
+          borderRadius: R + 8,
+          borderWidth: 8,
           borderColor,
+          opacity: outerOpacity,
+          shadowColor: '#ff8c00',
+          shadowOffset: { width: 0, height: 0 },
+          shadowRadius: 18,
+          shadowOpacity: 1,
+          elevation: 0,
+        }}
+      />
+
+      {/* Layer 2 — mid glow ring */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: -5, left: -5,
+          width: width + 10, height: height + 10,
+          borderRadius: R + 3,
+          borderWidth: 4,
+          borderColor,
+          opacity: midOpacity,
           shadowColor: '#ffcc00',
           shadowOffset: { width: 0, height: 0 },
-          shadowRadius: 8,
-          shadowOpacity,
+          shadowRadius: 10,
+          shadowOpacity: 1,
           elevation: 0,
-        },
-      ]}
-    />
+        }}
+      />
+
+      {/* Layer 3 — crisp inner border (always fully visible) */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          top: -2, left: -2,
+          width: width + 4, height: height + 4,
+          borderRadius: R,
+          borderWidth: 2.5,
+          borderColor,
+          shadowColor: '#ffe040',
+          shadowOffset: { width: 0, height: 0 },
+          shadowRadius: 4,
+          shadowOpacity: 1,
+          elevation: 0,
+        }}
+      />
+    </>
   );
 }
 
@@ -363,7 +431,7 @@ const FeaturedCarousel = ({
           snapToInterval={itemW + 12}
           snapToAlignment="start"
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingBottom: 4 }}
+          contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingTop: 12, paddingBottom: 12 }}
           onScrollBeginDrag={pauseAuto}
         >
           {items.map((item, idx) => {
