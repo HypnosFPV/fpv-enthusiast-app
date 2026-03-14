@@ -12,6 +12,7 @@ import {
   Platform, Dimensions, PanResponder,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -218,118 +219,129 @@ const BoostModal = ({
 };
 
 
-// ─── Animated 3-layer glowing border for featured cards ──────────────────────
-function AnimatedBorder({ width, height }: { width: number; height: number }) {
-  const colorAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(0)).current;
+// ─── Animated premium gradient border for featured cards ─────────────────────
+//
+// Design rationale:
+//   • A horizontal ScrollView clips children VERTICALLY, so we must NOT extend
+//     above or below the card height.  Glow is achieved with shadowRadius only.
+//   • We use two stacked LinearGradients (rotated 0° and 90°) to approximate a
+//     full-perimeter gradient sweep without react-native-svg.
+//   • A "breathe" pulse dims/brightens the whole border for a living-fire feel.
+//   • On Android we use `elevation` for the drop-shadow glow instead of shadow*.
+//
+function AnimatedBorder({ width, height, style }: { width: number; height: number; style?: any }) {
+  const pulseAnim  = useRef(new Animated.Value(0)).current;
+  const colorAnim  = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Continuous color sweep: gold → orange → red → orange → gold
-    Animated.loop(
-      Animated.timing(colorAnim, {
-        toValue: 1,
-        duration: 2000,
-        easing: Easing.linear,
-        useNativeDriver: false,
-      })
-    ).start();
-
-    // Slow breathe: dims and brightens the outer glow
+    // Breathe: 0 → 1 → 0 over 1.8 s
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 900,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 0,
-          duration: 900,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 900,  easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(pulseAnim, { toValue: 0, duration: 900,  easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
       ])
+    ).start();
+
+    // Hue shift: cycles a "phase" value 0→1 continuously
+    Animated.loop(
+      Animated.timing(colorAnim, { toValue: 1, duration: 2200, easing: Easing.linear, useNativeDriver: false })
     ).start();
   }, []);
 
-  const borderColor = colorAnim.interpolate({
+  // Outer glow opacity (breathes)
+  const glowOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1.0] });
+  // Border thickness pulses subtly between 3 and 4.5
+  const borderW = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [3, 4.5] });
+
+  // Animated shadow radius (larger when bright)
+  const shadowR = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 18] });
+  // Animated shadow color (gold → orange → red → orange)
+  const shadowColor = colorAnim.interpolate({
     inputRange:  [0,    0.25,      0.5,       0.75,      1],
     outputRange: ['#ffe040', '#ff9500', '#ff4500', '#ff9500', '#ffe040'],
+    extrapolate: 'clamp',
   });
 
-  // Outer diffuse glow opacity breathes 0.35 → 0.85
-  const outerOpacity = pulseAnim.interpolate({
-    inputRange:  [0, 1],
-    outputRange: [0.35, 0.85],
-  });
+  const R = 18; // borderRadius matching featuredCard (16) + 2
 
-  // Middle glow opacity breathes 0.55 → 1.0
-  const midOpacity = pulseAnim.interpolate({
-    inputRange:  [0, 1],
-    outputRange: [0.55, 1.0],
-  });
-
-  const R = 20; // matches card borderRadius (16) + a little extra
+  // Gradient colour stops — fire/gold theme
+  const STOPS: [string, ...string[]] = ['#ffe040', '#ffaa00', '#ff6600', '#ff3300', '#ff6600', '#ffaa00', '#ffe040'];
 
   return (
-    <>
-      {/* Layer 1 — outermost diffuse glow ring (widest, softest) */}
-      <Animated.View
-        pointerEvents="none"
-        style={{
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
           position: 'absolute',
-          top: -10, left: -10,
-          width: width + 20, height: height + 20,
-          borderRadius: R + 8,
-          borderWidth: 8,
-          borderColor,
-          opacity: outerOpacity,
+          top: 0, left: 0,
+          width, height,
+          borderRadius: R,
+          opacity: glowOpacity,
+          // iOS glow
           shadowColor: '#ff8c00',
           shadowOffset: { width: 0, height: 0 },
-          shadowRadius: 18,
-          shadowOpacity: 1,
-          elevation: 0,
-        }}
-      />
-
-      {/* Layer 2 — mid glow ring */}
-      <Animated.View
-        pointerEvents="none"
+          shadowRadius: 16,
+          shadowOpacity: 0.9,
+          // Android glow
+          elevation: 14,
+          zIndex: 10,
+        },
+        style,
+      ]}
+    >
+      {/* Horizontal gradient sweep (top→bottom) */}
+      <LinearGradient
+        colors={STOPS}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
         style={{
           position: 'absolute',
-          top: -5, left: -5,
-          width: width + 10, height: height + 10,
-          borderRadius: R + 3,
-          borderWidth: 4,
-          borderColor,
-          opacity: midOpacity,
-          shadowColor: '#ffcc00',
-          shadowOffset: { width: 0, height: 0 },
-          shadowRadius: 10,
-          shadowOpacity: 1,
-          elevation: 0,
+          top: 0, left: 0, right: 0,
+          height: 4,
+          borderTopLeftRadius: R,
+          borderTopRightRadius: R,
         }}
       />
-
-      {/* Layer 3 — crisp inner border (always fully visible) */}
-      <Animated.View
-        pointerEvents="none"
+      {/* Bottom edge */}
+      <LinearGradient
+        colors={STOPS}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0, y: 0 }}
         style={{
           position: 'absolute',
-          top: -2, left: -2,
-          width: width + 4, height: height + 4,
-          borderRadius: R,
-          borderWidth: 2.5,
-          borderColor,
-          shadowColor: '#ffe040',
-          shadowOffset: { width: 0, height: 0 },
-          shadowRadius: 4,
-          shadowOpacity: 1,
-          elevation: 0,
+          bottom: 0, left: 0, right: 0,
+          height: 4,
+          borderBottomLeftRadius: R,
+          borderBottomRightRadius: R,
         }}
       />
-    </>
+      {/* Left edge */}
+      <LinearGradient
+        colors={STOPS}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={{
+          position: 'absolute',
+          top: 0, left: 0, bottom: 0,
+          width: 4,
+          borderTopLeftRadius: R,
+          borderBottomLeftRadius: R,
+        }}
+      />
+      {/* Right edge */}
+      <LinearGradient
+        colors={STOPS}
+        start={{ x: 0, y: 1 }}
+        end={{ x: 0, y: 0 }}
+        style={{
+          position: 'absolute',
+          top: 0, right: 0, bottom: 0,
+          width: 4,
+          borderTopRightRadius: R,
+          borderBottomRightRadius: R,
+        }}
+      />
+    </Animated.View>
   );
 }
 
@@ -431,7 +443,7 @@ const FeaturedCarousel = ({
           snapToInterval={itemW + 12}
           snapToAlignment="start"
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingTop: 12, paddingBottom: 12 }}
+          contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingTop: 16, paddingBottom: 16 }}
           onScrollBeginDrag={pauseAuto}
         >
           {items.map((item, idx) => {
@@ -442,10 +454,19 @@ const FeaturedCarousel = ({
               : 0;
 
             return (
-              <View key={item.id} style={{ width: itemW, position: 'relative' }}>
-                <AnimatedBorder width={itemW} height={CAROUSEL_H} />
+              <View
+                key={item.id}
+                style={{
+                  width: itemW,
+                  height: CAROUSEL_H + 8,
+                  position: 'relative',
+                  overflow: 'visible',
+                  marginVertical: 4,
+                }}
+              >
+                <AnimatedBorder width={itemW} height={CAROUSEL_H} style={{ top: 4 }} />
                 <TouchableOpacity
-                  style={[styles.featuredCard, { width: itemW }]}
+                  style={[styles.featuredCard, { width: itemW, marginTop: 4 }]}
                   onPress={() => onItemPress(item)}
                   activeOpacity={0.9}
                 >
