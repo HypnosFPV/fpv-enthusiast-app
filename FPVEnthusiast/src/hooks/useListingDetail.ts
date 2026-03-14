@@ -501,6 +501,19 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
   ): Promise<{ ok: boolean; error?: string }> => {
     if (!currentUserId || !listingId) return { ok: false, error: 'Not logged in' };
 
+    // 0. Block duplicate pending offers from same buyer
+    const { data: existing } = await supabase
+      .from('marketplace_offers')
+      .select('id')
+      .eq('listing_id', listingId)
+      .eq('buyer_id', currentUserId)
+      .eq('status', 'pending')
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      return { ok: false, error: 'You already have a pending offer on this listing. Wait for the seller to respond before sending another.' };
+    }
+
     // 1. Insert into marketplace_offers
     const { data: offerData, error: offerErr } = await supabase
       .from('marketplace_offers')

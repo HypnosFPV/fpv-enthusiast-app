@@ -314,7 +314,7 @@ function MessageSheet({
   visible, onClose,
   messages, sending,
   onSend, currentUserId,
-  isSeller, acceptOffer, declineOffer,
+  isSeller, acceptOffer, declineOffer, offers,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -325,6 +325,7 @@ function MessageSheet({
   isSeller: boolean;
   acceptOffer: (offerId: string) => Promise<{ ok: boolean; error?: string } | null>;
   declineOffer: (offerId: string) => Promise<{ ok: boolean; error?: string } | null>;
+  offers: import('../../src/hooks/useListingDetail').MarketplaceOffer[];
 }) {
   const [draft, setDraft] = useState('');
   const listRef = useRef<FlatList>(null);
@@ -368,7 +369,9 @@ function MessageSheet({
                 try { offerData = JSON.parse(item.body.slice(10)); } catch {}
                 const isBuyerMsg = item.sender_id === item.buyer_id;
                 const isSellerCard = currentUserId === item.seller_id;
-                const status     = offerData.status ?? 'pending';
+                // Look up LIVE status from offers array (message body status is stale after accept/decline)
+                const liveOffer = offerData.offer_id ? offers.find(o => o.id === offerData.offer_id) : null;
+                const status     = liveOffer?.status ?? offerData.status ?? 'pending';
                 const statusColors: Record<string,string> = {pending:'#f59e0b', accepted:'#22c55e', declined:'#ef4444', cancelled:'#6b7280', expired:'#6b7280'};
                 const statusLabels: Record<string,string> = {pending:'Pending', accepted:'Accepted ✓', declined:'Declined', cancelled:'Cancelled', expired:'Expired'};
                 return (
@@ -1257,6 +1260,7 @@ export default function ListingDetailScreen() {
         isSeller={isOwner}
         acceptOffer={acceptOffer}
         declineOffer={declineOffer}
+        offers={offers}
         onSend={async body => {
           if (!listing.seller_id) return;
           // When the SELLER replies, derive the buyer_id from existing messages
