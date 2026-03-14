@@ -124,15 +124,27 @@ const LISTING_SELECT = `
 `;
 
 // Simpler select that joins users directly
+// Seller info is fetched separately (batch) to avoid PostgREST FK requirement.
 const LISTING_SELECT_V2 = `
   id, seller_id, title, description, category, subcategory,
   condition, condition_notes, price, buy_now_price, listing_type,
   status, auction_end, current_bid, bid_count,
   ships_from_state, shipping_cost, free_shipping, lipo_hazmat,
   view_count, created_at, updated_at,
-  listing_images (id, url, position, is_primary),
-  users:seller_id (id, username, avatar_url)
+  listing_images (id, url, position, is_primary)
 `;
+
+/** Fetch username + avatar for a set of user IDs (no FK needed). */
+async function fetchSellerMap(sellerIds: string[]): Promise<Record<string, { id: string; username: string; avatar_url: string | null }>> {
+  if (!sellerIds.length) return {};
+  const { data } = await supabase
+    .from('users')
+    .select('id, username, avatar_url')
+    .in('id', sellerIds);
+  const map: Record<string, any> = {};
+  (data ?? []).forEach((u: any) => { map[u.id] = u; });
+  return map;
+}
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -177,12 +189,18 @@ export function useMarketplace(currentUserId?: string) {
   }, []);
 
   // ── Normalize raw row ──────────────────────────────────────────────────────
-  const normalize = useCallback((raw: any, watchSet: Set<string>): MarketplaceListing => {
-    const users = Array.isArray(raw.users) ? raw.users[0] : raw.users;
+  const normalize = useCallback((
+    raw: any,
+    watchSet: Set<string>,
+    sellerMap: Record<string, any> = {},
+  ): MarketplaceListing => {
+    const sellerInfo = sellerMap[raw.seller_id] ?? null;
     return {
       ...raw,
       listing_images: (raw.listing_images ?? []).sort((a: any, b: any) => a.position - b.position),
-      seller: users ? { id: users.id, username: users.username, avatar_url: users.avatar_url } : null,
+      seller: sellerInfo
+        ? { id: sellerInfo.id, username: sellerInfo.username, avatar_url: sellerInfo.avatar_url }
+        : null,
       is_watched: watchSet.has(raw.id),
     };
   }, []);
@@ -217,7 +235,9 @@ export function useMarketplace(currentUserId?: string) {
           .order('created_at', { ascending: false })
           .range(0, PAGE_SIZE - 1);
         if (!bareErr && bare) {
-          const normalized = bare.map((r: any) => normalize(r, wlSet));
+          const bareSellerIds = [...new Set(bare.map((r: any) => r.seller_id).filter(Boolean))];
+          const bareSellerMap = await fetchSellerMap(bareSellerIds);
+          const normalized = bare.map((r: any) => normalize(r, wlSet, bareSellerMap));
           setListings(normalized);
           if (bare.length < PAGE_SIZE) setHasMore(false);
         } else {
@@ -225,7 +245,9 @@ export function useMarketplace(currentUserId?: string) {
         }
       }
     } else if (data) {
-      const normalized = data.map((r: any) => normalize(r, wlSet));
+      const sellerIds = [...new Set(data.map((r: any) => r.seller_id).filter(Boolean))];
+      const sellerMap = await fetchSellerMap(sellerIds);
+      const normalized = data.map((r: any) => normalize(r, wlSet, sellerMap));
       setListings(normalized);
       if (data.length < PAGE_SIZE) setHasMore(false);
     }
@@ -240,7 +262,9 @@ export function useMarketplace(currentUserId?: string) {
     const nextPage = page + 1;
     const { data, error } = await buildQuery(nextPage, filters);
     if (!error && data && data.length > 0) {
-      const normalized = data.map((r: any) => normalize(r, watchlist));
+      const moreSellerIds = [...new Set(data.map((r: any) => r.seller_id).filter(Boolean))];
+      const moreSellerMap = await fetchSellerMap(moreSellerIds);
+      const normalized = data.map((r: any) => normalize(r, watchlist, moreSellerMap));
       setListings(prev => {
         const ids = new Set(prev.map(l => l.id));
         return [...prev, ...normalized.filter(l => !ids.has(l.id))];
@@ -397,8 +421,7 @@ export function useFeaturedListings() {
         buy_now_price, listing_type, status, current_bid, bid_count,
         ships_from_state, free_shipping, lipo_hazmat, view_count,
         is_featured, featured_until, featured_type, created_at, updated_at,
-        listing_images (id, url, position, is_primary),
-        users:seller_id (id, username, avatar_url)
+        listing_images (id, url, position, is_primary)
       `)
       .eq('is_featured', true)
       .eq('status', 'active')
@@ -407,12 +430,14 @@ export function useFeaturedListings() {
       .limit(20);
 
     if (data) {
+      const sellerIds = [...new Set(data.map((r: any) => r.seller_id).filter(Boolean))] as string[];
+      const sellerMap = await fetchSellerMap(sellerIds);
       const normalized = data.map((raw: any) => {
-        const users = Array.isArray(raw.users) ? raw.users[0] : raw.users;
+        const s = sellerMap[raw.seller_id] ?? null;
         return {
           ...raw,
           listing_images: (raw.listing_images ?? []).sort((a: any, b: any) => a.position - b.position),
-          seller: users ? { id: users.id, username: users.username, avatar_url: users.avatar_url } : null,
+          seller: s ? { id: s.id, username: s.username, avatar_url: s.avatar_url } : null,
         } as FeaturedListing;
       });
       setFeatured(normalized);

@@ -61,37 +61,37 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
         ships_from_state, shipping_cost, free_shipping, lipo_hazmat,
         view_count, created_at, updated_at,
         is_featured, featured_until, featured_type,
-        listing_images (id, url, position, is_primary),
-        users:seller_id (
-          id, username, avatar_url,
-          seller_profiles (
-            avg_rating, total_sales, verification_tier, stripe_onboarded
-          )
-        )
+        listing_images (id, url, position, is_primary)
       `)
       .eq('id', listingId)
       .single();
 
     if (!error && data) {
-      const u = Array.isArray((data as any).users) ? (data as any).users[0] : (data as any).users;
-      const sp = u?.seller_profiles
-        ? (Array.isArray(u.seller_profiles) ? u.seller_profiles[0] : u.seller_profiles)
-        : null;
+      // Fetch seller user + profile in a single separate query (no FK join needed)
+      const sellerId: string = (data as any).seller_id;
+      let seller: MarketplaceListing['seller'] = null;
+      if (sellerId) {
+        const [{ data: uData }, { data: spData }] = await Promise.all([
+          supabase.from('users').select('id, username, avatar_url').eq('id', sellerId).single(),
+          supabase.from('seller_profiles').select('avg_rating, total_sales, verification_tier, stripe_onboarded').eq('user_id', sellerId).single(),
+        ]);
+        if (uData) {
+          seller = {
+            id:                uData.id,
+            username:          uData.username,
+            avatar_url:        uData.avatar_url,
+            avg_rating:        spData?.avg_rating        ?? undefined,
+            total_sales:       spData?.total_sales       ?? undefined,
+            verification_tier: spData?.verification_tier ?? undefined,
+          };
+        }
+      }
 
       const normalized: MarketplaceListing = {
         ...(data as any),
         listing_images: ((data as any).listing_images ?? [])
           .sort((a: any, b: any) => a.position - b.position),
-        seller: u
-          ? {
-              id: u.id,
-              username: u.username,
-              avatar_url: u.avatar_url,
-              avg_rating:        sp?.avg_rating        ?? undefined,
-              total_sales:       sp?.total_sales       ?? undefined,
-              verification_tier: sp?.verification_tier ?? undefined,
-            }
-          : null,
+        seller,
         is_watched: false, // updated below
       };
       setListing(normalized);
