@@ -60,11 +60,13 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
         status, auction_end, current_bid, bid_count,
         ships_from_state, shipping_cost, free_shipping, lipo_hazmat,
         view_count, created_at, updated_at,
-        is_featured, featured_until, featured_type,
         listing_images (id, url, position, is_primary)
       `)
       .eq('id', listingId)
-      .single();
+      .maybeSingle();
+
+    // Log the error so it’s visible in dev if the query itself fails
+    if (error) console.warn('[useListingDetail] fetchListing error:', error.message, 'id:', listingId);
 
     if (!error && data) {
       // Fetch seller user + profile in a single separate query (no FK join needed)

@@ -17,6 +17,7 @@ import {
   ActivityIndicator, Platform, Dimensions, Animated,
   Modal, Alert,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth }           from '../../src/context/AuthContext';
@@ -365,10 +366,12 @@ export default function ListingDetailScreen() {
                     onPress={() => { setZoomUri(item.url); setShowZoom(true); }}
                     style={{ width: W }}
                   >
-                    <Image
+                    <ExpoImage
                       source={{ uri: item.url }}
                       style={styles.heroImg}
-                      resizeMode="cover"
+                      contentFit="cover"
+                      transition={200}
+                      onError={() => console.warn('[ListingDetail] image failed:', item.url)}
                     />
                   </TouchableOpacity>
                 )}
@@ -392,7 +395,10 @@ export default function ListingDetailScreen() {
             </>
           ) : (
             <View style={[styles.heroImg, styles.heroPlaceholder]}>
-              <Ionicons name="image-outline" size={56} color="#333" />
+              <Ionicons name="image-outline" size={48} color="#333" />
+              <Text style={{ color: '#555', fontSize: 12, marginTop: 8, textAlign: 'center', paddingHorizontal: 20 }}>
+                No photos added to this listing yet.
+              </Text>
             </View>
           )}
         </View>
