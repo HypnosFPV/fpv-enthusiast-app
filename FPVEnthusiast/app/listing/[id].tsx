@@ -238,6 +238,77 @@ function ShipModal({
   );
 }
 
+// ─── Offer card with loading state ───────────────────────────────────────────
+function OfferCardWithActions({
+  offerData, status, statusColors, statusLabels,
+  isBuyerMsg, isSellerCard, acceptOffer, declineOffer,
+}: {
+  offerData: {amount_cents: number; note?: string; offer_id?: string; status?: string};
+  status: string;
+  statusColors: Record<string, string>;
+  statusLabels: Record<string, string>;
+  isBuyerMsg: boolean;
+  isSellerCard: boolean;
+  acceptOffer: (id: string) => Promise<{ok: boolean; error?: string} | null>;
+  declineOffer: (id: string) => Promise<{ok: boolean; error?: string} | null>;
+}) {
+  const [acting, setActing] = React.useState<'accept' | 'decline' | null>(null);
+
+  const handleAccept = async () => {
+    if (acting || !offerData.offer_id) return;
+    setActing('accept');
+    const res = await acceptOffer(offerData.offer_id);
+    setActing(null);
+    if (!res?.ok) Alert.alert('Error', res?.error ?? 'Could not accept offer');
+  };
+
+  const handleDecline = async () => {
+    if (acting || !offerData.offer_id) return;
+    setActing('decline');
+    const res = await declineOffer(offerData.offer_id);
+    setActing(null);
+    if (!res?.ok) Alert.alert('Error', res?.error ?? 'Could not decline offer');
+  };
+
+  return (
+    <View style={[styles.offerCard, isBuyerMsg ? styles.offerCardBuyer : styles.offerCardSeller]}>
+      <View style={styles.offerCardHeader}>
+        <Ionicons name="pricetag-outline" size={14} color="#f59e0b" />
+        <Text style={styles.offerCardLabel}>Offer</Text>
+        <View style={[styles.offerStatusPill, {backgroundColor: (statusColors[status] ?? '#6b7280') + '33', borderColor: statusColors[status] ?? '#6b7280'}]}>
+          <Text style={[styles.offerStatusTxt, {color: statusColors[status] ?? '#6b7280'}]}>{statusLabels[status] ?? status}</Text>
+        </View>
+      </View>
+      <Text style={styles.offerAmount}>${(offerData.amount_cents / 100).toFixed(2)}</Text>
+      {!!offerData.note && <Text style={styles.offerNote}>{offerData.note}</Text>}
+      {isSellerCard && status === 'pending' && !!offerData.offer_id && (
+        <View style={styles.offerActions}>
+          <TouchableOpacity
+            style={[styles.offerAcceptBtn, acting ? {opacity: 0.5} : {}]}
+            onPress={handleAccept}
+            disabled={!!acting}
+          >
+            {acting === 'accept'
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={styles.offerAcceptTxt}>Accept</Text>
+            }
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.offerDeclineBtn, acting ? {opacity: 0.5} : {}]}
+            onPress={handleDecline}
+            disabled={!!acting}
+          >
+            {acting === 'decline'
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={styles.offerDeclineTxt}>Decline</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ─── Message thread sheet ─────────────────────────────────────────────────────
 function MessageSheet({
   visible, onClose,
@@ -296,44 +367,22 @@ function MessageSheet({
                 let offerData: {amount_cents: number; note?: string; offer_id?: string; status?: string} = {amount_cents: 0};
                 try { offerData = JSON.parse(item.body.slice(10)); } catch {}
                 const isBuyerMsg = item.sender_id === item.buyer_id;
-                const isSeller   = currentUserId === item.seller_id;
+                const isSellerCard = currentUserId === item.seller_id;
                 const status     = offerData.status ?? 'pending';
                 const statusColors: Record<string,string> = {pending:'#f59e0b', accepted:'#22c55e', declined:'#ef4444', cancelled:'#6b7280', expired:'#6b7280'};
                 const statusLabels: Record<string,string> = {pending:'Pending', accepted:'Accepted ✓', declined:'Declined', cancelled:'Cancelled', expired:'Expired'};
                 return (
-                  <View style={[styles.offerCard, isBuyerMsg ? styles.offerCardBuyer : styles.offerCardSeller]}>
-                    <View style={styles.offerCardHeader}>
-                      <Ionicons name="pricetag-outline" size={14} color="#f59e0b" />
-                      <Text style={styles.offerCardLabel}>Offer</Text>
-                      <View style={[styles.offerStatusPill, {backgroundColor: (statusColors[status] ?? '#6b7280') + '33', borderColor: statusColors[status] ?? '#6b7280'}]}>
-                        <Text style={[styles.offerStatusTxt, {color: statusColors[status] ?? '#6b7280'}]}>{statusLabels[status] ?? status}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.offerAmount}>${(offerData.amount_cents / 100).toFixed(2)}</Text>
-                    {!!offerData.note && <Text style={styles.offerNote}>{offerData.note}</Text>}
-                    {isSeller && status === 'pending' && !!offerData.offer_id && (
-                      <View style={styles.offerActions}>
-                        <TouchableOpacity
-                          style={styles.offerAcceptBtn}
-                          onPress={async () => {
-                            const res = await acceptOffer(offerData.offer_id!);
-                            if (!res?.ok) Alert.alert('Error', res?.error ?? 'Could not accept offer');
-                          }}
-                        >
-                          <Text style={styles.offerAcceptTxt}>Accept</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.offerDeclineBtn}
-                          onPress={async () => {
-                            const res = await declineOffer(offerData.offer_id!);
-                            if (!res?.ok) Alert.alert('Error', res?.error ?? 'Could not decline');
-                          }}
-                        >
-                          <Text style={styles.offerDeclineTxt}>Decline</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
+                  <OfferCardWithActions
+                    key={item.id}
+                    offerData={offerData}
+                    status={status}
+                    statusColors={statusColors}
+                    statusLabels={statusLabels}
+                    isBuyerMsg={isBuyerMsg}
+                    isSellerCard={isSellerCard}
+                    acceptOffer={acceptOffer}
+                    declineOffer={declineOffer}
+                  />
                 );
               }
               // Normal message bubble
