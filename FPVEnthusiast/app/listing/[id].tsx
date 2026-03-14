@@ -241,6 +241,7 @@ export default function ListingDetailScreen() {
     messages, messagesLoad, sendMessage, sending,
     activeOrder, fetchOrder,
     markShipped, confirmReceipt,
+    updateListing, deletePhoto,
   } = useListingDetail(id ?? '', user?.id);
 
   // ── Gallery state ─────────────────────────────────────────────────────────
@@ -254,6 +255,17 @@ export default function ListingDetailScreen() {
   const [shipLoading, setShipLoading] = useState(false);
   const [receiptLoad,    setReceiptLoad]    = useState(false);
   const [addingPhotos,   setAddingPhotos]   = useState(false);
+
+  // ── Edit listing sheet state ─────────────────────────────────────────────
+  const [showEdit,     setShowEdit]     = useState(false);
+  const [showPhotoMgr, setShowPhotoMgr] = useState(false);
+  const [editSaving,   setEditSaving]   = useState(false);
+  const [editTitle,    setEditTitle]    = useState('');
+  const [editDesc,     setEditDesc]     = useState('');
+  const [editPrice,    setEditPrice]    = useState('');
+  const [editCondition, setEditCondition] = useState('');
+  const [editNotes,    setEditNotes]    = useState('');
+  const [deletingId,   setDeletingId]   = useState<string | null>(null);
 
   const isOwner  = user?.id === listing?.seller_id;
   const isBuyer  = activeOrder?.buyer_id === user?.id;
@@ -390,6 +402,55 @@ export default function ListingDetailScreen() {
     }
   }, [id, listing?.listing_images?.length, fetchListing]);
 
+  // ── Open edit modal pre-filled ───────────────────────────────────────────
+  const openEdit = useCallback(() => {
+    if (!listing) return;
+    setEditTitle(listing.title);
+    setEditDesc(listing.description ?? '');
+    setEditPrice(String(listing.price));
+    setEditCondition(listing.condition ?? '');
+    setEditNotes(listing.condition_notes ?? '');
+    setShowEdit(true);
+  }, [listing]);
+
+  // ── Save listing edits ───────────────────────────────────────────────────
+  const handleSaveEdit = useCallback(async () => {
+    const price = parseFloat(editPrice);
+    if (!editTitle.trim()) { Alert.alert('Required', 'Title cannot be empty.'); return; }
+    if (isNaN(price) || price <= 0) { Alert.alert('Required', 'Enter a valid price.'); return; }
+    setEditSaving(true);
+    const res = await updateListing({
+      title: editTitle.trim(),
+      description: editDesc.trim(),
+      price,
+      condition: editCondition || undefined,
+      condition_notes: editNotes.trim() || undefined,
+    });
+    setEditSaving(false);
+    if (res.ok) {
+      setShowEdit(false);
+      Alert.alert('✅ Saved', 'Your listing has been updated.');
+    } else {
+      Alert.alert('Error', res.error ?? 'Could not save changes.');
+    }
+  }, [editTitle, editDesc, editPrice, editCondition, editNotes, updateListing]);
+
+  // ── Delete a single photo ────────────────────────────────────────────────
+  const handleDeletePhoto = useCallback((imgId: string, imgUrl: string) => {
+    Alert.alert('Delete Photo', 'Remove this photo from the listing?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          setDeletingId(imgId);
+          const res = await deletePhoto(imgId, imgUrl);
+          setDeletingId(null);
+          if (!res.ok) Alert.alert('Error', res.error ?? 'Could not delete photo.');
+        },
+      },
+    ]);
+  }, [deletePhoto]);
+
   // ── Loading / not found ───────────────────────────────────────────────────
   if (loading) {
     return (
@@ -421,13 +482,27 @@ export default function ListingDetailScreen() {
           <Ionicons name="chevron-back" size={26} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.navTitle} numberOfLines={1}>{listing.title}</Text>
-        <TouchableOpacity onPress={toggleWatch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons
-            name={isWatched ? 'heart' : 'heart-outline'}
-            size={24}
-            color={isWatched ? '#ff4500' : '#aaa'}
-          />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+          {isOwner && (
+            <TouchableOpacity onPress={openEdit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="create-outline" size={22} color="#ff6b35" />
+            </TouchableOpacity>
+          )}
+          {isOwner && (
+            <TouchableOpacity onPress={() => setShowPhotoMgr(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="images-outline" size={22} color="#ff6b35" />
+            </TouchableOpacity>
+          )}
+          {!isOwner && (
+            <TouchableOpacity onPress={toggleWatch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons
+                name={isWatched ? 'heart' : 'heart-outline'}
+                size={24}
+                color={isWatched ? '#ff4500' : '#aaa'}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
@@ -773,6 +848,172 @@ export default function ListingDetailScreen() {
         onSubmit={handleShipped}
         loading={shipLoading}
       />
+
+      {/* ── Edit Listing Modal ── */}
+      <Modal visible={showEdit} animationType="slide" transparent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1, justifyContent: 'flex-end' }}
+        >
+          <View style={styles.editSheet}>
+            {/* Header */}
+            <View style={styles.editSheetHeader}>
+              <Text style={styles.editSheetTitle}>Edit Listing</Text>
+              <TouchableOpacity onPress={() => setShowEdit(false)}>
+                <Ionicons name="close" size={22} color="#aaa" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {/* Title */}
+              <Text style={styles.editLabel}>Title</Text>
+              <TextInput
+                style={styles.editInput}
+                value={editTitle}
+                onChangeText={setEditTitle}
+                placeholder="Listing title"
+                placeholderTextColor="#555"
+                maxLength={80}
+              />
+
+              {/* Price */}
+              <Text style={styles.editLabel}>Price ($)</Text>
+              <TextInput
+                style={styles.editInput}
+                value={editPrice}
+                onChangeText={setEditPrice}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor="#555"
+              />
+
+              {/* Condition */}
+              <Text style={styles.editLabel}>Condition</Text>
+              <View style={styles.conditionRow}>
+                {CONDITIONS.map(c => (
+                  <TouchableOpacity
+                    key={c.value}
+                    onPress={() => setEditCondition(c.value)}
+                    style={[
+                      styles.condPill,
+                      editCondition === c.value && { borderColor: c.color, backgroundColor: c.color + '22' },
+                    ]}
+                  >
+                    <Text style={[styles.condPillTxt, editCondition === c.value && { color: c.color }]}>
+                      {c.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Condition notes */}
+              <Text style={styles.editLabel}>Condition Notes (optional)</Text>
+              <TextInput
+                style={[styles.editInput, { height: 72, textAlignVertical: 'top' }]}
+                value={editNotes}
+                onChangeText={setEditNotes}
+                placeholder="Any defects, wear details…"
+                placeholderTextColor="#555"
+                multiline
+                maxLength={200}
+              />
+
+              {/* Description */}
+              <Text style={styles.editLabel}>Description</Text>
+              <TextInput
+                style={[styles.editInput, { height: 110, textAlignVertical: 'top' }]}
+                value={editDesc}
+                onChangeText={setEditDesc}
+                placeholder="Describe your item…"
+                placeholderTextColor="#555"
+                multiline
+                maxLength={1000}
+              />
+
+              <View style={{ height: 16 }} />
+            </ScrollView>
+
+            {/* Save button */}
+            <TouchableOpacity
+              style={[styles.editSaveBtn, editSaving && { opacity: 0.6 }]}
+              onPress={handleSaveEdit}
+              disabled={editSaving}
+            >
+              {editSaving
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.editSaveTxt}>Save Changes</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Photo Manager Modal ── */}
+      <Modal visible={showPhotoMgr} animationType="slide" transparent>
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <View style={[styles.editSheet, { maxHeight: '80%' }]}>
+            <View style={styles.editSheetHeader}>
+              <Text style={styles.editSheetTitle}>Manage Photos</Text>
+              <TouchableOpacity onPress={() => setShowPhotoMgr(false)}>
+                <Ionicons name="close" size={22} color="#aaa" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {images.length === 0 && (
+                <Text style={{ color: '#555', textAlign: 'center', marginVertical: 24 }}>
+                  No photos yet. Tap Add Photos below.
+                </Text>
+              )}
+              {/* Thumbnail grid with delete buttons */}
+              <View style={styles.photoGrid}>
+                {images.map((img, idx) => (
+                  <View key={img.id} style={styles.photoThumb}>
+                    <ExpoImage
+                      source={{ uri: img.url }}
+                      style={styles.photoThumbImg}
+                      contentFit="cover"
+                    />
+                    {img.is_primary && (
+                      <View style={styles.primaryBadge}>
+                        <Text style={{ color: '#fff', fontSize: 8, fontWeight: '700' }}>PRIMARY</Text>
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      style={styles.photoDeleteBtn}
+                      onPress={() => handleDeletePhoto(img.id, img.url)}
+                      disabled={deletingId === img.id}
+                    >
+                      {deletingId === img.id
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <Ionicons name="trash-outline" size={14} color="#fff" />
+                      }
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+
+            {/* Add more photos */}
+            <TouchableOpacity
+              style={[styles.editSaveBtn, addingPhotos && { opacity: 0.6 }]}
+              onPress={async () => {
+                await handleAddPhotos();
+                // keep modal open so user sees new photos
+              }}
+              disabled={addingPhotos}
+            >
+              {addingPhotos
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <>
+                    <Ionicons name="camera-outline" size={16} color="#fff" />
+                    <Text style={[styles.editSaveTxt, { marginLeft: 6 }]}>Add Photos</Text>
+                  </>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -914,4 +1155,23 @@ const styles = StyleSheet.create({
   msgComposer:    { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#1a2030' },
   msgInput:       { flex: 1, backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#2a3040', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9, color: '#fff', fontSize: 14, maxHeight: 100 },
   msgSend:        { width: 40, height: 40, borderRadius: 20, backgroundColor: '#ff4500', alignItems: 'center', justifyContent: 'center' },
+
+  // ── Edit listing sheet ──────────────────────────────────────────────────
+  editSheet:        { backgroundColor: '#0d1117', borderTopLeftRadius: 20, borderTopRightRadius: 20, borderTopWidth: 1.5, borderColor: '#ff6b35', paddingHorizontal: 20, paddingBottom: 34, paddingTop: 4, maxHeight: '90%' },
+  editSheetHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#1e2030', marginBottom: 12 },
+  editSheetTitle:   { color: '#fff', fontSize: 17, fontWeight: '700' },
+  editLabel:        { color: '#aaa', fontSize: 12, fontWeight: '600', marginBottom: 5, marginTop: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
+  editInput:        { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#2a3040', borderRadius: 10, color: '#fff', fontSize: 15, paddingHorizontal: 13, paddingVertical: 10, marginBottom: 2 },
+  editSaveBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ff6b35', borderRadius: 12, paddingVertical: 14, marginTop: 16 },
+  editSaveTxt:      { color: '#fff', fontSize: 16, fontWeight: '700' },
+  conditionRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  condPill:         { borderWidth: 1, borderColor: '#333', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5 },
+  condPillTxt:      { color: '#888', fontSize: 12, fontWeight: '600' },
+
+  // ── Photo manager grid ──────────────────────────────────────────────────
+  photoGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 8 },
+  photoThumb:       { width: '30%', aspectRatio: 1, borderRadius: 8, overflow: 'hidden', position: 'relative' },
+  photoThumbImg:    { width: '100%', height: '100%' },
+  primaryBadge:     { position: 'absolute', top: 4, left: 4, backgroundColor: '#ff6b35', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
+  photoDeleteBtn:   { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(220,0,0,0.75)', borderRadius: 12, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
 });

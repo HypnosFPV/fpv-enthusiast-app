@@ -90,10 +90,37 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
         }
       }
 
+      // Generate signed URLs (1-year expiry) so images work regardless of bucket public setting
+      const rawImages: any[] = ((data as any).listing_images ?? [])
+        .sort((a: any, b: any) => a.position - b.position);
+
+      let signedImages = rawImages;
+      if (rawImages.length > 0) {
+        try {
+          // Extract storage paths from the stored public URLs
+          const paths = rawImages.map((img: any) => {
+            // URL format: .../storage/v1/object/public/media/<path>
+            // OR signed:  .../storage/v1/object/sign/media/<path>
+            const m = img.url.match(/\/object\/(?:public|sign)\/media\/(.+?)(?:\?|$)/);
+            return m ? m[1] : img.url;
+          });
+          const { data: signed } = await supabase.storage
+            .from('media')
+            .createSignedUrls(paths, 60 * 60 * 24 * 365); // 1 year
+          if (signed && signed.length === rawImages.length) {
+            signedImages = rawImages.map((img: any, i: number) => ({
+              ...img,
+              url: signed[i]?.signedUrl ?? img.url,
+            }));
+          }
+        } catch (signErr: any) {
+          console.warn('[useListingDetail] signed URL error:', signErr?.message);
+        }
+      }
+
       const normalized: MarketplaceListing = {
         ...(data as any),
-        listing_images: ((data as any).listing_images ?? [])
-          .sort((a: any, b: any) => a.position - b.position),
+        listing_images: signedImages,
         seller,
         is_watched: false, // updated below
       };
@@ -320,6 +347,52 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     return data as { ok: boolean; error?: string } | null;
   }, []);
 
+  // ── Update listing fields (owner only) ──────────────────────────────────
+  const updateListing = useCallback(async (fields: {
+    title?: string;
+    description?: string;
+    price?: number;
+    condition?: string;
+    condition_notes?: string;
+    ships_from_state?: string;
+    shipping_cost?: number;
+    free_shipping?: boolean;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    if (!listingId) return { ok: false, error: 'No listing' };
+    const { error } = await supabase
+      .from('marketplace_listings')
+      .update({ ...fields, updated_at: new Date().toISOString() })
+      .eq('id', listingId);
+    if (error) return { ok: false, error: error.message };
+    await fetchListing();
+    return { ok: true };
+  }, [listingId, fetchListing]);
+
+  // ── Delete a single photo (owner only) ───────────────────────────────────
+  const deletePhoto = useCallback(async (
+    imageId: string,
+    imageUrl: string,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    // Extract storage path from URL
+    const m = imageUrl.match(/\/object\/(?:public|sign)\/media\/(.+?)(?:\?|$)/);
+    const storagePath = m ? m[1] : null;
+
+    // Delete from DB first
+    const { error: dbErr } = await supabase
+      .from('listing_images')
+      .delete()
+      .eq('id', imageId);
+    if (dbErr) return { ok: false, error: dbErr.message };
+
+    // Delete from storage (best-effort, don't fail if missing)
+    if (storagePath) {
+      await supabase.storage.from('media').remove([storagePath]);
+    }
+
+    await fetchListing();
+    return { ok: true };
+  }, [fetchListing]);
+
   return {
     listing, loading, fetchListing,
     isWatched, toggleWatch,
@@ -327,5 +400,7 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     activeOrder, fetchOrder,
     markShipped, confirmReceipt,
     addPhotos,
+    updateListing,
+    deletePhoto,
   };
 }
