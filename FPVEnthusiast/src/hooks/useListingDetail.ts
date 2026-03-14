@@ -40,16 +40,17 @@ export interface ListingOrder {
 
 // ─── Offer ────────────────────────────────────────────────────────────────────
 export interface MarketplaceOffer {
-  id:           string;
-  listing_id:   string;
-  buyer_id:     string;
-  seller_id:    string;
-  amount_cents: number;
-  note?:        string | null;
-  status:       'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled';
-  order_id?:    string | null;
-  created_at:   string;
-  updated_at:   string;
+  id:                   string;
+  listing_id:           string;
+  buyer_id:             string;
+  seller_id:            string;
+  amount_cents:         number;
+  note?:                string | null;
+  status:               'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled' | 'countered';
+  counter_amount_cents?: number | null;
+  order_id?:            string | null;
+  created_at:           string;
+  updated_at:           string;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -610,8 +611,60 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
         return m;
       }));
     }
+    if (!error && (data as any)?.ok) {
+      // Notify buyer that offer was declined
+      const declined = offers.find(o => o.id === offerId);
+      if (declined && listingId) {
+        sendMarketplaceNotification({
+          recipientId:  declined.buyer_id,
+          actorId:      declined.seller_id,
+          type:         'offer_declined',
+          listingId:    listingId,
+          listingTitle: listing?.title ?? 'listing',
+          extraMessage: `$${(declined.amount_cents / 100).toFixed(2)}`,
+        });
+      }
+    }
     return data as { ok: boolean; error?: string } | null;
-  }, [fetchOffers]);
+  }, [fetchOffers, offers, listingId, listing?.title]);
+
+  // ── Counter-offer ─────────────────────────────────────────────────────────
+  const counterOffer = useCallback(async (
+    offerId: string,
+    counterCents: number,
+  ): Promise<{ ok: boolean; error?: string } | null> => {
+    const { data, error } = await supabase.rpc('counter_offer', {
+      p_offer_id:      offerId,
+      p_counter_cents: counterCents,
+    });
+    if (!error && (data as any)?.ok) {
+      await fetchOffers();
+      // Update message body to reflect countered status
+      setMessages(prev => prev.map(m => {
+        if (!m.body?.startsWith('__OFFER__:')) return m;
+        try {
+          const d = JSON.parse(m.body.slice(10));
+          if (d.offer_id === offerId) {
+            return { ...m, body: `__OFFER__:${JSON.stringify({ ...d, status: 'countered', counter_amount_cents: counterCents })}` };
+          }
+        } catch {}
+        return m;
+      }));
+      // Notify buyer of counter-offer
+      const countered = offers.find(o => o.id === offerId);
+      if (countered && listingId) {
+        sendMarketplaceNotification({
+          recipientId:  countered.buyer_id,
+          actorId:      countered.seller_id,
+          type:         'offer_countered',
+          listingId:    listingId,
+          listingTitle: listing?.title ?? 'listing',
+          extraMessage: `$${(counterCents / 100).toFixed(2)}`,
+        });
+      }
+    }
+    return data as { ok: boolean; error?: string } | null;
+  }, [fetchOffers, offers, listingId, listing?.title]);
 
   return {
     listing, loading, fetchListing,
@@ -623,6 +676,6 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     addPhotos,
     updateListing,
     deletePhoto,
-    offers, sendOffer, acceptOffer, declineOffer,
+    offers, sendOffer, acceptOffer, declineOffer, counterOffer,
   };
 }

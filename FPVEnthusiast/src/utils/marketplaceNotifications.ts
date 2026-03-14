@@ -3,7 +3,7 @@
 
 import { supabase } from '../services/supabase';
 
-type NotifType = 'new_message' | 'new_offer' | 'offer_accepted' | 'offer_declined';
+type NotifType = 'new_message' | 'new_offer' | 'offer_accepted' | 'offer_declined' | 'offer_countered';
 
 interface MarketplaceNotifParams {
   recipientId:   string;   // user to notify
@@ -20,7 +20,8 @@ export async function sendMarketplaceNotification(p: MarketplaceNotifParams) {
     new_message:    `sent you a message about "${p.listingTitle}"`,
     new_offer:      `made an offer of ${p.extraMessage ?? ''} on "${p.listingTitle}"`,
     offer_accepted: `accepted your offer on "${p.listingTitle}"`,
-    offer_declined: `declined your offer on "${p.listingTitle}"`,
+    offer_declined: `declined your offer on "${p.listingTitle}",`
+    offer_countered: `sent a counter-offer on "${p.listingTitle}"`,
   };
 
   const bodies: Record<NotifType, string> = {
@@ -28,6 +29,7 @@ export async function sendMarketplaceNotification(p: MarketplaceNotifParams) {
     new_offer:      `New offer: ${p.extraMessage ?? ''} on "${p.listingTitle}"`,
     offer_accepted: `Your offer on "${p.listingTitle}" was accepted!`,
     offer_declined: `Your offer on "${p.listingTitle}" was declined.`,
+    offer_countered: `The seller countered your offer on "${p.listingTitle}" at ${p.extraMessage ?? "a new price"}.`,
   };
 
   // 1. Insert in-app notification (fire-and-forget — don't block UI)
@@ -57,6 +59,7 @@ export async function sendMarketplaceNotification(p: MarketplaceNotifParams) {
         new_offer:      '🏷️ New Offer Received',
         offer_accepted: '✅ Offer Accepted!',
         offer_declined: '❌ Offer Declined',
+        offer_countered: '↩️ Counter Offer',
       };
       fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST',

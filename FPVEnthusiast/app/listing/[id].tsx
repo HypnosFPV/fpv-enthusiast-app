@@ -238,12 +238,72 @@ function ShipModal({
   );
 }
 
+// ─── Counter-Offer Sheet ──────────────────────────────────────────────────────
+function CounterOfferSheet({
+  visible, onClose, originalPrice, onSubmit, saving,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  originalPrice: number;
+  onSubmit: (cents: number) => Promise<void>;
+  saving: boolean;
+}) {
+  const [raw, setRaw] = React.useState('');
+  const parsed = parseFloat(raw.replace(/[^0-9.]/g, ''));
+  const valid  = !isNaN(parsed) && parsed > 0;
+
+  React.useEffect(() => { if (!visible) setRaw(''); }, [visible]);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.msgOverlay}
+      >
+        <View style={[styles.msgSheet, { maxHeight: 300 }]}>
+          <View style={styles.msgHeader}>
+            <Text style={styles.msgTitle}>Counter Offer</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
+              <Ionicons name="close" size={22} color="#aaa" />
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: '#9ca3af', fontSize: 13, paddingHorizontal: 16, marginBottom: 8 }}>
+            Buyer offered ${(originalPrice / 100).toFixed(2)}. Enter your counter price:
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 10 }}>
+            <Text style={{ color: '#f59e0b', fontSize: 22, fontWeight: '700' }}>$</Text>
+            <TextInput
+              style={[styles.offerInput, { flex: 1 }]}
+              placeholder="0.00"
+              placeholderTextColor="#555"
+              keyboardType="decimal-pad"
+              value={raw}
+              onChangeText={setRaw}
+              autoFocus
+            />
+          </View>
+          <TouchableOpacity
+            style={[styles.offerSubmitBtn, { margin: 16, opacity: valid && !saving ? 1 : 0.4 }]}
+            disabled={!valid || saving}
+            onPress={() => valid && onSubmit(Math.round(parsed * 100))}
+          >
+            {saving
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={styles.offerSubmitTxt}>Send Counter Offer</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 // ─── Offer card with loading state ───────────────────────────────────────────
 function OfferCardWithActions({
   offerData, status, statusColors, statusLabels,
-  isBuyerMsg, isSellerCard, acceptOffer, declineOffer,
+  isBuyerMsg, isSellerCard, acceptOffer, declineOffer, counterOffer,
 }: {
-  offerData: {amount_cents: number; note?: string; offer_id?: string; status?: string};
+  offerData: {amount_cents: number; counter_amount_cents?: number; note?: string; offer_id?: string; status?: string};
   status: string;
   statusColors: Record<string, string>;
   statusLabels: Record<string, string>;
@@ -251,8 +311,10 @@ function OfferCardWithActions({
   isSellerCard: boolean;
   acceptOffer: (id: string) => Promise<{ok: boolean; error?: string} | null>;
   declineOffer: (id: string) => Promise<{ok: boolean; error?: string} | null>;
+  counterOffer: (id: string, cents: number) => Promise<{ok: boolean; error?: string} | null>;
 }) {
-  const [acting, setActing] = React.useState<'accept' | 'decline' | null>(null);
+  const [acting, setActing]           = React.useState<'accept' | 'decline' | 'counter' | null>(null);
+  const [showCounter, setShowCounter] = React.useState(false);
 
   const handleAccept = async () => {
     if (acting || !offerData.offer_id) return;
@@ -270,42 +332,108 @@ function OfferCardWithActions({
     if (!res?.ok) Alert.alert('Error', res?.error ?? 'Could not decline offer');
   };
 
+  const handleCounter = async (cents: number) => {
+    if (!offerData.offer_id) return;
+    setActing('counter');
+    const res = await counterOffer(offerData.offer_id, cents);
+    setActing(null);
+    setShowCounter(false);
+    if (!res?.ok) Alert.alert('Error', res?.error ?? 'Could not send counter offer');
+  };
+
+  // Buyer sees counter-offer — they can accept or decline it
+  const isBuyerCounterView = !isSellerCard && status === 'countered' && !!offerData.counter_amount_cents;
+
   return (
-    <View style={[styles.offerCard, isBuyerMsg ? styles.offerCardBuyer : styles.offerCardSeller]}>
-      <View style={styles.offerCardHeader}>
-        <Ionicons name="pricetag-outline" size={14} color="#f59e0b" />
-        <Text style={styles.offerCardLabel}>Offer</Text>
-        <View style={[styles.offerStatusPill, {backgroundColor: (statusColors[status] ?? '#6b7280') + '33', borderColor: statusColors[status] ?? '#6b7280'}]}>
-          <Text style={[styles.offerStatusTxt, {color: statusColors[status] ?? '#6b7280'}]}>{statusLabels[status] ?? status}</Text>
+    <>
+      <View style={[styles.offerCard, isBuyerMsg ? styles.offerCardBuyer : styles.offerCardSeller]}>
+        <View style={styles.offerCardHeader}>
+          <Ionicons name="pricetag-outline" size={14} color="#f59e0b" />
+          <Text style={styles.offerCardLabel}>{status === 'countered' ? 'Counter Offer' : 'Offer'}</Text>
+          <View style={[styles.offerStatusPill, {backgroundColor: (statusColors[status] ?? '#6b7280') + '33', borderColor: statusColors[status] ?? '#6b7280'}]}>
+            <Text style={[styles.offerStatusTxt, {color: statusColors[status] ?? '#6b7280'}]}>{statusLabels[status] ?? status}</Text>
+          </View>
         </View>
+        {status === 'countered' && !!offerData.counter_amount_cents ? (
+          <>
+            <Text style={styles.offerAmount}>${(offerData.counter_amount_cents / 100).toFixed(2)}</Text>
+            <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 2 }}>
+              Original offer: ${(offerData.amount_cents / 100).toFixed(2)}
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.offerAmount}>${(offerData.amount_cents / 100).toFixed(2)}</Text>
+        )}
+        {!!offerData.note && <Text style={styles.offerNote}>{offerData.note}</Text>}
+
+        {/* Seller actions — pending offer */}
+        {isSellerCard && status === 'pending' && !!offerData.offer_id && (
+          <View style={styles.offerActions}>
+            <TouchableOpacity
+              style={[styles.offerAcceptBtn, acting ? {opacity: 0.5} : {}]}
+              onPress={handleAccept}
+              disabled={!!acting}
+            >
+              {acting === 'accept'
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={styles.offerAcceptTxt}>Accept</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.offerDeclineBtn, acting ? {opacity: 0.5} : {}, { backgroundColor: '#6b7280' }]}
+              onPress={() => setShowCounter(true)}
+              disabled={!!acting}
+            >
+              <Text style={styles.offerDeclineTxt}>Counter</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.offerDeclineBtn, acting ? {opacity: 0.5} : {}]}
+              onPress={handleDecline}
+              disabled={!!acting}
+            >
+              {acting === 'decline'
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={styles.offerDeclineTxt}>Decline</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Buyer actions — seller countered */}
+        {isBuyerCounterView && !!offerData.offer_id && (
+          <View style={styles.offerActions}>
+            <TouchableOpacity
+              style={[styles.offerAcceptBtn, acting ? {opacity: 0.5} : {}]}
+              onPress={handleAccept}
+              disabled={!!acting}
+            >
+              {acting === 'accept'
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={styles.offerAcceptTxt}>Accept</Text>
+              }
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.offerDeclineBtn, acting ? {opacity: 0.5} : {}]}
+              onPress={handleDecline}
+              disabled={!!acting}
+            >
+              {acting === 'decline'
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={styles.offerDeclineTxt}>Decline</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
-      <Text style={styles.offerAmount}>${(offerData.amount_cents / 100).toFixed(2)}</Text>
-      {!!offerData.note && <Text style={styles.offerNote}>{offerData.note}</Text>}
-      {isSellerCard && status === 'pending' && !!offerData.offer_id && (
-        <View style={styles.offerActions}>
-          <TouchableOpacity
-            style={[styles.offerAcceptBtn, acting ? {opacity: 0.5} : {}]}
-            onPress={handleAccept}
-            disabled={!!acting}
-          >
-            {acting === 'accept'
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.offerAcceptTxt}>Accept</Text>
-            }
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.offerDeclineBtn, acting ? {opacity: 0.5} : {}]}
-            onPress={handleDecline}
-            disabled={!!acting}
-          >
-            {acting === 'decline'
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.offerDeclineTxt}>Decline</Text>
-            }
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
+
+      <CounterOfferSheet
+        visible={showCounter}
+        onClose={() => setShowCounter(false)}
+        originalPrice={offerData.amount_cents}
+        onSubmit={handleCounter}
+        saving={acting === 'counter'}
+      />
+    </>
   );
 }
 
@@ -314,7 +442,7 @@ function MessageSheet({
   visible, onClose,
   messages, sending,
   onSend, currentUserId,
-  isSeller, acceptOffer, declineOffer, offers,
+  isSeller, acceptOffer, declineOffer, counterOffer, offers,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -325,6 +453,7 @@ function MessageSheet({
   isSeller: boolean;
   acceptOffer: (offerId: string) => Promise<{ ok: boolean; error?: string } | null>;
   declineOffer: (offerId: string) => Promise<{ ok: boolean; error?: string } | null>;
+  counterOffer: (offerId: string, cents: number) => Promise<{ ok: boolean; error?: string } | null>;
   offers: import('../../src/hooks/useListingDetail').MarketplaceOffer[];
 }) {
   const [draft, setDraft] = useState('');
@@ -372,8 +501,8 @@ function MessageSheet({
                 // Look up LIVE status from offers array (message body status is stale after accept/decline)
                 const liveOffer = offerData.offer_id ? offers.find(o => o.id === offerData.offer_id) : null;
                 const status     = liveOffer?.status ?? offerData.status ?? 'pending';
-                const statusColors: Record<string,string> = {pending:'#f59e0b', accepted:'#22c55e', declined:'#ef4444', cancelled:'#6b7280', expired:'#6b7280'};
-                const statusLabels: Record<string,string> = {pending:'Pending', accepted:'Accepted ✓', declined:'Declined', cancelled:'Cancelled', expired:'Expired'};
+                const statusColors: Record<string,string> = {pending:'#f59e0b', accepted:'#22c55e', declined:'#ef4444', cancelled:'#6b7280', expired:'#6b7280', countered:'#3b82f6'};
+                const statusLabels: Record<string,string> = {pending:'Pending', accepted:'Accepted ✓', declined:'Declined', cancelled:'Cancelled', expired:'Expired', countered:'Counter Sent'};
                 return (
                   <OfferCardWithActions
                     key={item.id}
@@ -385,6 +514,7 @@ function MessageSheet({
                     isSellerCard={isSellerCard}
                     acceptOffer={acceptOffer}
                     declineOffer={declineOffer}
+                    counterOffer={counterOffer}
                   />
                 );
               }
@@ -563,7 +693,7 @@ export default function ListingDetailScreen() {
     activeOrder, fetchOrder,
     markShipped, confirmReceipt,
     submitReview,
-    sendOffer, acceptOffer, declineOffer, offers,
+    sendOffer, acceptOffer, declineOffer, counterOffer, offers,
     updateListing, deletePhoto,
   } = useListingDetail(id ?? '', user?.id);
 
@@ -1260,6 +1390,7 @@ export default function ListingDetailScreen() {
         isSeller={isOwner}
         acceptOffer={acceptOffer}
         declineOffer={declineOffer}
+        counterOffer={counterOffer}
         offers={offers}
         onSend={async body => {
           if (!listing.seller_id) return;
