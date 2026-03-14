@@ -243,6 +243,7 @@ function MessageSheet({
   visible, onClose,
   messages, sending,
   onSend, currentUserId,
+  isSeller, acceptOffer, declineOffer,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -250,6 +251,9 @@ function MessageSheet({
   sending: boolean;
   onSend: (body: string) => void;
   currentUserId: string;
+  isSeller: boolean;
+  acceptOffer: (offerId: string) => Promise<{ ok: boolean; error?: string } | null>;
+  declineOffer: (offerId: string) => Promise<{ ok: boolean; error?: string } | null>;
 }) {
   const [draft, setDraft] = useState('');
   const listRef = useRef<FlatList>(null);
@@ -1201,6 +1205,9 @@ export default function ListingDetailScreen() {
         messages={messages}
         sending={sending}
         currentUserId={user?.id ?? ''}
+        isSeller={isOwner}
+        acceptOffer={acceptOffer}
+        declineOffer={declineOffer}
         onSend={async body => {
           if (!listing.seller_id) return;
           // When the SELLER replies, derive the buyer_id from existing messages
