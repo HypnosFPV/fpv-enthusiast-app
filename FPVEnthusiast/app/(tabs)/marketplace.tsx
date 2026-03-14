@@ -9,7 +9,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
   ActivityIndicator, RefreshControl, StatusBar, Modal, ScrollView,
   Image, Animated, Easing, Pressable, Alert, KeyboardAvoidingView,
-  Platform, Dimensions,
+  Platform, Dimensions, PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -70,17 +70,61 @@ function conditionLabel(c: string) {
   return CONDITIONS.find(x => x.value === c)?.label ?? c;
 }
 
+// ─── Animated Empty State ─────────────────────────────────────────────────────
+const EmptyState = ({
+  selectedCat,
+  searchText,
+  onCreatePress,
+}: {
+  selectedCat: CategorySlug | null;
+  searchText: string;
+  onCreatePress: () => void;
+}) => {
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(24)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 420, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 60, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View style={[styles.emptyWrap, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+      <Text style={styles.emptyIcon}>🛸</Text>
+      <Text style={styles.emptyTitle}>No listings yet</Text>
+      <Text style={styles.emptyBody}>
+        {selectedCat || searchText
+          ? 'Try clearing your filters or searching something else.'
+          : 'Be the first to list your gear. The community is ready to buy.'}
+      </Text>
+      {!selectedCat && !searchText && (
+        <TouchableOpacity style={styles.emptyBtn} onPress={onCreatePress}>
+          <Text style={styles.emptyBtnTxt}>List something now</Text>
+        </TouchableOpacity>
+      )}
+    </Animated.View>
+  );
+};
+
 // ─── Listing card ─────────────────────────────────────────────────────────────
 const ListingCard = React.memo(({
   item,
   index,
   onPress,
   onWatch,
+  isOwner,
+  onArchive,
+  onDelete,
 }: {
   item: MarketplaceListing;
   index: number;
   onPress: () => void;
   onWatch: () => void;
+  isOwner?: boolean;
+  onArchive?: () => void;
+  onDelete?: () => void;
 }) => {
   const image = item.listing_images?.find(i => i.is_primary) ?? item.listing_images?.[0];
   const displayPrice = item.listing_type === 'auction' && item.current_bid
@@ -111,12 +155,58 @@ const ListingCard = React.memo(({
     ]).start();
   }, []);
 
+  // ── Swipe-to-reveal (owner: archive / delete) ──────────────────────────────
+  const swipeX = useRef(new Animated.Value(0)).current;
+  const SWIPE_THRESHOLD = -44;
+  const SWIPE_OPEN      = -90;
+
+  const panResponder = useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_evt, g) =>
+      isOwner === true &&
+      Math.abs(g.dx) > Math.abs(g.dy) &&
+      Math.abs(g.dx) > 8,
+    onPanResponderMove: (_evt, g) => {
+      if (g.dx < 0) swipeX.setValue(Math.max(g.dx, SWIPE_OPEN));
+    },
+    onPanResponderRelease: (_evt, g) => {
+      if (g.dx < SWIPE_THRESHOLD) {
+        Animated.spring(swipeX, { toValue: SWIPE_OPEN, useNativeDriver: true, friction: 8, tension: 70 }).start();
+      } else {
+        Animated.spring(swipeX, { toValue: 0, useNativeDriver: true, friction: 8, tension: 70 }).start();
+      }
+    },
+  })).current;
+
+  const closeSwipe = () =>
+    Animated.spring(swipeX, { toValue: 0, useNativeDriver: true, friction: 8 }).start();
+
   return (
     <Animated.View style={{
       opacity:   cardOpacity,
       transform: [{ translateY: cardTranslateY }, { scale: cardScale }],
       flex: 1,
     }}>
+    {/* Swipe-reveal action strip (owner only) */}
+    <View style={styles.swipeWrap}>
+      {isOwner && (
+        <View style={styles.swipeActions}>
+          <TouchableOpacity
+            style={styles.archiveActionBtn}
+            onPress={() => { closeSwipe(); onArchive?.(); }}
+          >
+            <Ionicons name="archive-outline" size={18} color="#fff" />
+            <Text style={styles.swipeActionTxt}>Archive</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.deleteActionBtn}
+            onPress={() => { closeSwipe(); onDelete?.(); }}
+          >
+            <Ionicons name="trash-outline" size={18} color="#fff" />
+            <Text style={styles.swipeActionTxt}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      <Animated.View style={{ transform: [{ translateX: swipeX }] }} {...panResponder.panHandlers}>
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
       {/* Image */}
       <View style={styles.cardImageWrap}>
@@ -177,6 +267,8 @@ const ListingCard = React.memo(({
         </View>
       </View>
     </TouchableOpacity>
+      </Animated.View>
+    </View>
     </Animated.View>
   );
 });
@@ -803,6 +895,36 @@ export default function MarketplaceScreen() {
     outputRange: ['#ff4500', '#ff8c00', '#ffcc00', '#ff6600', '#ff4500'],
   });
 
+  // ── Pull-to-refresh custom spinner ────────────────────────────────────────
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const spinLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  useEffect(() => {
+    if (refreshing) {
+      spinAnim.setValue(0);
+      spinLoopRef.current = Animated.loop(
+        Animated.timing(spinAnim, { toValue: 1, duration: 700, easing: Easing.linear, useNativeDriver: true })
+      );
+      spinLoopRef.current.start();
+    } else {
+      spinLoopRef.current?.stop();
+      spinAnim.setValue(0);
+    }
+  }, [refreshing]);
+  const spinRotate = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  // ── FAB bounce when new listings land ─────────────────────────────────────
+  const fabScale       = useRef(new Animated.Value(1)).current;
+  const prevListingLen = useRef(0);
+  useEffect(() => {
+    if (listings.length > prevListingLen.current && prevListingLen.current > 0) {
+      Animated.sequence([
+        Animated.spring(fabScale, { toValue: 1.28, friction: 4, tension: 90, useNativeDriver: true }),
+        Animated.spring(fabScale, { toValue: 1,    friction: 5, tension: 70, useNativeDriver: true }),
+      ]).start();
+    }
+    prevListingLen.current = listings.length;
+  }, [listings.length]);
+
   const {
     listings, loading, refreshing, loadingMore, hasMore,
     filters, loadListings, loadMore, applyFilters, onRefresh,
@@ -877,21 +999,12 @@ export default function MarketplaceScreen() {
   }, [loadingMore, hasMore, listings.length]);
 
   // ── Empty state ────────────────────────────────────────────────────────────
-  const EmptyState = useCallback(() => (
-    <View style={styles.emptyWrap}>
-      <Text style={styles.emptyIcon}>🛸</Text>
-      <Text style={styles.emptyTitle}>No listings yet</Text>
-      <Text style={styles.emptyBody}>
-        {selectedCat || searchText
-          ? 'Try clearing your filters or searching something else.'
-          : 'Be the first to list your gear. The community is ready to buy.'}
-      </Text>
-      {!selectedCat && !searchText && (
-        <TouchableOpacity style={styles.emptyBtn} onPress={() => setShowCreate(true)}>
-          <Text style={styles.emptyBtnTxt}>List something now</Text>
-        </TouchableOpacity>
-      )}
-    </View>
+  const EmptyStateWrapper = useCallback(() => (
+    <EmptyState
+      selectedCat={selectedCat}
+      searchText={searchText}
+      onCreatePress={() => setShowCreate(true)}
+    />
   ), [selectedCat, searchText]);
 
   // ── Header component inside FlatList ──────────────────────────────────────
@@ -955,6 +1068,16 @@ export default function MarketplaceScreen() {
         )}
       </View>
 
+      {/* ── Refresh overlay ──────────────────────────────────────────────── */}
+      {refreshing && (
+        <View style={styles.refreshOverlay}>
+          <Animated.View style={{ transform: [{ rotate: spinRotate }] }}>
+            <Ionicons name="sync" size={20} color="#ff4500" />
+          </Animated.View>
+          <Text style={styles.refreshTxt}>Refreshing…</Text>
+        </View>
+      )}
+
       {/* ── Listings grid ─────────────────────────────────────────────────── */}
       <FlatList
         data={listings}
@@ -962,12 +1085,13 @@ export default function MarketplaceScreen() {
         numColumns={2}
         columnWrapperStyle={styles.row}
         ListHeaderComponent={ListHeader}
-        ListEmptyComponent={EmptyState}
+        ListEmptyComponent={EmptyStateWrapper}
         ListFooterComponent={ListFooter}
         renderItem={({ item, index }) => (
           <ListingCard
             item={item}
             index={index}
+            isOwner={item.seller_id === user?.id}
             onPress={() => {
               // Phase 2: router.push(`/marketplace/${item.id}`)
               Alert.alert(item.title, `$${item.price.toFixed(2)} · ${conditionLabel(item.condition)}\n\n${item.description}`);
@@ -975,6 +1099,26 @@ export default function MarketplaceScreen() {
             onWatch={() => user
               ? toggleWatch(item.id)
               : Alert.alert('Sign in', 'Sign in to save listings to your watchlist.')
+            }
+            onArchive={() =>
+              Alert.alert(
+                'Archive listing',
+                'This will hide your listing from search. You can reactivate it anytime.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Archive', style: 'destructive', onPress: () => {} },
+                ]
+              )
+            }
+            onDelete={() =>
+              Alert.alert(
+                'Delete listing',
+                'Permanently delete this listing? This cannot be undone.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Delete', style: 'destructive', onPress: () => {} },
+                ]
+              )
             }
           />
         )}
@@ -988,14 +1132,16 @@ export default function MarketplaceScreen() {
       />
 
       {/* ── FAB — Sell ────────────────────────────────────────────────────── */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => user ? setShowCreate(true) : Alert.alert('Sign in', 'Sign in to list items for sale.')}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="add" size={22} color="#fff" />
-        <Text style={styles.fabTxt}>Sell</Text>
-      </TouchableOpacity>
+      <Animated.View style={[styles.fabWrap, { transform: [{ scale: fabScale }] }]}>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => user ? setShowCreate(true) : Alert.alert('Sign in', 'Sign in to list items for sale.')}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add" size={22} color="#fff" />
+          <Text style={styles.fabTxt}>Sell</Text>
+        </TouchableOpacity>
+      </Animated.View>
 
       {/* ── Modals ───────────────────────────────────────────────────────── */}
       <CreateListingModal
@@ -1100,8 +1246,20 @@ const styles = StyleSheet.create({
   emptyBtnTxt:       { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // ── FAB
-  fab:               { position: 'absolute', bottom: 100, right: 20, backgroundColor: '#ff4500', borderRadius: 28, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 6, shadowColor: '#ff4500', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
+  fabWrap:           { position: 'absolute', bottom: 100, right: 20 },
+  fab:               { backgroundColor: '#ff4500', borderRadius: 28, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 6, shadowColor: '#ff4500', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
   fabTxt:            { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // ── Refresh overlay
+  refreshOverlay:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 9, backgroundColor: '#111', borderBottomWidth: 1, borderBottomColor: '#1e1e1e' },
+  refreshTxt:        { color: '#ff4500', fontSize: 12, fontWeight: '600', letterSpacing: 0.3 },
+
+  // ── Swipe-to-reveal
+  swipeWrap:         { position: 'relative', overflow: 'hidden', flex: 1 },
+  swipeActions:      { position: 'absolute', top: 0, bottom: 0, right: 0, width: 90, flexDirection: 'column' },
+  archiveActionBtn:  { flex: 1, backgroundColor: '#1565c0', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  deleteActionBtn:   { flex: 1, backgroundColor: '#b71c1c', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  swipeActionTxt:    { color: '#fff', fontSize: 10, fontWeight: '700' },
 
   // ── Create listing modal
   createModal:       { flex: 1, backgroundColor: '#0a0a0a' },
