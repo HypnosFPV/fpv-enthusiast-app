@@ -3,7 +3,7 @@
 // Browse · Search · Filter · Watchlist · Trust landing · Create listing
 
 import React, {
-  useState, useCallback, useRef, useMemo,
+  useState, useCallback, useRef, useMemo, useEffect,
 } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
@@ -157,14 +157,14 @@ const ListingCard = React.memo(({
 const TrustPanel = ({ onDismiss }: { onDismiss: () => void }) => {
   const scrollRef  = useRef<ScrollView>(null);
   const bounceAnim = useRef(new Animated.Value(0)).current;
-  const [showArrow, setShowArrow] = React.useState(true);
+  const [showArrow, setShowArrow] = useState(true);
 
   // ── Entry animation: slide up + spring bounce on mount ────────────────────
   const entryTranslateY = useRef(new Animated.Value(40)).current;
   const entryScale      = useRef(new Animated.Value(0.92)).current;
   const entryOpacity    = useRef(new Animated.Value(0)).current;
 
-  React.useEffect(() => {
+  useEffect(() => {
     Animated.parallel([
       // Fade in
       Animated.timing(entryOpacity, {
@@ -182,7 +182,7 @@ const TrustPanel = ({ onDismiss }: { onDismiss: () => void }) => {
   }, []);
 
   // ── Arrow bounce loop ──────────────────────────────────────────────────────
-  React.useEffect(() => {
+  useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(bounceAnim, { toValue: 7,  duration: 420, useNativeDriver: true }),
