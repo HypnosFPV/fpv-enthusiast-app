@@ -5,19 +5,24 @@ import { AuthProvider } from '../src/context/AuthContext';
 import { NotificationsProvider } from '../src/context/NotificationsContext';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
 
-// Inner component so hooks run inside the providers
+// Inner component so hooks run inside both providers
 function AppContent() {
-  usePushNotifications();
+  const { PermissionModal } = usePushNotifications();
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index"        options={{ headerShown: false }} />
-      <Stack.Screen name="(tabs)"       options={{ headerShown: false }} />
-      <Stack.Screen name="login"        options={{ headerShown: false }} />
-      <Stack.Screen name="signup"       options={{ headerShown: false }} />
-      <Stack.Screen name="user/[id]"    options={{ headerShown: false }} />
-      <Stack.Screen name="post/[id]"    options={{ headerShown: false }} />
-      <Stack.Screen name="listing/[id]" options={{ headerShown: false }} />
-    </Stack>
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index"        options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)"       options={{ headerShown: false }} />
+        <Stack.Screen name="login"        options={{ headerShown: false }} />
+        <Stack.Screen name="signup"       options={{ headerShown: false }} />
+        <Stack.Screen name="user/[id]"    options={{ headerShown: false }} />
+        <Stack.Screen name="post/[id]"    options={{ headerShown: false }} />
+        <Stack.Screen name="listing/[id]" options={{ headerShown: false }} />
+      </Stack>
+
+      {/* Push notification pre-prompt modal (iOS only, shown once on first launch) */}
+      {PermissionModal}
+    </>
   );
 }
 
