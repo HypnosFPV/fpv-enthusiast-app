@@ -351,7 +351,7 @@ export function useChallenges(currentUserId?: string) {
         .eq('entry_id', entryId).eq('voter_id', currentUserId);
     } else {
       const { error } = await supabase.from('challenge_votes')
-        .insert({ entry_id: entryId, voter_id: currentUserId });
+        .insert({ entry_id: entryId, voter_id: currentUserId, ...(challengeId ? { challenge_id: challengeId } : {}) });
       if (error) return { success: false, reason: error.message };
     }
 
