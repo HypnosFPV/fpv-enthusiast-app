@@ -18,6 +18,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { scheduleBoostExpiryNotification } from '../../src/utils/boostNotifications';
 import {
   useMarketplace,
@@ -1424,6 +1425,65 @@ export default function MarketplaceScreen() {
     featured, loading: featLoading, reload: reloadFeatured, spendPropsForFeatured,
   } = useFeaturedListings();
   const [showBoost, setShowBoost]       = useState(false);
+
+  // ── Sold-while-featured celebration modal ─────────────────────────────────
+  const [soldCelebration, setSoldCelebration] = useState<{
+    id: string; listingTitle: string; bonus: number;
+  } | null>(null);
+  const celebScale  = useRef(new Animated.Value(0)).current;
+  const celebStar   = useRef(new Animated.Value(0)).current;
+
+  // Check for unseen featured_sold_bonus rows on mount / focus
+  const checkSoldBonus = useCallback(async () => {
+    if (!user?.id) return;
+    const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabase
+      .from('props_log')
+      .select('id, amount, reference_id, created_at')
+      .eq('user_id', user.id)
+      .eq('reason', 'featured_sold_bonus')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (!data?.length) return;
+
+    // Filter to IDs not yet seen
+    const seenRaw  = await AsyncStorage.getItem('seen_sold_bonuses') ?? '[]';
+    const seen: string[] = JSON.parse(seenRaw);
+    const unseen   = data.filter(r => !seen.includes(r.id));
+    if (!unseen.length) return;
+
+    const bonus = unseen[0];
+    // Fetch the listing title
+    const { data: listing } = await supabase
+      .from('marketplace_listings')
+      .select('title')
+      .eq('id', bonus.reference_id)
+      .maybeSingle();
+
+    // Mark as seen
+    const next = [...seen, bonus.id].slice(-50);
+    await AsyncStorage.setItem('seen_sold_bonuses', JSON.stringify(next));
+
+    // Trigger celebration modal
+    setSoldCelebration({
+      id:            bonus.id,
+      listingTitle:  listing?.title ?? 'Your listing',
+      bonus:         bonus.amount ?? 500,
+    });
+    // Animate in
+    celebScale.setValue(0);
+    celebStar.setValue(0);
+    Animated.sequence([
+      Animated.spring(celebScale, { toValue: 1, friction: 5, tension: 120, useNativeDriver: true }),
+      Animated.timing(celebStar,  { toValue: 1, duration: 600, useNativeDriver: true }),
+    ]).start();
+  }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => { checkSoldBonus(); }, [checkSoldBonus])
+  );
+
   const [boostTarget, setBoostTarget]   = useState<{ id: string; title: string } | null>(null);
   const [showListingPicker, setShowListingPicker] = useState(false);
   const [myListings, setMyListings] = useState<{ id: string; title: string; is_featured?: boolean; featured_until?: string | null }[]>([]);
@@ -1652,7 +1712,92 @@ export default function MarketplaceScreen() {
                 )}
               </TouchableOpacity>
             </View>
-          </>
+          
+      {/* ── Sold-while-featured celebration modal ─────────────────────────── */}
+      {soldCelebration && (
+        <Modal transparent animationType="fade" visible statusBarTranslucent>
+          <View style={{
+            flex: 1, backgroundColor: 'rgba(0,0,0,0.82)',
+            justifyContent: 'center', alignItems: 'center', paddingHorizontal: 28,
+          }}>
+            <Animated.View style={{
+              width: '100%', backgroundColor: '#111',
+              borderRadius: 24, padding: 28, alignItems: 'center',
+              borderWidth: 2, borderColor: '#ffcc00',
+              transform: [{ scale: celebScale }],
+              shadowColor: '#ffcc00', shadowRadius: 24, shadowOpacity: 0.6,
+              shadowOffset: { width: 0, height: 0 }, elevation: 20,
+            }}>
+              {/* Star burst row */}
+              <Animated.View style={{
+                flexDirection: 'row', gap: 8, marginBottom: 16,
+                opacity: celebStar,
+                transform: [{ scale: celebStar.interpolate({ inputRange:[0,1], outputRange:[0.4,1] }) }],
+              }}>
+                {['⭐','🌟','✨','🌟','⭐'].map((s, i) => (
+                  <Text key={i} style={{ fontSize: 22 }}>{s}</Text>
+                ))}
+              </Animated.View>
+
+              {/* Headline */}
+              <Text style={{ fontSize: 28, fontWeight: '800', color: '#ffcc00', textAlign: 'center', marginBottom: 6 }}>
+                🎉 SOLD!
+              </Text>
+              <Text style={{ fontSize: 15, color: '#ccc', textAlign: 'center', marginBottom: 4 }}>
+                Your featured listing sold while boosted
+              </Text>
+              <Text style={{
+                fontSize: 13, color: '#888', textAlign: 'center',
+                marginBottom: 20, fontStyle: 'italic',
+                maxWidth: 260,
+              }} numberOfLines={2}>
+                "{soldCelebration.listingTitle}"
+              </Text>
+
+              {/* Bonus badge */}
+              <View style={{
+                backgroundColor: '#1a1a00', borderRadius: 16, borderWidth: 1.5,
+                borderColor: '#ffcc00', paddingHorizontal: 22, paddingVertical: 12,
+                alignItems: 'center', marginBottom: 24, width: '100%',
+              }}>
+                <Text style={{ fontSize: 13, color: '#ffcc00', marginBottom: 4, letterSpacing: 1 }}>
+                  PROPS BONUS AWARDED
+                </Text>
+                <Text style={{ fontSize: 40, fontWeight: '900', color: '#fff' }}>
+                  +{soldCelebration.bonus}
+                </Text>
+                <Text style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                  🌀 Props added to your balance
+                </Text>
+              </View>
+
+              {/* Explanation */}
+              <Text style={{ fontSize: 12, color: '#555', textAlign: 'center', marginBottom: 24 }}>
+                Boost reward: your listing sold during its featured window,{'
+'}
+                earning you a {soldCelebration.bonus}-prop seller bonus.
+              </Text>
+
+              {/* CTA */}
+              <TouchableOpacity
+                onPress={() => setSoldCelebration(null)}
+                style={{
+                  backgroundColor: '#ffcc00', borderRadius: 14,
+                  paddingVertical: 14, paddingHorizontal: 32, width: '100%',
+                  alignItems: 'center',
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={{ color: '#000', fontWeight: '800', fontSize: 16 }}>
+                  Awesome! 🚀
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
+        </Modal>
+      )}
+
+      </>
         )}
       </View>
 
