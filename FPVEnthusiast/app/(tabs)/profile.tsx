@@ -548,7 +548,7 @@ export default function ProfileScreen() {
     const { data } = await supabase
       .from('featured_purchases')
       .select(`
-        id, ends_at, duration_hrs, props_spent, created_at,
+        id, ends_at, duration_hrs, props_spent, purchase_type, amount_usd, created_at,
         marketplace_listings (
           id, title,
           listing_images ( url, is_primary )
@@ -1010,7 +1010,11 @@ export default function ProfileScreen() {
                               </View>
                             )}
                             <Text style={{ color: '#888', fontSize: 11 }}>
-                              {b.purchase_type === 'props' ? `🌀 ${(b.props_spent ?? 0).toLocaleString()} props` : `💳 $${b.amount_usd?.toFixed(2)}`}
+                              {b.props_spent
+                                ? `🌀 ${(b.props_spent).toLocaleString()} props`
+                                : b.amount_usd
+                                ? `💳 $${Number(b.amount_usd).toFixed(2)}`
+                                : '🌀 Props'}
                             </Text>
                           </View>
                           {/* Progress bar */}

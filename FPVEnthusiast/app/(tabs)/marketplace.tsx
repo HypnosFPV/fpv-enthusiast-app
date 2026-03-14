@@ -1405,7 +1405,7 @@ export default function MarketplaceScreen() {
   const [showBoost, setShowBoost]       = useState(false);
   const [boostTarget, setBoostTarget]   = useState<{ id: string; title: string } | null>(null);
   const [showListingPicker, setShowListingPicker] = useState(false);
-  const [myListings, setMyListings] = useState<{ id: string; title: string }[]>([]);
+  const [myListings, setMyListings] = useState<{ id: string; title: string; is_featured?: boolean; featured_until?: string | null }[]>([]);
   // User's own props balance (fetched once)
   const [userProps,     setUserProps]     = useState(0);
   const [lifetimeProps, setLifetimeProps] = useState(0);
@@ -1423,7 +1423,7 @@ export default function MarketplaceScreen() {
     // Also refresh the user's own active listings for the picker
     supabase
       .from('marketplace_listings')
-      .select('id, title')
+      .select('id, title, is_featured, featured_until')
       .eq('seller_id', user.id)
       .eq('status', 'active')
       .order('created_at', { ascending: false })
@@ -1435,8 +1435,18 @@ export default function MarketplaceScreen() {
   useEffect(() => { if (showBoost) refreshUserProps(); }, [showBoost]);
 
   const handleOpenBoost = useCallback((listingId?: string, listingTitle?: string) => {
-    // Called from a specific card → pre-select it
+    // Called from a specific card → pre-select it, but block if already active
     if (listingId && listingTitle) {
+      const found = myListings.find(l => l.id === listingId);
+      const until = found?.featured_until ? new Date(found.featured_until).getTime() : 0;
+      if (found?.is_featured && until > Date.now()) {
+        const hrsLeft = Math.ceil((until - Date.now()) / 3_600_000);
+        Alert.alert(
+          '⚡ Already Featured',
+          `"${listingTitle}" is currently featured with ${hrsLeft}h remaining. You can boost it again once it expires.`
+        );
+        return;
+      }
       setBoostTarget({ id: listingId, title: listingTitle });
       setShowBoost(true);
       return;
@@ -1447,7 +1457,17 @@ export default function MarketplaceScreen() {
       return;
     }
     if (myListings.length === 1) {
-      setBoostTarget({ id: myListings[0].id, title: myListings[0].title });
+      const l = myListings[0];
+      const until = l.featured_until ? new Date(l.featured_until).getTime() : 0;
+      if (l.is_featured && until > Date.now()) {
+        const hrsLeft = Math.ceil((until - Date.now()) / 3_600_000);
+        Alert.alert(
+          '⚡ Already Featured',
+          `"${l.title}" is currently featured with ${hrsLeft}h remaining. You can boost it again once it expires.`
+        );
+        return;
+      }
+      setBoostTarget({ id: l.id, title: l.title });
       setShowBoost(true);
       return;
     }
@@ -1713,29 +1733,48 @@ export default function MarketplaceScreen() {
             Select which listing you want to pin in the Featured carousel.
           </Text>
           <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, gap: 10 }}>
-            {myListings.map(l => (
-              <TouchableOpacity
-                key={l.id}
-                style={{
-                  backgroundColor: '#1a1a1a', borderRadius: 12, padding: 16,
-                  borderWidth: 1, borderColor: '#333',
-                  flexDirection: 'row', alignItems: 'center', gap: 12,
-                }}
-                onPress={() => {
-                  setBoostTarget({ id: l.id, title: l.title });
-                  setShowListingPicker(false);
-                  setShowBoost(true);
-                }}
-                activeOpacity={0.8}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }} numberOfLines={2}>{l.title}</Text>
-                </View>
-                <View style={{ backgroundColor: '#ffcc0022', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: '#ffcc0044' }}>
-                  <Text style={{ color: '#ffcc00', fontSize: 12, fontWeight: '700' }}>⚡ Boost</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+            {myListings.map(l => {
+              const until = l.featured_until ? new Date(l.featured_until).getTime() : 0;
+              const isActive = !!(l.is_featured && until > Date.now());
+              const hrsLeft = isActive ? Math.ceil((until - Date.now()) / 3_600_000) : 0;
+              return (
+                <TouchableOpacity
+                  key={l.id}
+                  style={{
+                    backgroundColor: '#1a1a1a', borderRadius: 12, padding: 16,
+                    borderWidth: 1, borderColor: isActive ? '#ffcc0044' : '#333',
+                    flexDirection: 'row', alignItems: 'center', gap: 12,
+                    opacity: isActive ? 0.7 : 1,
+                  }}
+                  onPress={() => {
+                    if (isActive) {
+                      Alert.alert('⚡ Already Featured', `"${l.title}" is featured for ${hrsLeft}h more. Boost again once it expires.`);
+                      return;
+                    }
+                    setBoostTarget({ id: l.id, title: l.title });
+                    setShowListingPicker(false);
+                    setShowBoost(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }} numberOfLines={2}>{l.title}</Text>
+                    {isActive && (
+                      <Text style={{ color: '#ffcc00', fontSize: 11, marginTop: 2 }}>⏱ {hrsLeft}h remaining</Text>
+                    )}
+                  </View>
+                  {isActive ? (
+                    <View style={{ backgroundColor: '#ffcc0022', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: '#ffcc0066' }}>
+                      <Text style={{ color: '#ffcc00', fontSize: 12, fontWeight: '700' }}>⏱ Active</Text>
+                    </View>
+                  ) : (
+                    <View style={{ backgroundColor: '#ffcc0022', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: '#ffcc0044' }}>
+                      <Text style={{ color: '#ffcc00', fontSize: 12, fontWeight: '700' }}>⚡ Boost</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
       </Modal>
