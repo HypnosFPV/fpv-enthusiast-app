@@ -72,6 +72,111 @@ const ORDER_STATUS: Record<string, { label: string; color: string; icon: string 
   disputed:  { label: 'Dispute Open',      color: '#ef4444', icon: 'warning-outline' },
 };
 
+
+// ─── Review modal (buyer rates seller after delivery) ─────────────────────────
+function ReviewModal({
+  visible, onClose, onSubmit, loading, sellerName,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSubmit: (rating: number, comment: string) => void;
+  loading: boolean;
+  sellerName: string;
+}) {
+  const [rating,  setRating]  = useState(0);
+  const [comment, setComment] = useState('');
+  const scaleAnims = [1,2,3,4,5].map(() => useRef(new Animated.Value(1)).current);
+
+  const pressstar = (star: number) => {
+    setRating(star);
+    // quick pop animation on selected star
+    Animated.sequence([
+      Animated.timing(scaleAnims[star-1], { toValue: 1.4, duration: 80,  useNativeDriver: true }),
+      Animated.spring(scaleAnims[star-1], { toValue: 1,   friction: 4,   useNativeDriver: true }),
+    ]).start();
+  };
+
+  const canSubmit = rating > 0 && !loading;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.reviewOverlay}
+      >
+        <View style={styles.reviewSheet}>
+          {/* Header */}
+          <View style={styles.reviewHeader}>
+            <Text style={styles.reviewTitle}>Rate Your Experience</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top:10,bottom:10,left:10,right:10 }}>
+              <Ionicons name="close" size={22} color="#aaa" />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.reviewSubtitle}>
+            How was your transaction with{' '}
+            <Text style={{ color: '#fff', fontWeight: '700' }}>{sellerName}</Text>?
+          </Text>
+
+          {/* Star picker */}
+          <View style={styles.starRow}>
+            {[1,2,3,4,5].map(star => (
+              <TouchableOpacity key={star} onPress={() => pressstar(star)} activeOpacity={0.7}>
+                <Animated.Text
+                  style={[
+                    styles.starIcon,
+                    { transform: [{ scale: scaleAnims[star-1] }] },
+                    star <= rating && styles.starIconActive,
+                  ]}
+                >
+                  ★
+                </Animated.Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {rating > 0 && (
+            <Text style={styles.ratingLabel}>
+              {['', 'Terrible 😞', 'Poor 😕', 'Okay 😐', 'Good 😊', 'Excellent! 🌟'][rating]}
+            </Text>
+          )}
+
+          {/* Comment */}
+          <Text style={styles.reviewInputLabel}>Comments (optional)</Text>
+          <TextInput
+            style={styles.reviewInput}
+            value={comment}
+            onChangeText={setComment}
+            placeholder="Fast shipping, great packaging, item as described…"
+            placeholderTextColor="#444"
+            multiline
+            maxLength={500}
+          />
+          <Text style={styles.reviewCharCount}>{comment.length}/500</Text>
+
+          {/* Submit */}
+          <TouchableOpacity
+            style={[styles.reviewSubmit, !canSubmit && styles.reviewSubmitDisabled]}
+            onPress={() => canSubmit && onSubmit(rating, comment.trim())}
+            disabled={!canSubmit}
+          >
+            {loading
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <>
+                  <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                  <Text style={styles.reviewSubmitTxt}>Submit Review</Text>
+                </>
+            }
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.reviewSkip} onPress={onClose}>
+            <Text style={styles.reviewSkipTxt}>Skip for now</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 // ─── Ship modal ───────────────────────────────────────────────────────────────
 function ShipModal({
   visible, onClose, onSubmit, loading,
@@ -242,6 +347,7 @@ export default function ListingDetailScreen() {
     messages, messagesLoad, sendMessage, sending,
     activeOrder, fetchOrder,
     markShipped, confirmReceipt,
+    submitReview,
     updateListing, deletePhoto,
   } = useListingDetail(id ?? '', user?.id);
 
@@ -270,10 +376,13 @@ export default function ListingDetailScreen() {
   const [showZoom,    setShowZoom]    = useState(false);
 
   // ── Sheet state ───────────────────────────────────────────────────────────
-  const [showMsg,     setShowMsg]     = useState(false);
-  const [showShip,    setShowShip]    = useState(false);
-  const [shipLoading, setShipLoading] = useState(false);
-  const [receiptLoad,    setReceiptLoad]    = useState(false);
+  const [showMsg,      setShowMsg]      = useState(false);
+  const [showShip,     setShowShip]     = useState(false);
+  const [shipLoading,  setShipLoading]  = useState(false);
+  const [receiptLoad,  setReceiptLoad]  = useState(false);
+  const [showReview,   setShowReview]   = useState(false);
+  const [reviewDone,   setReviewDone]   = useState(false);
+  const [reviewSaving, setReviewSaving] = useState(false);
   const propsToast   = usePropsToast();
   const shownBonusRef = useRef(false);
   const [addingPhotos,   setAddingPhotos]   = useState(false);
@@ -333,7 +442,8 @@ export default function ListingDetailScreen() {
             const res = await confirmReceipt(activeOrder.id);
             setReceiptLoad(false);
             if (res?.ok) {
-              Alert.alert('✅ Receipt confirmed!', 'Payment has been released to the seller.');
+              // Open review modal unless already reviewed
+              if (!reviewDone) setShowReview(true);
             } else {
               Alert.alert('Error', res?.error ?? 'Something went wrong.');
             }
@@ -341,7 +451,7 @@ export default function ListingDetailScreen() {
         },
       ],
     );
-  }, [activeOrder, confirmReceipt]);
+  }, [activeOrder, confirmReceipt, reviewDone]);
 
   // ── Add photos (owner only) ───────────────────────────────────────────────
   const handleAddPhotos = useCallback(async () => {
@@ -824,6 +934,22 @@ export default function ListingDetailScreen() {
         </View>
       )}
 
+      {/* ── Review prompt banner (buyer, delivered, not yet reviewed) ── */}
+      {isBuyer && activeOrder?.status === 'delivered' && !reviewDone && (
+        <TouchableOpacity
+          style={styles.reviewBanner}
+          onPress={() => setShowReview(true)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.reviewBannerStar}>⭐</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.reviewBannerTitle}>How was your transaction?</Text>
+            <Text style={styles.reviewBannerSub}>Tap to rate the seller — takes 10 seconds</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#f59e0b" />
+        </TouchableOpacity>
+      )}
+
       {/* ── Buyer confirm bar ── */}
       {isBuyer && activeOrder?.status === 'shipped' && (
         <View style={styles.ctaBar}>
@@ -868,6 +994,29 @@ export default function ListingDetailScreen() {
         onClose={() => setShowShip(false)}
         onSubmit={handleShipped}
         loading={shipLoading}
+      />
+
+      <ReviewModal
+        visible={showReview}
+        onClose={() => setShowReview(false)}
+        sellerName={listing?.seller?.username ?? listing?.seller?.full_name ?? 'Seller'}
+        loading={reviewSaving}
+        onSubmit={async (rating, comment) => {
+          if (!activeOrder) return;
+          setReviewSaving(true);
+          const res = await submitReview(activeOrder.id, rating, comment);
+          setReviewSaving(false);
+          if (res?.ok) {
+            setShowReview(false);
+            setReviewDone(true);
+            Alert.alert(
+              '⭐ Review submitted!',
+              'Your rating has been recorded and will help the FPV community.',
+            );
+          } else {
+            Alert.alert('Error', res?.error ?? 'Could not submit review.');
+          }
+        }}
       />
 
       {/* ── Edit Listing Modal ── */}
@@ -1198,6 +1347,29 @@ const styles = StyleSheet.create({
   conditionRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
   condPill:         { borderWidth: 1, borderColor: '#333', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5 },
   condPillTxt:      { color: '#888', fontSize: 12, fontWeight: '600' },
+
+  // ── Review modal ──────────────────────────────────────────────────────────
+  reviewBanner:      { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12, paddingBottom: Platform.OS === 'ios' ? 28 : 12, backgroundColor: '#1a1200', borderTopWidth: 1, borderTopColor: '#f59e0b44' },
+  reviewBannerStar:  { fontSize: 26 },
+  reviewBannerTitle: { color: '#fbbf24', fontSize: 14, fontWeight: '700' },
+  reviewBannerSub:   { color: '#92400e', fontSize: 12, marginTop: 1 },
+  reviewOverlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+  reviewSheet:       { backgroundColor: '#0f1117', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderTopWidth: 1.5, borderColor: '#f59e0b', paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
+  reviewHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  reviewTitle:       { color: '#fff', fontSize: 18, fontWeight: '800' },
+  reviewSubtitle:    { color: '#888', fontSize: 14, lineHeight: 20, marginBottom: 20 },
+  starRow:           { flexDirection: 'row', justifyContent: 'center', gap: 12, marginBottom: 8 },
+  starIcon:          { fontSize: 40, color: '#333' },
+  starIconActive:    { color: '#f59e0b' },
+  ratingLabel:       { textAlign: 'center', color: '#f59e0b', fontSize: 14, fontWeight: '600', marginBottom: 16 },
+  reviewInputLabel:  { color: '#aaa', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  reviewInput:       { backgroundColor: '#1a1a2e', borderWidth: 1, borderColor: '#2a3040', borderRadius: 12, color: '#fff', fontSize: 14, paddingHorizontal: 14, paddingVertical: 10, minHeight: 80, textAlignVertical: 'top' },
+  reviewCharCount:   { color: '#444', fontSize: 11, textAlign: 'right', marginTop: 4, marginBottom: 14 },
+  reviewSubmit:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#f59e0b', borderRadius: 14, paddingVertical: 14 },
+  reviewSubmitDisabled: { backgroundColor: '#4a3800', opacity: 0.6 },
+  reviewSubmitTxt:   { color: '#000', fontSize: 16, fontWeight: '800' },
+  reviewSkip:        { alignItems: 'center', paddingVertical: 12 },
+  reviewSkipTxt:     { color: '#555', fontSize: 13 },
 
   // ── Photo manager grid ──────────────────────────────────────────────────
   photoGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 8 },

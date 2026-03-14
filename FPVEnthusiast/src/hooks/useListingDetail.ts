@@ -408,12 +408,51 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     return { ok: true };
   }, [fetchListing]);
 
+  // ── Submit a buyer review for a completed order ────────────────────────────
+  const submitReview = useCallback(async (
+    orderId: string,
+    rating: number,
+    comment: string,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!orderId) return { ok: false, error: 'No order' };
+
+    // Need the seller_id from the active order
+    const { data: order, error: orderErr } = await supabase
+      .from('marketplace_orders')
+      .select('seller_id, status, buyer_id')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (orderErr || !order) return { ok: false, error: 'Order not found' };
+    if (!['delivered', 'completed'].includes(order.status))
+      return { ok: false, error: 'Order not yet delivered' };
+
+    const { error } = await supabase.from('marketplace_reviews').insert({
+      order_id:    orderId,
+      reviewer_id: order.buyer_id,
+      seller_id:   order.seller_id,
+      rating,
+      comment:     comment || null,
+    });
+
+    if (error) {
+      // UNIQUE violation = already reviewed
+      if (error.code === '23505') return { ok: false, error: 'already_reviewed' };
+      return { ok: false, error: error.message };
+    }
+
+    // Refresh listing to pick up updated avg_rating on seller card
+    await fetchListing();
+    return { ok: true };
+  }, [fetchListing]);
+
   return {
     listing, loading, fetchListing,
     isWatched, toggleWatch,
     messages, messagesLoad, sendMessage, sending,
     activeOrder, fetchOrder,
     markShipped, confirmReceipt,
+    submitReview,
     addPhotos,
     updateListing,
     deletePhoto,
