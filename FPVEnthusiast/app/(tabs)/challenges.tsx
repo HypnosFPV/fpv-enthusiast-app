@@ -712,7 +712,9 @@ export default function ChallengesScreen() {
     if (!user) { Alert.alert('Sign in to vote'); return; }
 
     // Must have submitted to vote
-    const ch = detailChallenge;
+    // detailChallenge is only set for archive modals; fall back to weeklyChallenge
+    // for the current-week inline view (where detailChallenge is null)
+    const ch = detailChallenge ?? weeklyChallenge;
     if (!ch?.my_entry) {
       Alert.alert(
         'Entry Required',
