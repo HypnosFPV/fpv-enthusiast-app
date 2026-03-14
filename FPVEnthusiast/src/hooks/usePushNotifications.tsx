@@ -68,9 +68,20 @@ export function usePushNotifications() {
     const projectId =
       Constants.expoConfig?.extra?.eas?.projectId ??
       Constants.easConfig?.projectId;
+
+    // Skip token registration if projectId is missing or still a placeholder
+    // (happens in Expo Go before eas init is run)
+    const isValidUuid = (id?: string) =>
+      !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+    if (!isValidUuid(projectId)) {
+      console.warn('[usePushNotifications] skipping token — projectId not set. Run: npx eas init');
+      return;
+    }
+
     try {
       const tokenData = await Notifications.getExpoPushTokenAsync(
-        projectId ? { projectId } : undefined
+        { projectId: projectId! }
       );
       await supabase
         .from('user_push_tokens')
