@@ -89,7 +89,8 @@ const BoostModal = ({
   visible: boolean;
   listingId: string;
   listingTitle: string;
-  userProps: number;
+  userProps: number;        // spendable wallet
+  lifetimeProps: number;    // all-time earned (shown for context)
   onClose: () => void;
   onSpendProps: () => Promise<void>;
 }) => {
@@ -137,11 +138,17 @@ const BoostModal = ({
               seen by every user who opens the tab.
             </Text>
 
-            {/* Balance row */}
+            {/* Balance rows */}
             <View style={styles.boostBalanceRow}>
-              <Text style={styles.boostBalanceLabel}>Your balance</Text>
+              <Text style={styles.boostBalanceLabel}>Spendable balance</Text>
               <Text style={[styles.boostBalanceVal, !canAfford && { color: '#ff4444' }]}>
-                {userProps.toLocaleString()} props {!canAfford ? '(not enough)' : ''}
+                {userProps.toLocaleString()} props {!canAfford ? '(not enough)' : '✓'}
+              </Text>
+            </View>
+            <View style={[styles.boostBalanceRow, { marginTop: 6 }]}>
+              <Text style={styles.boostBalanceLabel}>All-time earned</Text>
+              <Text style={[styles.boostBalanceVal, { color: '#ffcc00' }]}>
+                {lifetimeProps.toLocaleString()} props
               </Text>
             </View>
 
@@ -1260,11 +1267,19 @@ export default function MarketplaceScreen() {
   const [showBoost, setShowBoost]       = useState(false);
   const [boostTarget, setBoostTarget]   = useState<{ id: string; title: string } | null>(null);
   // User's own props balance (fetched once)
-  const [userProps, setUserProps]       = useState(0);
+  const [userProps,     setUserProps]     = useState(0);
+  const [lifetimeProps, setLifetimeProps] = useState(0);
   useEffect(() => {
     if (!user?.id) return;
-    supabase.from('users').select('total_props').eq('id', user.id).single()
-      .then(({ data }) => setUserProps(data?.total_props ?? 0));
+    supabase
+      .from('users')
+      .select('total_props, lifetime_props')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        setUserProps(data?.total_props ?? 0);
+        setLifetimeProps(data?.lifetime_props ?? data?.total_props ?? 0);
+      });
   }, [user?.id]);
 
   const handleOpenBoost = useCallback((listingId?: string, listingTitle?: string) => {
@@ -1524,6 +1539,7 @@ export default function MarketplaceScreen() {
           listingId={boostTarget.id}
           listingTitle={boostTarget.title}
           userProps={userProps}
+          lifetimeProps={lifetimeProps}
           onClose={() => setShowBoost(false)}
           onSpendProps={async () => {
             if (!user?.id || !boostTarget) return;

@@ -92,8 +92,10 @@ export interface LeaderboardEntry {
   id?: string;
   username?: string | null;
   avatar_url?: string | null;
-  earned_props: number;
-  total_props?: number;
+  earned_props: number;        // leaderboard score (= lifetime_props from global view)
+  total_props?: number;        // spendable wallet balance
+  lifetime_props?: number;     // immutable all-time earned (leaderboard source)
+  spendable_props?: number;    // alias for total_props exposed by leaderboard_global view
   season_props?: number;
   city?: string | null;
   country?: string | null;
@@ -484,10 +486,10 @@ export function useChallenges(currentUserId?: string) {
   const loadUserProps = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from('users')
-      .select('total_props, earned_props, season_props')
+      .select('total_props, earned_props, lifetime_props, season_props')
       .eq('id', userId)
       .single();
-    return data ?? { total_props: 0, earned_props: 0, season_props: 0 };
+    return data ?? { total_props: 0, earned_props: 0, lifetime_props: 0, season_props: 0 };
   }, []);
 
   useEffect(() => {

@@ -18,7 +18,9 @@ export interface UserProfile {
   autoplay_videos?:  boolean;         // default true — controlled in Settings
   followers_count?:  number;          // maintained by DB trigger
   following_count?:  number;          // maintained by DB trigger
-  total_props?:      number;          // maintained manually or via trigger
+  total_props?:      number;          // spendable wallet balance (decrements on spend)
+  earned_props?:     number;          // cumulative earned, never decremented
+  lifetime_props?:   number;          // immutable all-time earned → leaderboard rank source
   created_at?:       string;
   is_admin?:         boolean;          // admin moderation access
 }
