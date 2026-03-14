@@ -315,15 +315,19 @@ export function useChallenges(currentUserId?: string) {
   }, [currentUserId]);
 
   // ── Vote on an entry ──────────────────────────────────────────────────────
+  const VOTE_PROPS = 10; // props awarded for casting a first vote in a challenge
+
   const vote = useCallback(async (
     entryId: string,
     entryPilotId: string,
     isCurrentlyVoted: boolean,
-  ): Promise<{ success: boolean; reason?: string }> => {
+    challengeId?: string,   // needed for per-challenge dedup of vote reward
+  ): Promise<{ success: boolean; reason?: string; propsAwarded?: number }> => {
     if (!currentUserId) return { success: false, reason: 'not_logged_in' };
     if (entryPilotId === currentUserId) return { success: false, reason: 'self_vote' };
 
     if (isCurrentlyVoted) {
+      // Removing a vote — no props change (can't un-earn)
       await supabase.from('challenge_votes').delete()
         .eq('entry_id', entryId).eq('voter_id', currentUserId);
     } else {
@@ -340,7 +344,23 @@ export function useChallenges(currentUserId?: string) {
       });
     } catch (_) {}
 
-    return { success: true };
+    // ── Props reward: 10 props for first vote cast in this challenge ──────────
+    // Only fires when adding a vote (not removing) and challengeId is known.
+    // The props_log_dedup UNIQUE(user_id, reason, reference_id) constraint
+    // silently ignores duplicates, so this is safe to call every time.
+    let propsAwarded = 0;
+    if (!isCurrentlyVoted && challengeId && currentUserId) {
+      const { error: propErr } = await supabase.from('props_log').insert({
+        user_id:      currentUserId,
+        amount:       VOTE_PROPS,
+        reason:       'challenge_vote',
+        reference_id: challengeId,   // one award per challenge, not per entry
+      });
+      if (!propErr) propsAwarded = VOTE_PROPS;
+      // propErr with code '23505' = duplicate = already awarded this week → ignore
+    }
+
+    return { success: true, propsAwarded };
   }, [currentUserId]);
 
   // ── Delete (replace) an entry ─────────────────────────────────────────────

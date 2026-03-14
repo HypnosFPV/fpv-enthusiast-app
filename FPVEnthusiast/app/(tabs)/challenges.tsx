@@ -730,7 +730,12 @@ export default function ChallengesScreen() {
       return;
     }
 
-    const result = await vote(entry.id, entry.pilot_id, entry.has_voted ?? false);
+    const result = await vote(
+      entry.id,
+      entry.pilot_id,
+      entry.has_voted ?? false,
+      entry.challenge_id,          // pass challenge_id for per-challenge vote dedup
+    );
     if (!result.success) {
       if (result.reason === 'self_vote') Alert.alert('Not allowed', 'Cannot vote for yourself.');
       return;
@@ -741,6 +746,11 @@ export default function ChallengesScreen() {
       const was = e.has_voted ?? false;
       return { ...e, has_voted: !was, vote_count: e.vote_count + (was ? -1 : 1) };
     }));
+
+    // Show props toast on first vote in this challenge
+    if (result.propsAwarded && result.propsAwarded > 0) {
+      propsToast.show(`+${result.propsAwarded} Props! Thanks for voting 🗳️`);
+    }
 
     // Mark challenge as voted
     loadChallenges(activeSeason?.id);
