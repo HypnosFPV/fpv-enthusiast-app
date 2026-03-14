@@ -1288,7 +1288,7 @@ export default function MarketplaceScreen() {
   // User's own props balance (fetched once)
   const [userProps,     setUserProps]     = useState(0);
   const [lifetimeProps, setLifetimeProps] = useState(0);
-  useEffect(() => {
+  const refreshUserProps = useCallback(() => {
     if (!user?.id) return;
     supabase
       .from('users')
@@ -1300,6 +1300,10 @@ export default function MarketplaceScreen() {
         setLifetimeProps(data?.lifetime_props ?? data?.total_props ?? 0);
       });
   }, [user?.id]);
+
+  // Fetch on mount + whenever boost sheet opens
+  useEffect(() => { refreshUserProps(); }, [user?.id]);
+  useEffect(() => { if (showBoost) refreshUserProps(); }, [showBoost]);
 
   const handleOpenBoost = useCallback((listingId?: string, listingTitle?: string) => {
     // If called from a specific card, pre-select that listing
