@@ -27,7 +27,6 @@ import ImageZoomModal        from '../../src/components/ImageZoomModal';
 import {
   CATEGORIES, CONDITIONS,
 } from '../../src/hooks/useMarketplace';
-import * as FileSystem from 'expo-file-system/legacy';
 import { supabase }    from '../../src/services/supabase';
 
 const { width: W } = Dimensions.get('window');
@@ -352,9 +351,7 @@ export default function ListingDetailScreen() {
         const mime   = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
         const path   = `marketplace/${listingIdVal}/${Date.now()}_${existingCount + i}.${ext}`;
 
-        const base64    = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-        const fetchResp = await fetch(`data:${mime};base64,${base64}`);
-        const blob      = await fetchResp.blob();
+        const blob      = await uriToBlob(uri);
 
         const { error: upErr } = await supabase.storage
           .from('media')
@@ -1016,6 +1013,19 @@ export default function ListingDetailScreen() {
       </Modal>
     </View>
   );
+}
+
+
+// ── Read a local URI as a Blob via XHR (avoids zero-byte data-URI issue) ──────
+function uriToBlob(uri: string): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.onload  = () => resolve(xhr.response as Blob);
+    xhr.onerror = () => reject(new Error('XHR blob conversion failed for: ' + uri));
+    xhr.responseType = 'blob';
+    xhr.open('GET', uri);
+    xhr.send();
+  });
 }
 
 // ─── MetaRow helper ───────────────────────────────────────────────────────────

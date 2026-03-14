@@ -3,7 +3,6 @@
 // and provides the buyer↔seller message thread for that listing.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../services/supabase';
 import type { MarketplaceListing } from './useMarketplace';
 
@@ -38,6 +37,18 @@ export interface ListingOrder {
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
+// ── XHR blob helper ──────────────────────────────────────────────────────────
+function uriToBlob(uri: string): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.onload  = () => resolve(xhr.response as Blob);
+    xhr.onerror = () => reject(new Error('XHR blob failed: ' + uri));
+    xhr.responseType = 'blob';
+    xhr.open('GET', uri);
+    xhr.send();
+  });
+}
+
 export function useListingDetail(listingId: string, currentUserId?: string) {
   const [listing,      setListing]      = useState<MarketplaceListing | null>(null);
   const [loading,      setLoading]      = useState(true);
@@ -291,9 +302,7 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
         const mime   = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
         const path   = `marketplace/${listingId}/${Date.now()}_${existingCount + i}.${ext}`;
 
-        const base64    = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-        const fetchResp = await fetch(`data:${mime};base64,${base64}`);
-        const blob      = await fetchResp.blob();
+        const blob      = await uriToBlob(uri);
 
         const { error: upErr } = await supabase.storage
           .from('media')

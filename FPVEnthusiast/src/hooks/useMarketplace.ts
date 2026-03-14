@@ -1,6 +1,5 @@
 // src/hooks/useMarketplace.ts
 import { useState, useCallback, useEffect } from 'react';
-import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../services/supabase';
 
 // ─── Category taxonomy ────────────────────────────────────────────────────────
@@ -148,6 +147,18 @@ async function fetchSellerMap(sellerIds: string[]): Promise<Record<string, { id:
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
+
+// ── XHR blob helper (avoids zero-byte data-URI blobs in Hermes) ──────────────
+function uriToBlob(uri: string): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.onload  = () => resolve(xhr.response as Blob);
+    xhr.onerror = () => reject(new Error('XHR blob failed: ' + uri));
+    xhr.responseType = 'blob';
+    xhr.open('GET', uri);
+    xhr.send();
+  });
+}
 
 export function useMarketplace(currentUserId?: string) {
   const [listings, setListings]       = useState<MarketplaceListing[]>([]);
@@ -349,13 +360,7 @@ export function useMarketplace(currentUserId?: string) {
 
           // Read as base64, then convert via data-URI fetch → Blob.
           // This is the most reliable path in React Native / Hermes:
-          //   FileSystem gives us base64 → wrap as data: URI → fetch() converts
-          //   it to a proper Blob → Supabase Storage accepts the Blob correctly.
-          const base64 = await FileSystem.readAsStringAsync(uri, {
-            encoding: 'base64',
-          });
-          const fetchResp = await fetch(`data:${mime};base64,${base64}`);
-          const blob      = await fetchResp.blob();
+          const blob = await uriToBlob(uri);
 
           const { error: upErr } = await supabase.storage
             .from('media')
