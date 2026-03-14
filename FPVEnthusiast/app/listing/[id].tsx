@@ -970,10 +970,12 @@ export default function ListingDetailScreen() {
                 </Text>
               </View>
               <View style={styles.sellerMeta}>
-                {listing.seller?.avg_rating != null && (
+                {listing.seller?.avg_rating != null ? (
                   <Text style={styles.sellerRating}>
                     {starStr(listing.seller.avg_rating)} {listing.seller.avg_rating.toFixed(1)}
                   </Text>
+                ) : (
+                  <Text style={styles.sellerNewBadge}>🆕 New seller</Text>
                 )}
                 {listing.seller?.total_sales != null && listing.seller.total_sales > 0 && (
                   <Text style={styles.sellerSales}>
@@ -1160,9 +1162,10 @@ export default function ListingDetailScreen() {
         messages={messages}
         sending={sending}
         currentUserId={user?.id ?? ''}
-        onSend={body => {
+        onSend={async body => {
           if (!listing.seller_id) return;
-          sendMessage(body, listing.seller_id);
+          const ok = await sendMessage(body, listing.seller_id);
+          if (!ok) Alert.alert('Send failed', 'Message could not be sent. Check your connection and try again.');
         }}
       />
 
@@ -1473,6 +1476,7 @@ const styles = StyleSheet.create({
   sellerName:     { color: '#fff', fontWeight: '700', fontSize: 15 },
   sellerMeta:     { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
   sellerRating:   { color: '#f59e0b', fontSize: 12, fontWeight: '600' },
+  sellerNewBadge: { color: '#60a5fa', fontSize: 11, fontWeight: '600' },
   sellerSales:    { color: '#888', fontSize: 12, marginLeft: 4 },
 
   // sections

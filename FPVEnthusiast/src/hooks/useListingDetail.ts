@@ -218,9 +218,7 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
         sender:sender_id ( username, avatar_url )
       `)
       .eq('listing_id', listingId)
-      .or(
-        `and(buyer_id.eq.${currentUserId}),and(seller_id.eq.${currentUserId})`
-      )
+      .or(`buyer_id.eq.${currentUserId},seller_id.eq.${currentUserId}`)
       .order('created_at', { ascending: true })
       .limit(100);
     setMessages((data ?? []) as ListingMessage[]);
@@ -241,8 +239,8 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
   const sendMessage = useCallback(async (body: string, sellerId: string): Promise<boolean> => {
     if (!currentUserId || !body.trim()) return false;
     setSending(true);
-    const isbuyer = currentUserId !== sellerId;
-    const buyerId  = isbuyer ? currentUserId : listing?.seller_id ?? sellerId;
+    const isbuyer  = currentUserId !== sellerId;
+    const buyerId  = isbuyer ? currentUserId : (listing?.seller_id ?? sellerId);
     const { error } = await supabase.from('marketplace_messages').insert({
       listing_id: listingId,
       sender_id:  currentUserId,
@@ -250,9 +248,15 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
       seller_id:  sellerId,
       body:       body.trim(),
     });
+    if (error) {
+      console.warn('[sendMessage] insert error:', error.message, error.code);
+    } else {
+      // Fallback refresh in case realtime is slow / not connected
+      await fetchMessages();
+    }
     setSending(false);
     return !error;
-  }, [currentUserId, listingId, listing?.seller_id]);
+  }, [currentUserId, listingId, listing?.seller_id, fetchMessages]);
 
   // ── Realtime: subscribe to new messages ───────────────────────────────────
   const subscribeMessages = useCallback(() => {
@@ -496,6 +500,7 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
       .single();
 
     if (offerErr || !offerData) {
+      console.warn('[sendOffer] insert error:', offerErr?.message, offerErr?.code);
       return { ok: false, error: offerErr?.message ?? 'Failed to create offer' };
     }
 
