@@ -1336,6 +1336,8 @@ export default function MarketplaceScreen() {
   } = useFeaturedListings();
   const [showBoost, setShowBoost]       = useState(false);
   const [boostTarget, setBoostTarget]   = useState<{ id: string; title: string } | null>(null);
+  const [showListingPicker, setShowListingPicker] = useState(false);
+  const [myListings, setMyListings] = useState<{ id: string; title: string }[]>([]);
   // User's own props balance (fetched once)
   const [userProps,     setUserProps]     = useState(0);
   const [lifetimeProps, setLifetimeProps] = useState(0);
@@ -1350,6 +1352,14 @@ export default function MarketplaceScreen() {
         setUserProps(data?.total_props ?? 0);
         setLifetimeProps(data?.lifetime_props ?? data?.total_props ?? 0);
       });
+    // Also refresh the user's own active listings for the picker
+    supabase
+      .from('marketplace_listings')
+      .select('id, title')
+      .eq('seller_id', user.id)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setMyListings(data ?? []));
   }, [user?.id]);
 
   // Fetch on mount + whenever boost sheet opens
@@ -1357,21 +1367,25 @@ export default function MarketplaceScreen() {
   useEffect(() => { if (showBoost) refreshUserProps(); }, [showBoost]);
 
   const handleOpenBoost = useCallback((listingId?: string, listingTitle?: string) => {
-    // If called from a specific card, pre-select that listing
-    // Otherwise let user pick from their own listings (future phase)
+    // Called from a specific card → pre-select it
     if (listingId && listingTitle) {
       setBoostTarget({ id: listingId, title: listingTitle });
-    } else {
-      // Find first active listing owned by user
-      const own = listings?.find(l => l.seller_id === user?.id);
-      if (own) setBoostTarget({ id: own.id, title: own.title });
-      else {
-        Alert.alert('No active listing', 'Create a listing first, then boost it to the Featured carousel.');
-        return;
-      }
+      setShowBoost(true);
+      return;
     }
-    setShowBoost(true);
-  }, [listings, user?.id]);
+    // Called from the top button → let user pick if they have multiple listings
+    if (myListings.length === 0) {
+      Alert.alert('No active listing', 'Create a listing first, then boost it to the Featured carousel.');
+      return;
+    }
+    if (myListings.length === 1) {
+      setBoostTarget({ id: myListings[0].id, title: myListings[0].title });
+      setShowBoost(true);
+      return;
+    }
+    // Multiple listings → show picker
+    setShowListingPicker(true);
+  }, [myListings]);
 
   const [searchText, setSearchText]     = useState('');
   const [selectedCat, setSelectedCat]   = useState<CategorySlug | null>(null);
@@ -1617,6 +1631,47 @@ export default function MarketplaceScreen() {
         onApply={f => applyFilters({ ...filters, ...f })}
         current={filters}
       />
+      {/* ── Listing Picker (when user has multiple listings) ────────── */}
+      <Modal visible={showListingPicker} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowListingPicker(false)}>
+        <View style={{ flex: 1, backgroundColor: '#111', paddingTop: 16 }}>
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: '#444', alignSelf: 'center', marginBottom: 16 }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 8 }}>
+            <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>⚡ Choose a Listing to Boost</Text>
+            <TouchableOpacity onPress={() => setShowListingPicker(false)}>
+              <Ionicons name="close" size={24} color="#666" />
+            </TouchableOpacity>
+          </View>
+          <Text style={{ color: '#888', fontSize: 13, paddingHorizontal: 20, marginBottom: 16 }}>
+            Select which listing you want to pin in the Featured carousel.
+          </Text>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, gap: 10 }}>
+            {myListings.map(l => (
+              <TouchableOpacity
+                key={l.id}
+                style={{
+                  backgroundColor: '#1a1a1a', borderRadius: 12, padding: 16,
+                  borderWidth: 1, borderColor: '#333',
+                  flexDirection: 'row', alignItems: 'center', gap: 12,
+                }}
+                onPress={() => {
+                  setBoostTarget({ id: l.id, title: l.title });
+                  setShowListingPicker(false);
+                  setShowBoost(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }} numberOfLines={2}>{l.title}</Text>
+                </View>
+                <View style={{ backgroundColor: '#ffcc0022', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: '#ffcc0044' }}>
+                  <Text style={{ color: '#ffcc00', fontSize: 12, fontWeight: '700' }}>⚡ Boost</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
+
       {boostTarget && (
         <BoostModal
           visible={showBoost}
