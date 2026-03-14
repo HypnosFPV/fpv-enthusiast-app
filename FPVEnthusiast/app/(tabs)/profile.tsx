@@ -1005,45 +1005,6 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <View style={styles.settingsSection}>
-              <Text style={styles.settingsSectionTitle}>🔔 Challenge Notifications</Text>
-              <View style={styles.settingsRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.settingsLabel}>Voting Opens</Text>
-                  <Text style={[styles.settingsValue, { fontSize: 11 }]}>When Saturday voting starts</Text>
-                </View>
-                <Switch
-                  value={challengePrefs?.challenge_voting ?? true}
-                  onValueChange={(val) => updatePreferences({ challenge_voting: val })}
-                  trackColor={{ true: '#ff6b35', false: '#333' }}
-                  thumbColor="#fff"
-                />
-              </View>
-              <View style={styles.settingsRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.settingsLabel}>2-Hour Warning</Text>
-                  <Text style={[styles.settingsValue, { fontSize: 11 }]}>Reminder before voting closes</Text>
-                </View>
-                <Switch
-                  value={challengePrefs?.challenge_closing ?? true}
-                  onValueChange={(val) => updatePreferences({ challenge_closing: val })}
-                  trackColor={{ true: '#ff6b35', false: '#333' }}
-                  thumbColor="#fff"
-                />
-              </View>
-              <View style={styles.settingsRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.settingsLabel}>Results Announced</Text>
-                  <Text style={[styles.settingsValue, { fontSize: 11 }]}>When winners are revealed Monday</Text>
-                </View>
-                <Switch
-                  value={challengePrefs?.challenge_results ?? true}
-                  onValueChange={(val) => updatePreferences({ challenge_results: val })}
-                  trackColor={{ true: '#ff6b35', false: '#333' }}
-                  thumbColor="#fff"
-                />
-              </View>
-            </View>
 
             <View style={styles.settingsSection}>
               <Text style={styles.settingsSectionTitle}>Privacy</Text>
