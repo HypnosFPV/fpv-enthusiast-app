@@ -317,7 +317,7 @@ export default function ListingDetailScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'] as ImagePicker.MediaTypeOptions[],
       allowsMultipleSelection: true,
       quality: 0.85,
       selectionLimit: 8,

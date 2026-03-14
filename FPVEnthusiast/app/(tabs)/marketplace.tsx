@@ -470,6 +470,7 @@ const ListingCard = React.memo(({
     ? (item.current_bid ? `$${displayPrice.toFixed(2)} bid` : `$${item.price.toFixed(2)} start`)
     : `$${item.price.toFixed(2)}`;
   const cat = CATEGORIES.find(c => c.slug === item.category);
+  const [imgOk, setImgOk] = useState(true);
 
   // ── Staggered slide-up entry animation ────────────────────────────────────
   const cardOpacity    = useRef(new Animated.Value(0)).current;
@@ -546,18 +547,21 @@ const ListingCard = React.memo(({
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
       {/* Image */}
       <View style={styles.cardImageWrap}>
-        {image?.url ? (
+        {image?.url && imgOk ? (
           <ExpoImage
             source={{ uri: image.url }}
             style={styles.cardImage}
             contentFit="cover"
             transition={200}
             placeholder={{ color: '#1a1a1a' }}
-            onError={() => console.warn('[ListingCard] failed to load:', image.url)}
+            onError={() => { console.warn('[ListingCard] failed to load:', image.url); setImgOk(false); }}
           />
         ) : (
           <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
             <Text style={{ fontSize: 32 }}>{cat?.icon ?? '📦'}</Text>
+            {image?.url && !imgOk && (
+              <Text style={{ fontSize: 9, color: '#555', marginTop: 2 }}>Bucket not public</Text>
+            )}
           </View>
         )}
         {/* Watch heart */}
@@ -796,7 +800,7 @@ const CreateListingModal = ({
       Alert.alert('Permission needed', 'Allow photo access to add listing photos.'); return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'] as ImagePicker.MediaTypeOptions[],
       allowsMultipleSelection: true,
       selectionLimit: 8,
       quality: 0.85,
