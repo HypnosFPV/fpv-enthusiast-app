@@ -12,7 +12,7 @@ import {
   Platform, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
 import {
@@ -786,6 +786,13 @@ export default function MarketplaceScreen() {
   const [showFilter, setShowFilter]     = useState(false);
   const [showCreate, setShowCreate]     = useState(false);
   const [showTrust, setShowTrust]       = useState(true);
+
+  // Reset trust panel every time the tab comes back into focus
+  useFocusEffect(
+    useCallback(() => {
+      setShowTrust(true);
+    }, [])
+  );
   const [searchActive, setSearchActive] = useState(false);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
