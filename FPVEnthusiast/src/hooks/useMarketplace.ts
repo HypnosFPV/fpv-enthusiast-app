@@ -1,0 +1,350 @@
+// src/hooks/useMarketplace.ts
+import { useState, useCallback, useEffect } from 'react';
+import { supabase } from '../services/supabase';
+
+// ─── Category taxonomy ────────────────────────────────────────────────────────
+
+export const CATEGORIES = [
+  { slug: 'frames',       label: 'Frames',         icon: '🏗️' },
+  { slug: 'flight_ctrl',  label: 'Flight Controllers', icon: '🖥️' },
+  { slug: 'escs',         label: 'ESCs',            icon: '⚡' },
+  { slug: 'motors',       label: 'Motors',          icon: '🔄' },
+  { slug: 'video',        label: 'Video Systems',   icon: '📡' },
+  { slug: 'radio',        label: 'Radio / RX',      icon: '📻' },
+  { slug: 'batteries',    label: 'Batteries',       icon: '🔋' },
+  { slug: 'props',        label: 'Props',           icon: '🌀' },
+  { slug: 'cameras',      label: 'Cameras',         icon: '📷' },
+  { slug: 'goggles',      label: 'Goggles',         icon: '🥽' },
+  { slug: 'whole_builds', label: 'Whole Builds',    icon: '🚁' },
+  { slug: 'tools',        label: 'Tools & Chargers', icon: '🔧' },
+  { slug: 'parts',        label: 'Parts & Hardware', icon: '🔩' },
+  { slug: 'other',        label: 'Other',           icon: '📦' },
+] as const;
+
+export type CategorySlug = typeof CATEGORIES[number]['slug'];
+
+export const CONDITIONS = [
+  { value: 'new',       label: 'New',         color: '#00e676' },
+  { value: 'like_new',  label: 'Like New',    color: '#69f0ae' },
+  { value: 'good',      label: 'Good',        color: '#ffcc00' },
+  { value: 'fair',      label: 'Fair',        color: '#ff9100' },
+  { value: 'for_parts', label: 'For Parts',   color: '#ff4444' },
+] as const;
+
+export type ConditionValue = typeof CONDITIONS[number]['value'];
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface ListingImage {
+  id: string;
+  url: string;
+  position: number;
+  is_primary: boolean;
+}
+
+export interface MarketplaceListing {
+  id: string;
+  seller_id: string;
+  title: string;
+  description: string;
+  category: CategorySlug;
+  subcategory?: string | null;
+  condition: ConditionValue;
+  condition_notes?: string | null;
+  price: number;
+  buy_now_price?: number | null;
+  listing_type: 'fixed' | 'auction' | 'hybrid' | 'offer';
+  status: 'draft' | 'active' | 'sold' | 'ended' | 'cancelled' | 'flagged';
+  auction_end?: string | null;
+  current_bid?: number | null;
+  bid_count: number;
+  ships_from_state?: string | null;
+  shipping_cost?: number | null;
+  free_shipping: boolean;
+  lipo_hazmat: boolean;
+  view_count: number;
+  created_at: string;
+  updated_at: string;
+  // joined
+  listing_images?: ListingImage[];
+  seller?: {
+    id: string;
+    username: string | null;
+    avatar_url: string | null;
+    avg_rating?: number;
+    total_sales?: number;
+    verification_tier?: number;
+  } | null;
+  is_watched?: boolean;
+}
+
+export interface CreateListingParams {
+  title: string;
+  description: string;
+  category: CategorySlug;
+  subcategory?: string;
+  condition: ConditionValue;
+  condition_notes?: string;
+  price: number;
+  listing_type?: 'fixed' | 'offer';
+  ships_from_state?: string;
+  shipping_cost?: number;
+  free_shipping?: boolean;
+  weight_oz?: number;
+  lipo_hazmat?: boolean;
+  imageUris?: string[];
+}
+
+export interface MarketplaceFilters {
+  category?: CategorySlug | null;
+  condition?: ConditionValue | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  searchQuery?: string;
+  freeShipping?: boolean;
+}
+
+const PAGE_SIZE = 20;
+
+const LISTING_SELECT = `
+  id, seller_id, title, description, category, subcategory,
+  condition, condition_notes, price, buy_now_price, listing_type,
+  status, auction_end, current_bid, bid_count,
+  ships_from_state, shipping_cost, free_shipping, lipo_hazmat,
+  view_count, created_at, updated_at,
+  listing_images (id, url, position, is_primary),
+  seller:seller_id (
+    id:user_id,
+    users:user_id (id, username, avatar_url),
+    avg_rating, total_sales, verification_tier
+  )
+`;
+
+// Simpler select that joins users directly
+const LISTING_SELECT_V2 = `
+  id, seller_id, title, description, category, subcategory,
+  condition, condition_notes, price, buy_now_price, listing_type,
+  status, auction_end, current_bid, bid_count,
+  ships_from_state, shipping_cost, free_shipping, lipo_hazmat,
+  view_count, created_at, updated_at,
+  listing_images (id, url, position, is_primary),
+  users:seller_id (id, username, avatar_url)
+`;
+
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+
+export function useMarketplace(currentUserId?: string) {
+  const [listings, setListings]       = useState<MarketplaceListing[]>([]);
+  const [loading, setLoading]         = useState(true);
+  const [refreshing, setRefreshing]   = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore]         = useState(true);
+  const [page, setPage]               = useState(0);
+  const [watchlist, setWatchlist]     = useState<Set<string>>(new Set());
+  const [filters, setFiltersState]    = useState<MarketplaceFilters>({});
+
+  // ── Fetch watchlist IDs ────────────────────────────────────────────────────
+  const fetchWatchlist = useCallback(async () => {
+    if (!currentUserId) return;
+    const { data } = await supabase
+      .from('listing_watchlist')
+      .select('listing_id')
+      .eq('user_id', currentUserId);
+    if (data) setWatchlist(new Set(data.map((r: any) => r.listing_id)));
+  }, [currentUserId]);
+
+  // ── Build query with filters ───────────────────────────────────────────────
+  const buildQuery = useCallback((fromPage: number, activeFilters: MarketplaceFilters) => {
+    let q = supabase
+      .from('marketplace_listings')
+      .select(LISTING_SELECT_V2)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .range(fromPage * PAGE_SIZE, fromPage * PAGE_SIZE + PAGE_SIZE - 1);
+
+    if (activeFilters.category)   q = q.eq('category', activeFilters.category);
+    if (activeFilters.condition)  q = q.eq('condition', activeFilters.condition);
+    if (activeFilters.minPrice)   q = q.gte('price', activeFilters.minPrice);
+    if (activeFilters.maxPrice)   q = q.lte('price', activeFilters.maxPrice);
+    if (activeFilters.freeShipping) q = q.eq('free_shipping', true);
+    if (activeFilters.searchQuery?.trim()) {
+      q = q.ilike('title', `%${activeFilters.searchQuery.trim()}%`);
+    }
+    return q;
+  }, []);
+
+  // ── Normalize raw row ──────────────────────────────────────────────────────
+  const normalize = useCallback((raw: any, watchSet: Set<string>): MarketplaceListing => {
+    const users = Array.isArray(raw.users) ? raw.users[0] : raw.users;
+    return {
+      ...raw,
+      listing_images: (raw.listing_images ?? []).sort((a: any, b: any) => a.position - b.position),
+      seller: users ? { id: users.id, username: users.username, avatar_url: users.avatar_url } : null,
+      is_watched: watchSet.has(raw.id),
+    };
+  }, []);
+
+  // ── Initial / refresh load ─────────────────────────────────────────────────
+  const loadListings = useCallback(async (activeFilters: MarketplaceFilters = {}) => {
+    setLoading(true);
+    setPage(0);
+    setHasMore(true);
+
+    const [{ data, error }, wl] = await Promise.all([
+      buildQuery(0, activeFilters),
+      currentUserId ? supabase
+        .from('listing_watchlist')
+        .select('listing_id')
+        .eq('user_id', currentUserId) : Promise.resolve({ data: [] }),
+    ]);
+
+    const wlSet = new Set<string>(
+      ((wl as any)?.data ?? []).map((r: any) => r.listing_id)
+    );
+    setWatchlist(wlSet);
+
+    if (!error && data) {
+      const normalized = data.map((r: any) => normalize(r, wlSet));
+      setListings(normalized);
+      if (data.length < PAGE_SIZE) setHasMore(false);
+    }
+    setLoading(false);
+    setRefreshing(false);
+  }, [buildQuery, normalize, currentUserId]);
+
+  // ── Load more ──────────────────────────────────────────────────────────────
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    const { data, error } = await buildQuery(nextPage, filters);
+    if (!error && data && data.length > 0) {
+      const normalized = data.map((r: any) => normalize(r, watchlist));
+      setListings(prev => {
+        const ids = new Set(prev.map(l => l.id));
+        return [...prev, ...normalized.filter(l => !ids.has(l.id))];
+      });
+      setPage(nextPage);
+      if (data.length < PAGE_SIZE) setHasMore(false);
+    } else {
+      setHasMore(false);
+    }
+    setLoadingMore(false);
+  }, [loadingMore, hasMore, page, filters, buildQuery, normalize, watchlist]);
+
+  // ── Apply filters ──────────────────────────────────────────────────────────
+  const applyFilters = useCallback((newFilters: MarketplaceFilters) => {
+    setFiltersState(newFilters);
+    loadListings(newFilters);
+  }, [loadListings]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadListings(filters);
+  }, [loadListings, filters]);
+
+  // ── Toggle watchlist ───────────────────────────────────────────────────────
+  const toggleWatch = useCallback(async (listingId: string) => {
+    if (!currentUserId) return;
+    const isWatched = watchlist.has(listingId);
+    // Optimistic
+    setWatchlist(prev => {
+      const next = new Set(prev);
+      isWatched ? next.delete(listingId) : next.add(listingId);
+      return next;
+    });
+    setListings(prev => prev.map(l =>
+      l.id === listingId ? { ...l, is_watched: !isWatched } : l
+    ));
+    if (isWatched) {
+      await supabase.from('listing_watchlist')
+        .delete()
+        .eq('user_id', currentUserId)
+        .eq('listing_id', listingId);
+    } else {
+      await supabase.from('listing_watchlist')
+        .insert({ user_id: currentUserId, listing_id: listingId });
+    }
+  }, [currentUserId, watchlist]);
+
+  // ── Create listing ─────────────────────────────────────────────────────────
+  const createListing = useCallback(async (params: CreateListingParams) => {
+    if (!currentUserId) return { ok: false, error: 'Not logged in' };
+
+    const { imageUris, ...rest } = params;
+
+    // Upsert seller profile row
+    await supabase.from('seller_profiles')
+      .upsert({ user_id: currentUserId }, { onConflict: 'user_id', ignoreDuplicates: true });
+
+    const { data: listing, error } = await supabase
+      .from('marketplace_listings')
+      .insert({ ...rest, seller_id: currentUserId, status: 'active' })
+      .select('id')
+      .single();
+
+    if (error || !listing) return { ok: false, error: error?.message ?? 'Failed to create listing' };
+
+    // Upload images
+    if (imageUris?.length) {
+      const imageRows: { listing_id: string; url: string; position: number; is_primary: boolean }[] = [];
+      for (let i = 0; i < imageUris.length; i++) {
+        const uri = imageUris[i];
+        try {
+          const response = await fetch(uri);
+          const blob = await response.blob();
+          const ext = uri.split('.').pop()?.split('?')[0] ?? 'jpg';
+          const path = `marketplace/${listing.id}/${Date.now()}_${i}.${ext}`;
+          const { error: upErr } = await supabase.storage
+            .from('media')
+            .upload(path, blob, { contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}` });
+          if (!upErr) {
+            const { data: urlData } = supabase.storage.from('media').getPublicUrl(path);
+            if (urlData.publicUrl) {
+              imageRows.push({ listing_id: listing.id, url: urlData.publicUrl, position: i, is_primary: i === 0 });
+            }
+          }
+        } catch (_) {}
+      }
+      if (imageRows.length) {
+        await supabase.from('listing_images').insert(imageRows);
+      }
+    }
+
+    return { ok: true, listingId: listing.id };
+  }, [currentUserId]);
+
+  // ── Delete listing ─────────────────────────────────────────────────────────
+  const deleteListing = useCallback(async (listingId: string) => {
+    if (!currentUserId) return { ok: false };
+    const { error } = await supabase
+      .from('marketplace_listings')
+      .update({ status: 'cancelled' })
+      .eq('id', listingId)
+      .eq('seller_id', currentUserId);
+    if (!error) {
+      setListings(prev => prev.filter(l => l.id !== listingId));
+    }
+    return { ok: !error };
+  }, [currentUserId]);
+
+  // ── Initial load ───────────────────────────────────────────────────────────
+  useEffect(() => { loadListings({}); }, []);
+
+  return {
+    listings,
+    loading,
+    refreshing,
+    loadingMore,
+    hasMore,
+    watchlist,
+    filters,
+    loadListings,
+    loadMore,
+    applyFilters,
+    onRefresh,
+    toggleWatch,
+    createListing,
+    deleteListing,
+  };
+}
