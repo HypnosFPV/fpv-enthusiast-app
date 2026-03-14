@@ -822,7 +822,7 @@ const CreateListingModal = ({
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.createModal} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.createModal}>
         <StatusBar barStyle="light-content" />
         {/* Header */}
         <View style={styles.createHeader}>
@@ -844,7 +844,7 @@ const CreateListingModal = ({
           ))}
         </View>
 
-        <ScrollView style={styles.createBody} keyboardShouldPersistTaps="handled">
+        <ScrollView style={styles.createBody} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={true}>
           {step === 'basics' && (
             <View>
               {/* Photos */}
@@ -1097,7 +1097,7 @@ const CreateListingModal = ({
             </TouchableOpacity>
           )}
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 };

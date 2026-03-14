@@ -206,7 +206,25 @@ export function useMarketplace(currentUserId?: string) {
     );
     setWatchlist(wlSet);
 
-    if (!error && data) {
+    if (error) {
+      console.error('[useMarketplace] loadListings error:', JSON.stringify(error));
+      // If join failed (e.g. missing FK) try a bare query without embedded user join
+      if (error.code === 'PGRST200' || error.message?.includes('could not find')) {
+        const { data: bare, error: bareErr } = await supabase
+          .from('marketplace_listings')
+          .select('id, seller_id, title, description, category, subcategory, condition, condition_notes, price, buy_now_price, listing_type, status, auction_end, current_bid, bid_count, ships_from_state, shipping_cost, free_shipping, lipo_hazmat, view_count, created_at, updated_at, listing_images (id, url, position, is_primary)')
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+          .range(0, PAGE_SIZE - 1);
+        if (!bareErr && bare) {
+          const normalized = bare.map((r: any) => normalize(r, wlSet));
+          setListings(normalized);
+          if (bare.length < PAGE_SIZE) setHasMore(false);
+        } else {
+          console.error('[useMarketplace] bare fallback error:', JSON.stringify(bareErr));
+        }
+      }
+    } else if (data) {
       const normalized = data.map((r: any) => normalize(r, wlSet));
       setListings(normalized);
       if (data.length < PAGE_SIZE) setHasMore(false);
