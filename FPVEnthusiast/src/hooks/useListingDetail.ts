@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../services/supabase';
+import { sendMarketplaceNotification } from '../utils/marketplaceNotifications';
 import type { MarketplaceListing } from './useMarketplace';
 
 // ─── Message thread ────────────────────────────────────────────────────────────
@@ -236,11 +237,14 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     setMessagesLoad(false);
   }, [currentUserId, listingId]);
 
-  const sendMessage = useCallback(async (body: string, sellerId: string): Promise<boolean> => {
+  const sendMessage = useCallback(async (body: string, sellerId: string, buyerIdOverride?: string): Promise<boolean> => {
     if (!currentUserId || !body.trim()) return false;
     setSending(true);
     const isbuyer  = currentUserId !== sellerId;
-    const buyerId  = isbuyer ? currentUserId : (listing?.seller_id ?? sellerId);
+    // If seller is replying, use buyerIdOverride (derived from existing thread)
+    const buyerId  = isbuyer
+      ? currentUserId
+      : (buyerIdOverride ?? listing?.seller_id ?? sellerId);
     const { error } = await supabase.from('marketplace_messages').insert({
       listing_id: listingId,
       sender_id:  currentUserId,
@@ -253,6 +257,17 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     } else {
       // Fallback refresh in case realtime is slow / not connected
       await fetchMessages();
+      // Notify the other party (fire-and-forget)
+      if (currentUserId !== sellerId) {
+        // Buyer sent message → notify seller
+        sendMarketplaceNotification({
+          recipientId:  sellerId,
+          actorId:      currentUserId,
+          type:         'new_message',
+          listingId:    listingId,
+          listingTitle: listing?.title ?? 'listing',
+        });
+      }
     }
     setSending(false);
     return !error;
@@ -521,6 +536,15 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
 
     await fetchOffers();
     await fetchMessages();
+    // Notify seller of new offer (fire-and-forget)
+    sendMarketplaceNotification({
+      recipientId:  sellerId,
+      actorId:      currentUserId!,
+      type:         'new_offer',
+      listingId:    listingId,
+      listingTitle: listing?.title ?? 'listing',
+      extraMessage: `$${(amountCents / 100).toFixed(2)}`,
+    });
     return { ok: true };
   }, [currentUserId, listingId, fetchOffers, fetchMessages]);
 
@@ -541,8 +565,22 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
         return m;
       }));
     }
+    if (!error && (data as any)?.ok) {
+      // Notify buyer that offer was accepted
+      const accepted = offers.find(o => o.id === offerId);
+      if (accepted && listingId) {
+        sendMarketplaceNotification({
+          recipientId:  accepted.buyer_id,
+          actorId:      accepted.seller_id,
+          type:         'offer_accepted',
+          listingId:    listingId,
+          listingTitle: listing?.title ?? 'listing',
+          extraMessage: `$${(accepted.amount_cents / 100).toFixed(2)}`,
+        });
+      }
+    }
     return data as { ok: boolean; error?: string } | null;
-  }, [fetchOffers, fetchOrder]);
+  }, [fetchOffers, fetchOrder, offers, listingId, listing?.title]);
 
   const declineOffer = useCallback(async (offerId: string): Promise<{ ok: boolean; error?: string } | null> => {
     const { data, error } = await supabase.rpc('decline_offer', { p_offer_id: offerId });

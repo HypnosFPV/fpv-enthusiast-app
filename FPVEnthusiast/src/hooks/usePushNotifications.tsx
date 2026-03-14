@@ -177,6 +177,13 @@ export function usePushNotifications() {
       switch (data.navigate) {
         case 'challenges':    router.push('/(tabs)/challenges');    break;
         case 'notifications': router.push('/(tabs)/notifications'); break;
+        case 'marketplace':
+          if (data.listingId) {
+            router.push({ pathname: '/listing/[id]', params: { id: data.listingId } } as any);
+          } else {
+            router.push('/(tabs)/marketplace');
+          }
+          break;
         default: break;
       }
     },

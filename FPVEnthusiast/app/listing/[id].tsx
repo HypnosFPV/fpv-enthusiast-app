@@ -562,6 +562,8 @@ export default function ListingDetailScreen() {
 
   const isOwner  = user?.id === listing?.seller_id;
   const isBuyer  = activeOrder?.buyer_id === user?.id;
+  const unreadMsgCount  = messages.filter(m => !m.read && m.sender_id !== user?.id).length;
+  const pendingOfferCount = offers.filter(o => o.status === 'pending').length;
 
   const images   = listing?.listing_images ?? [];
   const primaryUri = images[activeImg]?.url ?? images[0]?.url ?? null;
@@ -987,6 +989,43 @@ export default function ListingDetailScreen() {
             <Ionicons name="chevron-forward" size={16} color="#555" />
           </TouchableOpacity>
 
+          {/* ── Seller inbox (owner only) ── */}
+          {isOwner && (unreadMsgCount > 0 || pendingOfferCount > 0 || messages.length > 0) && (
+            <TouchableOpacity
+              style={styles.sellerInbox}
+              onPress={() => setShowMsg(true)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.sellerInboxLeft}>
+                <Ionicons name="chatbubbles-outline" size={22} color="#38bdf8" />
+                <View>
+                  <Text style={styles.sellerInboxTitle}>Messages & Offers</Text>
+                  <Text style={styles.sellerInboxSub}>
+                    {unreadMsgCount > 0
+                      ? `${unreadMsgCount} unread message${unreadMsgCount > 1 ? 's' : ''}`
+                      : pendingOfferCount > 0
+                        ? `${pendingOfferCount} pending offer${pendingOfferCount > 1 ? 's' : ''}`
+                        : `${messages.length} message${messages.length > 1 ? 's' : ''}`
+                    }
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {unreadMsgCount > 0 && (
+                  <View style={styles.sellerInboxBadge}>
+                    <Text style={styles.sellerInboxBadgeTxt}>{unreadMsgCount}</Text>
+                  </View>
+                )}
+                {pendingOfferCount > 0 && (
+                  <View style={[styles.sellerInboxBadge, { backgroundColor: '#f59e0b' }]}>
+                    <Text style={styles.sellerInboxBadgeTxt}>{pendingOfferCount}</Text>
+                  </View>
+                )}
+                <Ionicons name="chevron-forward" size={16} color="#555" />
+              </View>
+            </TouchableOpacity>
+          )}
+
           {/* ── Description ── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Description</Text>
@@ -1164,7 +1203,9 @@ export default function ListingDetailScreen() {
         currentUserId={user?.id ?? ''}
         onSend={async body => {
           if (!listing.seller_id) return;
-          const ok = await sendMessage(body, listing.seller_id);
+          // When the SELLER replies, derive the buyer_id from existing messages
+          const buyerIdFromThread = messages.find(m => m.buyer_id !== listing.seller_id)?.buyer_id;
+          const ok = await sendMessage(body, listing.seller_id, buyerIdFromThread);
           if (!ok) Alert.alert('Send failed', 'Message could not be sent. Check your connection and try again.');
         }}
       />
@@ -1477,6 +1518,12 @@ const styles = StyleSheet.create({
   sellerMeta:     { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
   sellerRating:   { color: '#f59e0b', fontSize: 12, fontWeight: '600' },
   sellerNewBadge: { color: '#60a5fa', fontSize: 11, fontWeight: '600' },
+  sellerInbox:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0d1a2a', borderRadius: 12, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: '#1a3050' },
+  sellerInboxLeft:      { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  sellerInboxTitle:     { color: '#fff', fontWeight: '700', fontSize: 14 },
+  sellerInboxSub:       { color: '#60a5fa', fontSize: 12, marginTop: 2 },
+  sellerInboxBadge:     { backgroundColor: '#ef4444', borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  sellerInboxBadgeTxt:  { color: '#fff', fontSize: 11, fontWeight: '800' },
   sellerSales:    { color: '#888', fontSize: 12, marginLeft: 4 },
 
   // sections

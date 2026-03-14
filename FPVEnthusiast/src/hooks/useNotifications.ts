@@ -8,7 +8,8 @@ export interface AppNotification {
   user_id:    string;
   actor_id:   string | null;
   type:       'like' | 'comment' | 'follow' | 'mention' | 'reply'
-            | 'challenge_voting_open' | 'challenge_voting_closing' | 'challenge_result';
+            | 'challenge_voting_open' | 'challenge_voting_closing' | 'challenge_result'
+            | 'new_message' | 'new_offer' | 'offer_accepted' | 'offer_declined';
   post_id:    string | null;
   comment_id: string | null;
   message:      string | null;

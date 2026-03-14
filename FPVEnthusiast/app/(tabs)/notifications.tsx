@@ -143,7 +143,11 @@ function buildLabel(actors: GroupedNotif['actors'], type: AppNotification['type'
 function isSystemNotif(type: AppNotification['type']): boolean {
   return type === 'challenge_voting_open' ||
          type === 'challenge_voting_closing' ||
-         type === 'challenge_result';
+         type === 'challenge_result' ||
+         type === 'new_message' ||
+         type === 'new_offer' ||
+         type === 'offer_accepted' ||
+         type === 'offer_declined';
 }
 
 /** One-liner label for system notifications that uses the raw message. */
@@ -191,6 +195,10 @@ const TYPE_META: Record<string, { icon: string; color: string }> = {
   challenge_voting_open:   { icon: 'trophy',           color: '#ff6b35' },
   challenge_voting_closing:{ icon: 'timer',            color: '#e74c3c' },
   challenge_result:        { icon: 'medal',            color: '#f1c40f' },
+  new_message:             { icon: 'chatbubble',       color: '#38bdf8' },
+  new_offer:               { icon: 'pricetag',         color: '#f59e0b' },
+  offer_accepted:          { icon: 'checkmark-circle', color: '#22c55e' },
+  offer_declined:          { icon: 'close-circle',     color: '#ef4444' },
 };
 
 // ─── Avatar Stack ─────────────────────────────────────────────────────────────
