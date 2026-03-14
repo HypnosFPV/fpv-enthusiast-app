@@ -340,7 +340,7 @@ export default function ListingDetailScreen() {
         const mime   = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
         const path   = `marketplace/${listingIdVal}/${Date.now()}_${existingCount + i}.${ext}`;
 
-        const base64    = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        const base64    = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
         const fetchResp = await fetch(`data:${mime};base64,${base64}`);
         const blob      = await fetchResp.blob();
 

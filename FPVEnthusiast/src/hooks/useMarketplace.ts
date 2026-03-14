@@ -352,7 +352,7 @@ export function useMarketplace(currentUserId?: string) {
           //   FileSystem gives us base64 → wrap as data: URI → fetch() converts
           //   it to a proper Blob → Supabase Storage accepts the Blob correctly.
           const base64 = await FileSystem.readAsStringAsync(uri, {
-            encoding: FileSystem.EncodingType.Base64,
+            encoding: 'base64',
           });
           const fetchResp = await fetch(`data:${mime};base64,${base64}`);
           const blob      = await fetchResp.blob();

@@ -3,6 +3,7 @@
 // and provides the buyer↔seller message thread for that listing.
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import * as FileSystem from 'expo-file-system';
 import { supabase } from '../services/supabase';
 import type { MarketplaceListing } from './useMarketplace';
 
@@ -236,6 +237,67 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     };
   }, [fetchListing, fetchWatchStatus, fetchOrder, fetchMessages, subscribeMessages]);
 
+  // ── Add photos to an existing listing (owner only) ────────────────────
+  const addPhotos = useCallback(async (
+    imageUris: string[],
+    currentUserId: string,
+  ): Promise<{ ok: boolean; uploaded: number; error?: string }> => {
+    if (!listingId || !imageUris.length) return { ok: false, uploaded: 0, error: 'No images' };
+
+    // Find the current highest position so new photos append after existing ones
+    const existingCount = listing?.listing_images?.length ?? 0;
+    const imageRows: { listing_id: string; url: string; position: number; is_primary: boolean }[] = [];
+    let lastError: string | undefined;
+
+    for (let i = 0; i < imageUris.length; i++) {
+      const uri = imageUris[i];
+      try {
+        const rawExt = (uri.split('.').pop()?.split('?')[0] ?? 'jpg').toLowerCase();
+        const ext    = (rawExt === 'heic' || rawExt === 'heif') ? 'jpeg' : rawExt;
+        const mime   = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+        const path   = `marketplace/${listingId}/${Date.now()}_${existingCount + i}.${ext}`;
+
+        const base64    = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+        const fetchResp = await fetch(`data:${mime};base64,${base64}`);
+        const blob      = await fetchResp.blob();
+
+        const { error: upErr } = await supabase.storage
+          .from('media')
+          .upload(path, blob, { contentType: mime, upsert: true });
+
+        if (upErr) {
+          console.warn('[addPhotos] storage error:', upErr.message);
+          lastError = upErr.message;
+        } else {
+          const { data: urlData } = supabase.storage.from('media').getPublicUrl(path);
+          if (urlData?.publicUrl) {
+            imageRows.push({
+              listing_id: listingId,
+              url:        urlData.publicUrl,
+              position:   existingCount + i,
+              is_primary: existingCount === 0 && i === 0,
+            });
+          }
+        }
+      } catch (e: any) {
+        console.warn('[addPhotos] error:', e?.message);
+        lastError = e?.message ?? 'Upload failed';
+      }
+    }
+
+    if (!imageRows.length) return { ok: false, uploaded: 0, error: lastError ?? 'All uploads failed' };
+
+    const { error: dbErr } = await supabase.from('listing_images').insert(imageRows);
+    if (dbErr) {
+      console.warn('[addPhotos] DB insert error:', dbErr.message);
+      return { ok: false, uploaded: 0, error: dbErr.message };
+    }
+
+    // Refresh listing so gallery updates immediately
+    await fetchListing();
+    return { ok: true, uploaded: imageRows.length };
+  }, [listingId, listing?.listing_images?.length, fetchListing]);
+
   // ── mark_shipped / confirm_receipt helpers ────────────────────────────────
   const markShipped = useCallback(async (orderId: string, trackingNumber: string, carrier?: string) => {
     const { data, error } = await supabase.rpc('mark_shipped', {
@@ -264,5 +326,6 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     messages, messagesLoad, sendMessage, sending,
     activeOrder, fetchOrder,
     markShipped, confirmReceipt,
+    addPhotos,
   };
 }
