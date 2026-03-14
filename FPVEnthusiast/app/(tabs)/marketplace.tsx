@@ -1773,9 +1773,7 @@ export default function MarketplaceScreen() {
 
               {/* Explanation */}
               <Text style={{ fontSize: 12, color: '#555', textAlign: 'center', marginBottom: 24 }}>
-                Boost reward: your listing sold during its featured window,{'
-'}
-                earning you a {soldCelebration.bonus}-prop seller bonus.
+                Boost reward: your listing sold during its featured window,{' '}earning you a {soldCelebration.bonus}-prop seller bonus.
               </Text>
 
               {/* CTA */}
