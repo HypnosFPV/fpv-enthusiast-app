@@ -543,6 +543,23 @@ export default function ProfileScreen() {
     setBuilds((data as Build[]) ?? []);
   }, [user?.id]);
 
+  const loadBoostHistory = useCallback(async () => {
+    if (!user?.id) return;
+    const { data } = await supabase
+      .from('featured_purchases')
+      .select(`
+        id, ends_at, duration_hrs, props_spent, created_at,
+        marketplace_listings (
+          id, title,
+          listing_images ( url, is_primary )
+        )
+      `)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    setBoostHistory(data ?? []);
+  }, [user?.id]);
+
   const loadTabData = useCallback(async (tab: TabKey, force = false) => {
     if (!force && loadedTabsRef.current.has(tab)) return;
     setDataLoading(true);
