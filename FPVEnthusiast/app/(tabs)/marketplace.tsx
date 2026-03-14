@@ -1356,7 +1356,22 @@ export default function MarketplaceScreen() {
   const handleCreateSubmit = useCallback(async (params: CreateListingParams) => {
     const result = await createListing(params);
     if (result.ok) {
-      Alert.alert('🎉 Listing published!', 'Your item is now live in the marketplace.');
+      const hadImages = (params.imageUris?.length ?? 0) > 0;
+      if (hadImages && result.imagesUploaded === 0 && result.imageError) {
+        // Listing created but ALL images failed to upload
+        Alert.alert(
+          '⚠️ Listing published (no photos)',
+          `Your listing is live but photos could not be uploaded.\n\nReason: ${result.imageError}\n\nTip: make sure the SQL migration has been run in Supabase to create the media storage bucket.`,
+          [{ text: 'OK' }],
+        );
+      } else if (hadImages && result.imagesUploaded! < (params.imageUris?.length ?? 0)) {
+        Alert.alert(
+          '⚠️ Listing published (partial photos)',
+          `${result.imagesUploaded} of ${params.imageUris!.length} photo(s) uploaded. Check your connection and try re-listing with photos.`,
+        );
+      } else {
+        Alert.alert('🎉 Listing published!', 'Your item is now live in the marketplace.');
+      }
       onRefresh();
     } else {
       Alert.alert('Error', result.error ?? 'Failed to publish listing. Please try again.');

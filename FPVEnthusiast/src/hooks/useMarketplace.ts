@@ -331,34 +331,39 @@ export function useMarketplace(currentUserId?: string) {
 
     if (error || !listing) return { ok: false, error: error?.message ?? 'Failed to create listing' };
 
-    // ── Upload images via FileSystem (reliable on iOS + Android) ──────────────
+    // ── Upload images ────────────────────────────────────────────────
+    let imagesUploaded = 0;
+    let imageError: string | null = null;
+
     if (imageUris?.length) {
       const imageRows: { listing_id: string; url: string; position: number; is_primary: boolean }[] = [];
+
       for (let i = 0; i < imageUris.length; i++) {
         const uri = imageUris[i];
         try {
-          // Determine extension – normalise heic/heif → jpeg for broad compatibility
+          // Normalise extension: heic/heif → jpeg
           const rawExt = (uri.split('.').pop()?.split('?')[0] ?? 'jpg').toLowerCase();
           const ext    = (rawExt === 'heic' || rawExt === 'heif') ? 'jpeg' : rawExt;
           const mime   = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
           const path   = `marketplace/${listing.id}/${Date.now()}_${i}.${ext}`;
 
-          // Read as base64 via FileSystem (avoids fetch() blob issues on iOS)
+          // Read as base64, then convert via data-URI fetch → Blob.
+          // This is the most reliable path in React Native / Hermes:
+          //   FileSystem gives us base64 → wrap as data: URI → fetch() converts
+          //   it to a proper Blob → Supabase Storage accepts the Blob correctly.
           const base64 = await FileSystem.readAsStringAsync(uri, {
             encoding: FileSystem.EncodingType.Base64,
           });
-
-          // Decode base64 → Uint8Array for Supabase Storage upload
-          const byteChars = atob(base64);
-          const bytes = new Uint8Array(byteChars.length);
-          for (let b = 0; b < byteChars.length; b++) bytes[b] = byteChars.charCodeAt(b);
+          const fetchResp = await fetch(`data:${mime};base64,${base64}`);
+          const blob      = await fetchResp.blob();
 
           const { error: upErr } = await supabase.storage
             .from('media')
-            .upload(path, bytes, { contentType: mime, upsert: false });
+            .upload(path, blob, { contentType: mime, upsert: true });
 
           if (upErr) {
-            console.warn(`[marketplace] upload error for image ${i}:`, upErr.message);
+            console.warn(`[marketplace] upload error image ${i}:`, upErr.message);
+            imageError = upErr.message;
           } else {
             const { data: urlData } = supabase.storage.from('media').getPublicUrl(path);
             if (urlData?.publicUrl) {
@@ -368,19 +373,31 @@ export function useMarketplace(currentUserId?: string) {
                 position:   i,
                 is_primary: i === 0,
               });
+              imagesUploaded++;
             }
           }
-        } catch (e) {
-          console.warn(`[marketplace] image ${i} processing error:`, e);
+        } catch (e: any) {
+          console.warn(`[marketplace] image ${i} error:`, e?.message ?? e);
+          imageError = e?.message ?? 'Upload failed';
         }
       }
+
       if (imageRows.length) {
         const { error: imgErr } = await supabase.from('listing_images').insert(imageRows);
-        if (imgErr) console.warn('[marketplace] listing_images insert error:', imgErr.message);
+        if (imgErr) {
+          console.warn('[marketplace] listing_images insert error:', imgErr.message);
+          imageError = imgErr.message;
+          imagesUploaded = 0; // row not saved
+        }
       }
     }
 
-    return { ok: true, listingId: listing.id };
+    return {
+      ok: true,
+      listingId: listing.id,
+      imagesUploaded,
+      imageError,
+    };
   }, [currentUserId]);
 
   // ── Delete listing ─────────────────────────────────────────────────────────
