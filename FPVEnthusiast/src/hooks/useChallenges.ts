@@ -168,6 +168,7 @@ export function useChallenges(currentUserId?: string) {
     let myVotedChallengeIds: string[] = [];
     if (currentUserId && data?.length) {
       const ids = data.map((c: any) => c.id);
+      // Fetch user's own entries (for my_entry)
       const { data: mine } = await supabase
         .from('challenge_entries')
         .select('*')
@@ -175,14 +176,32 @@ export function useChallenges(currentUserId?: string) {
         .in('challenge_id', ids);
       (mine ?? []).forEach((e: any) => { myEntries[e.challenge_id] = e; });
 
-      // Check if user has voted in each challenge (challenge_votes joined to challenge_entries)
+      // Fetch ALL entries for these challenges (lightweight — only id + challenge_id)
+      // Needed to map any voted entry_id → challenge_id regardless of pilot.
+      const { data: allEntries } = await supabase
+        .from('challenge_entries')
+        .select('id, challenge_id')
+        .in('challenge_id', ids);
+
+      // Check if user has voted in each challenge.
+      // Avoid embedded PostgREST join (needs FK) — instead look up challenge_id
+      // from the entries we already fetched in 'mine' above.
+      const entryIdToChallengeId: Record<string, string> = {};
+      (mine ?? []).forEach((e: any) => { entryIdToChallengeId[e.id] = e.challenge_id; });
+
       const { data: myVotes } = await supabase
         .from('challenge_votes')
-        .select('entry_id, challenge_entries(challenge_id)')
+        .select('entry_id')
         .eq('voter_id', currentUserId);
       (myVotes ?? []).forEach((v: any) => {
-        const cid = v.challenge_entries?.challenge_id;
-        if (cid) myVotedChallengeIds.push(cid);
+        // First try the local map (entries the user submitted)
+        const cid = entryIdToChallengeId[v.entry_id];
+        if (cid) { myVotedChallengeIds.push(cid); return; }
+        // Fallback: scan allEntries for this entry_id
+        // (user voted on someone else's entry — pilot_id != currentUserId)
+        for (const e of (allEntries ?? [])) {
+          if (e.id === v.entry_id) { myVotedChallengeIds.push(e.challenge_id); return; }
+        }
       });
     }
 
