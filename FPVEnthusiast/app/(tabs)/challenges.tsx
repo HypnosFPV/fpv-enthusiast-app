@@ -1124,23 +1124,28 @@ export default function ChallengesScreen() {
   // ── Entry card ────────────────────────────────────────────────────────────
   const renderEntry = (e: ChallengeEntry, phase: 'submission' | 'voting' | 'completed') => {
     const isRevealed = phase === 'completed';
+    // Any signed-in user can vote during the voting phase on entries that
+    // aren't their own.  We intentionally drop the !!my_entry gate here so
+    // observers who haven't submitted can still participate in voting.
     const canVote    = phase === 'voting' &&
-                       !!weeklyChallenge?.my_entry &&
+                       !!user &&
                        e.pilot_id !== user?.id;
     const isSelf     = e.pilot_id === user?.id;
 
     return (
-      <TouchableOpacity key={e.id} style={styles.entryCard} activeOpacity={0.85}
-        onPress={() => e.video_url ? setPlayingEntry(e) : null}>
+      // Outer card is a View so it never swallows the inner vote-button press.
+      // The thumbnail / play-button overlay handles video tap separately.
+      <View key={e.id} style={styles.entryCard}>
         {e.thumbnail_url ? (
-          <View>
+          <TouchableOpacity activeOpacity={0.85}
+            onPress={() => e.video_url ? setPlayingEntry(e) : null}>
             <Image source={{ uri: e.thumbnail_url }} style={styles.entryThumb} resizeMode="cover" />
             {e.video_url && (
               <View style={styles.entryPlayOverlay}>
                 <Ionicons name="play-circle" size={28} color="rgba(255,255,255,0.85)" />
               </View>
             )}
-          </View>
+          </TouchableOpacity>
         ) : (
           <View style={[styles.entryThumb, styles.entryThumbPlaceholder]}>
             <Ionicons name="videocam-outline" size={24} color={C.muted} />
@@ -1231,7 +1236,7 @@ export default function ChallengesScreen() {
             </View>
           )}
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
