@@ -83,6 +83,7 @@ const BoostModal = ({
   listingId,
   listingTitle,
   userProps,
+  lifetimeProps,
   onClose,
   onSpendProps,
 }: {

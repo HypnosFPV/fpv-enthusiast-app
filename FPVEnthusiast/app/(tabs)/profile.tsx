@@ -334,7 +334,7 @@ export default function ProfileScreen() {
   const [showMultiGP,     setShowMultiGP]     = useState(false);
   const [followModal,     setFollowModal]     = useState<'followers' | 'following' | null>(null);
   const [showPropsLog,    setShowPropsLog]    = useState(false);
-  const [propsLog,        setPropsLog]        = useState<{ id: string; amount: number; reason: string; created_at: string }[]>([]);
+  const [propsLog,        setPropsLog]        = useState<{ id: string; amount: number; reason: string; created_at: string; isSpend?: boolean }[]>([]);
   const [propsLogLoading, setPropsLogLoading] = useState(false);
 
   // ── Stats card animations ──────────────────────────────────────────────────
@@ -465,14 +465,64 @@ export default function ProfileScreen() {
   const loadPropsLog = useCallback(async () => {
     if (!user?.id) return;
     setPropsLogLoading(true);
-    const { data } = await supabase
-      .from('props_log')
-      .select('id, amount, reason, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(10);
-    setPropsLog((data ?? []) as any[]);
-    setPropsLogLoading(false);
+    try {
+      // 1. props_log — profile_complete, easter_egg, first_challenge_entry
+      const { data: logData } = await supabase
+        .from('props_log')
+        .select('id, amount, reason, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(40);
+
+      // 2. props_events — challenge wins, follower milestones, first_post (via award_props)
+      const { data: eventsData } = await supabase
+        .from('props_events')
+        .select('id, props_amount, event_type, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(40);
+
+      // 3. featured_purchases — spend events (props only)
+      const { data: spendData } = await supabase
+        .from('featured_purchases')
+        .select('id, props_spent, created_at')
+        .eq('user_id', user.id)
+        .eq('purchase_type', 'props')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      // Normalise to { id, amount, reason, created_at, isSpend? }
+      const earned1 = (logData ?? []).map((r: any) => ({
+        id:         r.id,
+        amount:     r.amount,
+        reason:     r.reason,
+        created_at: r.created_at,
+      }));
+      const earned2 = (eventsData ?? []).map((r: any) => ({
+        id:         r.id,
+        amount:     r.props_amount,
+        reason:     r.event_type,
+        created_at: r.created_at,
+      }));
+      const spent = (spendData ?? []).map((r: any) => ({
+        id:         r.id,
+        amount:     -(r.props_spent ?? 0),
+        reason:     'featured_boost',
+        created_at: r.created_at,
+        isSpend:    true,
+      }));
+
+      // Merge all, de-dupe by id, sort newest-first, cap at 30
+      const seenIds = new Set<string>();
+      const merged = [...earned1, ...earned2, ...spent]
+        .filter(e => { if (seenIds.has(e.id)) return false; seenIds.add(e.id); return true; })
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 30);
+
+      setPropsLog(merged);
+    } finally {
+      setPropsLogLoading(false);
+    }
   }, [user?.id]);
 
   const loadMyPosts = useCallback(async () => {
@@ -1252,11 +1302,9 @@ export default function ProfileScreen() {
             <Text style={styles.plTotal}>
               All-time earned: {(profile?.lifetime_props ?? profile?.total_props ?? 0).toLocaleString()} props
             </Text>
-            {(profile?.lifetime_props ?? 0) !== (profile?.total_props ?? 0) && (
-              <Text style={[styles.plTotal, { color: '#888', fontSize: 11, marginTop: 2 }]}>
-                Spendable balance: {(profile?.total_props ?? 0).toLocaleString()} props
-              </Text>
-            )}
+            <Text style={[styles.plTotal, { color: '#888', fontSize: 11, marginTop: 2, marginBottom: 4 }]}>
+              Spendable balance: {(profile?.total_props ?? 0).toLocaleString()} props
+            </Text>
             {/* List */}
             {propsLogLoading ? (
               <ActivityIndicator color="#ffd700" style={{ marginTop: 24 }} />
@@ -1271,29 +1319,34 @@ export default function ProfileScreen() {
                 keyExtractor={item => item.id}
                 contentContainerStyle={{ paddingBottom: 24 }}
                 renderItem={({ item }) => {
-                  const label = ({
-                    first_post:            'First post',
-                    easter_egg:            'Easter egg found',
-                    first_challenge_entry: 'First challenge entry',
-                    profile_complete:      'Profile complete',
-                    follower_10:           '10 followers milestone',
-                    follower_50:           '50 followers milestone',
-                    follower_100:          '100 followers milestone',
-                    post_votes_10:         '10 votes on a post',
-                    post_votes_50:         '50 votes on a post',
-                    post_votes_100:        '100 votes on a post',
-                    challenge_winner_1:    'Challenge 1st place 🥇',
-                    challenge_winner_2:    'Challenge 2nd place 🥈',
-                    challenge_winner_3:    'Challenge 3rd place 🥉',
-                  } as Record<string,string>)[item.reason] ?? item.reason.replace(/_/g,' ');
-                  const date = new Date(item.created_at).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+                  const LABEL_MAP: Record<string,string> = {
+                    first_post:            '✍️ First post',
+                    easter_egg:            '🥚 Easter egg found',
+                    first_challenge_entry: '🏁 First challenge entry',
+                    profile_complete:      '✅ Profile complete',
+                    follower_10:           '👥 10 followers milestone',
+                    follower_50:           '👥 50 followers milestone',
+                    follower_100:          '👥 100 followers milestone',
+                    post_votes_10:         '👍 10 votes on a post',
+                    post_votes_50:         '👍 50 votes on a post',
+                    post_votes_100:        '👍 100 votes on a post',
+                    challenge_winner_1:    '🥇 Challenge 1st place',
+                    challenge_winner_2:    '🥈 Challenge 2nd place',
+                    challenge_winner_3:    '🥉 Challenge 3rd place',
+                    featured_boost:        '⚡ Featured listing boost',
+                  };
+                  const label = LABEL_MAP[item.reason] ?? item.reason.replace(/_/g,' ');
+                  const date  = new Date(item.created_at).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+                  const isSpend = (item as any).isSpend === true || item.amount < 0;
                   return (
                     <View style={styles.plRow}>
                       <View style={styles.plRowLeft}>
-                        <Text style={styles.plRowLabel}>{label}</Text>
+                        <Text style={[styles.plRowLabel, isSpend && { color: '#ffaaaa' }]}>{label}</Text>
                         <Text style={styles.plRowDate}>{date}</Text>
                       </View>
-                      <Text style={styles.plRowAmount}>+{item.amount}</Text>
+                      <Text style={[styles.plRowAmount, isSpend && { color: '#ff6666', fontSize: 16 }]}>
+                        {isSpend ? item.amount.toLocaleString() : `+${item.amount.toLocaleString()}`}
+                      </Text>
                     </View>
                   );
                 }}
