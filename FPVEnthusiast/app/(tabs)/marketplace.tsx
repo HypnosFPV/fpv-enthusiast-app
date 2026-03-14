@@ -159,7 +159,29 @@ const TrustPanel = ({ onDismiss }: { onDismiss: () => void }) => {
   const bounceAnim = useRef(new Animated.Value(0)).current;
   const [showArrow, setShowArrow] = React.useState(true);
 
-  // Bounce the arrow left-right on mount
+  // ── Entry animation: slide up + spring bounce on mount ────────────────────
+  const entryTranslateY = useRef(new Animated.Value(40)).current;
+  const entryScale      = useRef(new Animated.Value(0.92)).current;
+  const entryOpacity    = useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    Animated.parallel([
+      // Fade in
+      Animated.timing(entryOpacity, {
+        toValue: 1, duration: 220, useNativeDriver: true,
+      }),
+      // Slide up with spring overshoot
+      Animated.spring(entryTranslateY, {
+        toValue: 0, friction: 7, tension: 60, useNativeDriver: true,
+      }),
+      // Scale up with slight overshoot
+      Animated.spring(entryScale, {
+        toValue: 1, friction: 6, tension: 70, useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  // ── Arrow bounce loop ──────────────────────────────────────────────────────
   React.useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
@@ -183,7 +205,16 @@ const TrustPanel = ({ onDismiss }: { onDismiss: () => void }) => {
   };
 
   return (
-    <View style={styles.trustPanel}>
+    <Animated.View style={[
+      styles.trustPanel,
+      {
+        opacity:   entryOpacity,
+        transform: [
+          { translateY: entryTranslateY },
+          { scale: entryScale },
+        ],
+      },
+    ]}>
       <View style={styles.trustHeader}>
         <Text style={styles.trustTitle}>Why sell here?</Text>
         <TouchableOpacity onPress={onDismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -230,7 +261,7 @@ const TrustPanel = ({ onDismiss }: { onDismiss: () => void }) => {
           </View>
         )}
       </View>
-    </View>
+    </Animated.View>
   );
 };
 
