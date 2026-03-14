@@ -359,7 +359,7 @@ export default function ProfileScreen() {
   // Fire count-up whenever real values arrive (followers / following load async)
   const lastAnimatedKey = useRef('');
   useEffect(() => {
-    const key = `${myPosts.length}-${followersCount}-${followingCount}-${profile?.lifetime_props ?? profile?.total_props ?? 0}`;
+    const key = `${myPosts.length}-${followersCount}-${followingCount}-${profile?.total_props ?? 0}`;
     if (key === lastAnimatedKey.current) return;
     lastAnimatedKey.current = key;
 
@@ -396,7 +396,7 @@ export default function ProfileScreen() {
         Animated.timing(countProps,     { toValue: 1, duration: dur, useNativeDriver: false }),
       ]),
     ]).start();
-  }, [myPosts.length, followersCount, followingCount, profile?.lifetime_props, profile?.total_props]);
+  }, [myPosts.length, followersCount, followingCount, profile?.total_props]);
 
   // Pulse helper — spring scale + accent glow on press
   const pulseStat = (scaleRef: Animated.Value, accentRef: Animated.Value) => {
@@ -882,7 +882,7 @@ export default function ProfileScreen() {
               style={{ flex: 1, alignItems: 'center' }}
             >
               <StatBox
-                displayValue={profile?.lifetime_props ?? profile?.total_props ?? 0}
+                displayValue={profile?.total_props ?? 0}
                 label="Props"
                 accentColor="#ffd700"
                 animatedValue={countProps}
@@ -1300,7 +1300,7 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
             <Text style={styles.plTotal}>
-              All-time earned: {(profile?.lifetime_props ?? profile?.total_props ?? 0).toLocaleString()} props
+              All-time earned: {(profile?.lifetime_props || profile?.earned_props || profile?.total_props || 0).toLocaleString()} props
             </Text>
             <Text style={[styles.plTotal, { color: '#888', fontSize: 11, marginTop: 2, marginBottom: 4 }]}>
               Spendable balance: {(profile?.total_props ?? 0).toLocaleString()} props
