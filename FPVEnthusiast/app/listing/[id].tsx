@@ -27,6 +27,8 @@ import ImageZoomModal        from '../../src/components/ImageZoomModal';
 import {
   CATEGORIES, CONDITIONS,
 } from '../../src/hooks/useMarketplace';
+import * as FileSystem from 'expo-file-system';
+import { supabase }    from '../../src/services/supabase';
 
 const { width: W } = Dimensions.get('window');
 const IMG_H        = W * 0.78;   // ~78 % wide = square-ish hero
@@ -239,7 +241,6 @@ export default function ListingDetailScreen() {
     messages, messagesLoad, sendMessage, sending,
     activeOrder, fetchOrder,
     markShipped, confirmReceipt,
-    addPhotos,
   } = useListingDetail(id ?? '', user?.id);
 
   // ── Gallery state ─────────────────────────────────────────────────────────
@@ -322,16 +323,72 @@ export default function ListingDetailScreen() {
       selectionLimit: 8,
     });
     if (result.canceled || !result.assets?.length) return;
-    const uris = result.assets.map(a => a.uri);
+
     setAddingPhotos(true);
-    const res = await addPhotos(uris, user!.id);
-    setAddingPhotos(false);
-    if (res.ok) {
-      Alert.alert('✅ Photos added', `${res.uploaded} photo${res.uploaded === 1 ? '' : 's'} uploaded successfully.`);
-    } else {
-      Alert.alert('Upload failed', res.error ?? 'Could not upload photos. Please try again.');
+    const uris = result.assets.map(a => a.uri);
+    const listingIdVal = id ?? '';
+    const existingCount = listing?.listing_images?.length ?? 0;
+    const imageRows: { listing_id: string; url: string; position: number; is_primary: boolean }[] = [];
+    let lastError: string | undefined;
+    let uploaded = 0;
+
+    for (let i = 0; i < uris.length; i++) {
+      const uri = uris[i];
+      try {
+        const rawExt = (uri.split('.').pop()?.split('?')[0] ?? 'jpg').toLowerCase();
+        const ext    = (rawExt === 'heic' || rawExt === 'heif') ? 'jpeg' : rawExt;
+        const mime   = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+        const path   = `marketplace/${listingIdVal}/${Date.now()}_${existingCount + i}.${ext}`;
+
+        const base64    = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+        const fetchResp = await fetch(`data:${mime};base64,${base64}`);
+        const blob      = await fetchResp.blob();
+
+        const { error: upErr } = await supabase.storage
+          .from('media')
+          .upload(path, blob, { contentType: mime, upsert: true });
+
+        if (upErr) {
+          console.warn('[addPhotos] storage error:', upErr.message);
+          lastError = upErr.message;
+        } else {
+          const { data: urlData } = supabase.storage.from('media').getPublicUrl(path);
+          if (urlData?.publicUrl) {
+            imageRows.push({
+              listing_id: listingIdVal,
+              url:        urlData.publicUrl,
+              position:   existingCount + i,
+              is_primary: existingCount === 0 && i === 0,
+            });
+            uploaded++;
+          }
+        }
+      } catch (e: any) {
+        console.warn('[addPhotos] error:', e?.message);
+        lastError = e?.message ?? 'Upload failed';
+      }
     }
-  }, [addPhotos, user]);
+
+    if (imageRows.length > 0) {
+      const { error: dbErr } = await supabase.from('listing_images').insert(imageRows);
+      if (dbErr) {
+        console.warn('[addPhotos] DB insert error:', dbErr.message);
+        lastError = dbErr.message;
+        uploaded = 0;
+      } else {
+        // Refresh listing so gallery updates immediately
+        await fetchListing();
+      }
+    }
+
+    setAddingPhotos(false);
+
+    if (uploaded > 0) {
+      Alert.alert('✅ Photos added', `${uploaded} photo${uploaded === 1 ? '' : 's'} uploaded successfully.`);
+    } else {
+      Alert.alert('Upload failed', lastError ?? 'Could not upload photos. Check the media bucket migration has been run.');
+    }
+  }, [id, listing?.listing_images?.length, fetchListing]);
 
   // ── Loading / not found ───────────────────────────────────────────────────
   if (loading) {
