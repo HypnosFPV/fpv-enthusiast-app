@@ -154,25 +154,85 @@ const ListingCard = React.memo(({
 });
 
 // ─── Trust panel (shown when no listings yet or first-time user) ──────────────
-const TrustPanel = ({ onDismiss }: { onDismiss: () => void }) => (
-  <View style={styles.trustPanel}>
-    <View style={styles.trustHeader}>
-      <Text style={styles.trustTitle}>Why sell here?</Text>
-      <TouchableOpacity onPress={onDismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Ionicons name="close" size={20} color="#666" />
-      </TouchableOpacity>
+const TrustPanel = ({ onDismiss }: { onDismiss: () => void }) => {
+  const scrollRef  = useRef<ScrollView>(null);
+  const bounceAnim = useRef(new Animated.Value(0)).current;
+  const [showArrow, setShowArrow] = React.useState(true);
+
+  // Bounce the arrow left-right on mount
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bounceAnim, { toValue: 7,  duration: 420, useNativeDriver: true }),
+        Animated.timing(bounceAnim, { toValue: 0,  duration: 420, useNativeDriver: true }),
+        Animated.timing(bounceAnim, { toValue: 5,  duration: 300, useNativeDriver: true }),
+        Animated.timing(bounceAnim, { toValue: 0,  duration: 300, useNativeDriver: true }),
+        Animated.delay(1200),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [bounceAnim]);
+
+  const handleArrowPress = () => {
+    scrollRef.current?.scrollTo({ x: 220, animated: true });
+  };
+
+  const handleScroll = (e: any) => {
+    if (e.nativeEvent.contentOffset.x > 30) setShowArrow(false);
+  };
+
+  return (
+    <View style={styles.trustPanel}>
+      <View style={styles.trustHeader}>
+        <Text style={styles.trustTitle}>Why sell here?</Text>
+        <TouchableOpacity onPress={onDismiss} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons name="close" size={20} color="#666" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Scroll area + right-edge arrow overlay */}
+      <View style={styles.trustScrollWrap}>
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.trustScroll}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+        >
+          {TRUST_BULLETS.map((b, i) => (
+            <View key={i} style={styles.trustCard}>
+              <Text style={styles.trustIcon}>{b.icon}</Text>
+              <Text style={styles.trustBulletTitle}>{b.title}</Text>
+              <Text style={styles.trustBulletBody}>{b.body}</Text>
+            </View>
+          ))}
+          {/* trailing spacer so last card isn't flush against edge */}
+          <View style={{ width: 8 }} />
+        </ScrollView>
+
+        {/* Right-edge fade + bouncing arrow */}
+        {showArrow && (
+          <View style={styles.trustArrowOverlay} pointerEvents="box-none">
+            {/* Fade gradient simulation */}
+            <View style={styles.trustFade} pointerEvents="none" />
+            {/* Tappable bouncing chevron */}
+            <TouchableOpacity
+              style={styles.trustArrowBtn}
+              onPress={handleArrowPress}
+              activeOpacity={0.7}
+            >
+              <Animated.View style={{ transform: [{ translateX: bounceAnim }] }}>
+                <Ionicons name="chevron-forward-circle" size={30} color="#ff4500" />
+              </Animated.View>
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     </View>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.trustScroll}>
-      {TRUST_BULLETS.map((b, i) => (
-        <View key={i} style={styles.trustCard}>
-          <Text style={styles.trustIcon}>{b.icon}</Text>
-          <Text style={styles.trustBulletTitle}>{b.title}</Text>
-          <Text style={styles.trustBulletBody}>{b.body}</Text>
-        </View>
-      ))}
-    </ScrollView>
-  </View>
-);
+  );
+};
 
 // ─── Category grid ─────────────────────────────────────────────────────────────
 const CategoryGrid = ({
@@ -910,6 +970,16 @@ const styles = StyleSheet.create({
   trustTitle:        { color: '#fff', fontSize: 15, fontWeight: '700' },
   trustScroll:       { marginHorizontal: -4 },
   trustCard:         { width: 200, backgroundColor: '#0d1117', borderRadius: 12, padding: 14, marginHorizontal: 4, borderWidth: 1, borderColor: '#1e2a3a' },
+  trustScrollWrap:   { position: 'relative' },
+  trustArrowOverlay: { position: 'absolute', top: 0, bottom: 0, right: 0, width: 64, justifyContent: 'center', alignItems: 'flex-end' },
+  trustFade:         { position: 'absolute', top: 0, bottom: 0, right: 0, width: 64, backgroundColor: 'transparent',
+                       // layered semi-transparent boxes simulate a right fade
+                       borderRadius: 12 },
+  trustArrowBtn:     { width: 40, height: 40, justifyContent: 'center', alignItems: 'center',
+                       backgroundColor: '#111', borderRadius: 20,
+                       shadowColor: '#ff4500', shadowOffset: { width: 0, height: 0 },
+                       shadowOpacity: 0.5, shadowRadius: 8, elevation: 6,
+                       marginRight: 2 },
   trustIcon:         { fontSize: 26, marginBottom: 8 },
   trustBulletTitle:  { color: '#fff', fontSize: 13, fontWeight: '700', marginBottom: 4 },
   trustBulletBody:   { color: '#888', fontSize: 12, lineHeight: 17 },
