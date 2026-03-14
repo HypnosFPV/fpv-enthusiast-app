@@ -1378,6 +1378,8 @@ export default function MarketplaceScreen() {
   // ── Header component inside FlatList ──────────────────────────────────────
   const ListHeader = useCallback(() => (
     <View>
+      {/* Trust panel — first thing sellers/buyers see when opening the tab */}
+      {showTrust && <TrustPanel onDismiss={() => setShowTrust(false)} />}
       {/* Featured carousel */}
       <FeaturedCarousel
         items={featured}
@@ -1388,8 +1390,6 @@ export default function MarketplaceScreen() {
         }
         onBoostPress={() => handleOpenBoost()}
       />
-      {/* Trust panel */}
-      {showTrust && <TrustPanel onDismiss={() => setShowTrust(false)} />}
       {/* Category row */}
       <CategoryGrid selected={selectedCat} onSelect={handleCatSelect} />
     </View>
@@ -1505,7 +1505,7 @@ export default function MarketplaceScreen() {
         }
         onEndReached={() => { if (hasMore && !loadingMore) loadMore(); }}
         onEndReachedThreshold={0.4}
-        contentContainerStyle={(listings?.length ?? 0) === 0 ? { flex: 1 } : { paddingBottom: 100 }}
+        contentContainerStyle={(listings?.length ?? 0) === 0 ? { flexGrow: 1 } : { paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
       />
 
@@ -1640,7 +1640,7 @@ const styles = StyleSheet.create({
   footerEndTxt:      { color: '#444', fontSize: 12, marginHorizontal: 12 },
 
   // ── Empty state
-  emptyWrap:         { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, paddingTop: 40 },
+  emptyWrap:         { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, paddingTop: 40, paddingBottom: 160 },
   emptyIcon:         { fontSize: 52, marginBottom: 16 },
   emptyTitle:        { color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 8 },
   emptyBody:         { color: '#666', fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
@@ -1648,7 +1648,7 @@ const styles = StyleSheet.create({
   emptyBtnTxt:       { color: '#fff', fontSize: 15, fontWeight: '700' },
 
   // ── FAB
-  fabWrap:           { position: 'absolute', bottom: 100, right: 20 },
+  fabWrap:           { position: 'absolute', bottom: 110, right: 20 },
   fab:               { backgroundColor: '#ff4500', borderRadius: 28, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 6, shadowColor: '#ff4500', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
   fabTxt:            { color: '#fff', fontSize: 16, fontWeight: '700' },
 
