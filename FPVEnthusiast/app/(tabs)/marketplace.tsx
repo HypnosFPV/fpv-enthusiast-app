@@ -17,6 +17,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
+import { scheduleBoostExpiryNotification } from '../../src/utils/boostNotifications';
 import {
   useMarketplace,
   MarketplaceListing,
@@ -216,6 +217,54 @@ const BoostModal = ({
   );
 };
 
+
+// ─── Animated shimmer border for featured cards ───────────────────────────────
+function AnimatedBorder({ width, height, style }: { width: number; height: number; style?: any }) {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 2200,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      })
+    ).start();
+  }, []);
+
+  // Interpolate border color through gold → orange → red → orange → gold
+  const borderColor = anim.interpolate({
+    inputRange:  [0,   0.25,      0.5,       0.75,      1],
+    outputRange: ['#ffcc00', '#ff8c00', '#ff4500', '#ff8c00', '#ffcc00'],
+  });
+
+  const shadowOpacity = anim.interpolate({
+    inputRange:  [0, 0.5, 1],
+    outputRange: [0.6, 1.0, 0.6],
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        style,
+        {
+          position: 'absolute', top: -2, left: -2,
+          width: width + 4, height: height + 4,
+          borderRadius: 18, borderWidth: 2,
+          borderColor,
+          shadowColor: '#ffcc00',
+          shadowOffset: { width: 0, height: 0 },
+          shadowRadius: 8,
+          shadowOpacity,
+          elevation: 0,
+        },
+      ]}
+    />
+  );
+}
+
 // ─── Featured Carousel ────────────────────────────────────────────────────────
 const FeaturedCarousel = ({
   items,
@@ -325,12 +374,13 @@ const FeaturedCarousel = ({
               : 0;
 
             return (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.featuredCard, { width: itemW }]}
-                onPress={() => onItemPress(item)}
-                activeOpacity={0.9}
-              >
+              <View key={item.id} style={{ width: itemW, position: 'relative' }}>
+                <AnimatedBorder width={itemW} height={CAROUSEL_H} />
+                <TouchableOpacity
+                  style={[styles.featuredCard, { width: itemW }]}
+                  onPress={() => onItemPress(item)}
+                  activeOpacity={0.9}
+                >
                 {/* Background image */}
                 {image?.url ? (
                   <ExpoImage
@@ -397,7 +447,8 @@ const FeaturedCarousel = ({
                     ))}
                   </View>
                 )}
-              </TouchableOpacity>
+                </TouchableOpacity>
+              </View>
             );
           })}
         </ScrollView>
@@ -1580,7 +1631,10 @@ export default function MarketplaceScreen() {
             if (res.ok) {
               setUserProps(p => Math.max(0, p - FEATURED_PROPS_COST));
               reloadFeatured();
-              Alert.alert('🎉 Listing featured!', 'Your listing will appear in the carousel for the next 24 hours.');
+              if (res.endsAt) {
+                scheduleBoostExpiryNotification(boostTarget.title, res.endsAt);
+              }
+              Alert.alert('🎉 Listing featured!', 'Your listing will appear in the carousel for the next 24 hours. You'll get a notification 2 hours before it expires.');
             } else {
               const msg = res.error === 'insufficient_props'
                 ? `You need ${FEATURED_PROPS_COST.toLocaleString()} props. Keep flying and earning!`
@@ -1804,7 +1858,7 @@ const styles = StyleSheet.create({
   featuredEmptyBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#1a1400', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: '#ffcc0066' },
   featuredEmptyBtnTxt:   { color: '#ffcc00', fontSize: 13, fontWeight: '700' },
   // carousel card
-  featuredCard:          { height: CAROUSEL_H, borderRadius: 16, overflow: 'hidden', position: 'relative', backgroundColor: '#111' },
+  featuredCard:          { height: CAROUSEL_H, borderRadius: 16, overflow: 'hidden', position: 'relative', backgroundColor: '#111', margin: 2 },
   featuredCardImg:       { ...StyleSheet.absoluteFillObject },
   featuredCardImgPlaceholder: { backgroundColor: '#1a1a1a', alignItems: 'center', justifyContent: 'center' },
   featuredGradient:      { ...StyleSheet.absoluteFillObject, backgroundColor: 'transparent',

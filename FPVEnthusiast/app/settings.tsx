@@ -253,6 +253,12 @@ export default function SettingsScreen() {
               left={<Ionicons name="map-outline" size={18} color="#FF9800" />}
               right={<Ionicons name="chevron-forward" size={16} color="#444" />}
               onPress={() => router.push('/(tabs)/admin')}
+            />
+            <Row
+              label="Featured Analytics"
+              left={<Ionicons name="flash" size={18} color="#ffcc00" />}
+              right={<Ionicons name="chevron-forward" size={16} color="#444" />}
+              onPress={() => router.push('/admin')}
               last
             />
           </Section>

@@ -271,6 +271,7 @@ const TABS = [
   { key: 'posts',  label: 'Posts',  icon: 'grid-outline'      },
   { key: 'media',  label: 'Media',  icon: 'film-outline'      },
   { key: 'builds', label: 'Builds', icon: 'construct-outline' },
+  { key: 'boosts', label: 'Boosts', icon: 'flash-outline'     },
 ] as const;
 
 type TabKey = typeof TABS[number]['key'];
@@ -319,6 +320,7 @@ export default function ProfileScreen() {
   const [activeTab,   setActiveTab]   = useState<TabKey>('posts');
   const [myPosts,     setMyPosts]     = useState<Post[]>([]);
   const [builds,      setBuilds]      = useState<Build[]>([]);
+  const [boostHistory, setBoostHistory] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
   const loadedTabsRef = useRef<Set<TabKey>>(new Set());
@@ -552,9 +554,12 @@ export default function ProfileScreen() {
       } else if (tab === 'builds') {
         await loadBuilds();
         loadedTabsRef.current.add('builds');
+      } else if (tab === 'boosts') {
+        await loadBoostHistory();
+        loadedTabsRef.current.add('boosts');
       }
     } finally { setDataLoading(false); }
-  }, [loadMyPosts, loadBuilds]);
+  }, [loadMyPosts, loadBuilds, loadBoostHistory]);
 
   useEffect(() => { loadTabData(activeTab); }, [activeTab]);
 
@@ -944,6 +949,67 @@ export default function ProfileScreen() {
                 <TouchableOpacity style={styles.fab} onPress={() => setShowCreateBuild(true)}>
                   <Ionicons name="add" size={28} color="#fff" />
                 </TouchableOpacity>
+              </View>
+            )}
+            {activeTab === 'boosts' && (
+              <View style={{ padding: 12, gap: 10 }}>
+                {boostHistory.length === 0 ? (
+                  <EmptyState icon="flash-outline" text="No featured boosts yet" />
+                ) : (
+                  boostHistory.map((b: any) => {
+                    const listing = b.marketplace_listings;
+                    const img = listing?.listing_images?.find((i: any) => i.is_primary) ?? listing?.listing_images?.[0];
+                    const endsAt = new Date(b.ends_at);
+                    const now = Date.now();
+                    const isActive = endsAt.getTime() > now;
+                    const hoursLeft = Math.max(0, Math.ceil((endsAt.getTime() - now) / 3_600_000));
+                    const hoursTotal = b.duration_hrs ?? 24;
+                    const progress = isActive ? Math.max(0, 1 - hoursLeft / hoursTotal) : 1;
+                    return (
+                      <View key={b.id} style={{
+                        backgroundColor: '#1a1a1a', borderRadius: 12, padding: 12,
+                        borderWidth: 1, borderColor: isActive ? '#ffcc0044' : '#333',
+                        flexDirection: 'row', gap: 10, alignItems: 'center',
+                      }}>
+                        {img?.url ? (
+                          <Image source={{ uri: img.url }} style={{ width: 56, height: 56, borderRadius: 8 }} />
+                        ) : (
+                          <View style={{ width: 56, height: 56, borderRadius: 8, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name="image-outline" size={22} color="#666" />
+                          </View>
+                        )}
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }} numberOfLines={1}>
+                            {listing?.title ?? 'Listing removed'}
+                          </Text>
+                          <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                            {isActive ? (
+                              <View style={{ backgroundColor: '#ffcc0022', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: '#ffcc0066' }}>
+                                <Text style={{ color: '#ffcc00', fontSize: 10, fontWeight: '700' }}>⚡ ACTIVE</Text>
+                              </View>
+                            ) : (
+                              <View style={{ backgroundColor: '#33333388', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                                <Text style={{ color: '#666', fontSize: 10, fontWeight: '700' }}>EXPIRED</Text>
+                              </View>
+                            )}
+                            <Text style={{ color: '#888', fontSize: 11 }}>
+                              {b.purchase_type === 'props' ? `🌀 ${(b.props_spent ?? 0).toLocaleString()} props` : `💳 $${b.amount_usd?.toFixed(2)}`}
+                            </Text>
+                          </View>
+                          {/* Progress bar */}
+                          <View style={{ height: 3, backgroundColor: '#333', borderRadius: 2, marginTop: 2 }}>
+                            <View style={{ height: 3, backgroundColor: isActive ? '#ffcc00' : '#444', borderRadius: 2, width: `${Math.round(progress * 100)}%` }} />
+                          </View>
+                          <Text style={{ color: '#666', fontSize: 10 }}>
+                            {isActive
+                              ? `⏱ ${hoursLeft}h remaining of ${hoursTotal}h`
+                              : `Ended ${endsAt.toLocaleDateString()}`}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
               </View>
             )}
           </>
