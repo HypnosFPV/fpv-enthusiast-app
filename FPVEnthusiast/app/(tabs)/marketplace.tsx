@@ -8,7 +8,7 @@ import React, {
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
   ActivityIndicator, RefreshControl, StatusBar, Modal, ScrollView,
-  Image, Animated, Pressable, Alert, KeyboardAvoidingView,
+  Image, Animated, Easing, Pressable, Alert, KeyboardAvoidingView,
   Platform, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -669,6 +669,21 @@ export default function MarketplaceScreen() {
   const router   = useRouter();
   const { user } = useAuth();
 
+  // ── Animated title (matches Feed header) ──────────────────────────────────
+  const animValue = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(animValue, {
+        toValue: 1, duration: 3000,
+        easing: Easing.linear, useNativeDriver: false,
+      })
+    ).start();
+  }, [animValue]);
+  const animatedColor = animValue.interpolate({
+    inputRange:  [0,    0.25,     0.5,      0.75,     1],
+    outputRange: ['#ff4500', '#ff8c00', '#ffcc00', '#ff6600', '#ff4500'],
+  });
+
   const {
     listings, loading, refreshing, loadingMore, hasMore,
     filters, loadListings, loadMore, applyFilters, onRefresh,
@@ -796,7 +811,7 @@ export default function MarketplaceScreen() {
           </View>
         ) : (
           <>
-            <Text style={styles.topBarTitle}>Marketplace</Text>
+            <Animated.Text style={[styles.topBarTitle, { color: animatedColor }]}>Marketplace</Animated.Text>
             <View style={styles.topBarActions}>
               <TouchableOpacity style={styles.topBarBtn} onPress={() => setSearchActive(true)}>
                 <Ionicons name="search-outline" size={22} color="#fff" />
@@ -880,7 +895,7 @@ const styles = StyleSheet.create({
 
   // ── Top bar
   topBar:            { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 54 : 16, paddingBottom: 12, backgroundColor: '#0a0a0a', borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  topBarTitle:       { color: '#fff', fontSize: 20, fontWeight: '700' },
+  topBarTitle:       { fontSize: 24, fontWeight: '800', letterSpacing: 1.5 },
   topBarActions:     { flexDirection: 'row', gap: 8 },
   topBarBtn:         { padding: 6, position: 'relative' },
   filterBadge:       { position: 'absolute', top: 2, right: 2, backgroundColor: '#ff4500', borderRadius: 8, minWidth: 16, height: 16, alignItems: 'center', justifyContent: 'center' },
