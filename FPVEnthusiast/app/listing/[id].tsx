@@ -745,14 +745,12 @@ export default function ListingDetailScreen() {
   const handleBuyNow = useCallback(async () => {
     if (!listing?.id) return;
 
-    // Find accepted offer (if buyer has one)
-    const acceptedOffer = offers.find(
-      o => o.buyer_id === user?.id && o.status === 'accepted'
-    );
+    // Use the pre-computed myAcceptedOffer (works even when listing is pending_sale)
+    const offerId = myAcceptedOffer?.id ?? myAcceptedOffer?.offer_id;
 
     const { ok, error: initErr } = await initCheckout(
       listing.id,
-      acceptedOffer?.offer_id,
+      offerId,
     );
     if (!ok) {
       Alert.alert('Payment Error', initErr ?? 'Could not start checkout');
@@ -771,10 +769,10 @@ export default function ListingDetailScreen() {
     // Refresh order state so UI transitions to 'paid' banner
     await fetchOrder();
     Alert.alert(
-      '🎉 Order Placed!',
+      '\uD83C\uDF89 Order Placed!',
       'Payment received. The seller has been notified and will ship within 3 business days.',
     );
-  }, [listing?.id, offers, user?.id, initCheckout, confirmPayment, resetCheckout, fetchOrder]);
+  }, [listing?.id, myAcceptedOffer, initCheckout, confirmPayment, resetCheckout, fetchOrder]);
 
   const [showEdit,     setShowEdit]     = useState(false);
   const [showPhotoMgr, setShowPhotoMgr] = useState(false);
@@ -788,6 +786,11 @@ export default function ListingDetailScreen() {
 
   const isOwner  = user?.id === listing?.seller_id;
   const isBuyer  = activeOrder?.buyer_id === user?.id;
+  // Buyer has an accepted offer but hasn't paid yet (listing moved to pending_sale)
+  const myAcceptedOffer = !isOwner
+    ? offers.find(o => o.buyer_id === user?.id && o.status === 'accepted')
+    : undefined;
+  const hasPendingPayment = !!myAcceptedOffer && !activeOrder?.status?.match(/^(paid|shipped|delivered|cancelled)$/);
   const unreadMsgCount  = messages.filter(m => !m.read && m.sender_id !== user?.id).length;
   const pendingOfferCount = offers.filter(o => o.status === 'pending').length;
 
@@ -1338,7 +1341,7 @@ export default function ListingDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* ── CTA bar ── */}
+      {/* ── CTA bar: active listing (all buyers) ── */}
       {!isOwner && listing.status === 'active' && (
         <View style={styles.ctaBar}>
           <TouchableOpacity
@@ -1380,6 +1383,31 @@ export default function ListingDetailScreen() {
               <Text style={styles.ctaBtnTxt}>{`Buy · $${listing.price.toFixed(2)}`}</Text>
             </TouchableOpacity>
           )}
+        </View>
+      )}
+
+      {/* ── CTA bar: offer accepted, awaiting payment ── */}
+      {hasPendingPayment && (
+        <View style={[styles.ctaBar, { backgroundColor: '#1a2e1a' }]}>
+          <View style={{ flex: 1, paddingLeft: 4 }}>
+            <Text style={{ color: '#22c55e', fontWeight: '700', fontSize: 13 }}>
+              ✅ Offer Accepted!
+            </Text>
+            <Text style={{ color: '#aaa', fontSize: 12 }}>
+              ${((myAcceptedOffer!.counter_amount_cents ?? myAcceptedOffer!.amount_cents) / 100).toFixed(2)} — tap to complete payment
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.ctaBuyBtn, { minWidth: 140 }, checkoutState.status === 'loading' && { opacity: 0.6 }]}
+            onPress={handleBuyNow}
+            disabled={checkoutState.status === 'loading' || checkoutState.status === 'processing'}
+          >
+            {(checkoutState.status === 'loading' || checkoutState.status === 'processing')
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="card-outline" size={18} color="#fff" />
+            }
+            <Text style={styles.ctaBtnTxt}>Complete Purchase</Text>
+          </TouchableOpacity>
         </View>
       )}
 

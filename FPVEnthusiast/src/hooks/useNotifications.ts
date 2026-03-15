@@ -4,18 +4,20 @@ import { supabase } from '../services/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface AppNotification {
-  id:         string;
-  user_id:    string;
-  actor_id:   string | null;
-  type:       'like' | 'comment' | 'follow' | 'mention' | 'reply'
-            | 'challenge_voting_open' | 'challenge_voting_closing' | 'challenge_result'
-            | 'new_message' | 'new_offer' | 'offer_accepted' | 'offer_declined';
-  post_id:    string | null;
-  comment_id: string | null;
+  id:          string;
+  user_id:     string;
+  actor_id:    string | null;
+  type:        'like' | 'comment' | 'follow' | 'mention' | 'reply'
+             | 'challenge_voting_open' | 'challenge_voting_closing' | 'challenge_result'
+             | 'new_message' | 'new_offer' | 'offer_accepted' | 'offer_declined';
+  post_id:     string | null;
+  comment_id:  string | null;
+  entity_id:   string | null;   // listing_id for marketplace notifications
+  entity_type: string | null;   // 'listing' | 'order' | etc.
   message:      string | null;
   challenge_id: string | null;
-  read:       boolean;
-  created_at: string;
+  read:        boolean;
+  created_at:  string;
   actor?: { username: string | null; avatar_url: string | null } | null;
   post?:  { thumbnail_url: string | null; caption: string | null } | null;
 }

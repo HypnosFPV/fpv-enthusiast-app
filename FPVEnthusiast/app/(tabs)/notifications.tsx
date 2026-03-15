@@ -28,10 +28,12 @@ import { useFollows } from '../../src/hooks/useFollows';
 
 // ─── Grouped notification type (pure display, no DB change) ──────────────────
 interface GroupedNotif {
-  groupKey:   string;
-  type:       AppNotification['type'];
-  post_id:    string | null;
-  comment_id: string | null;
+  groupKey:    string;
+  type:        AppNotification['type'];
+  post_id:     string | null;
+  comment_id:  string | null;
+  entity_id:   string | null;   // listing_id for marketplace notifs
+  entity_type: string | null;
   /** All raw notification IDs belonging to this group */
   ids:        string[];
   /** Unique actors, most-recent first, deduped by actor_id */
@@ -62,6 +64,9 @@ function groupNotifications(notifs: AppNotification[]): GroupedNotif[] {
       key = 'follow__all';
     } else if (n.type === 'reply') {
       key = `reply__${n.comment_id ?? n.post_id ?? 'x'}`;
+    } else if (n.entity_id && (n.type === 'new_offer' || n.type === 'offer_accepted' || n.type === 'offer_declined' || n.type === 'new_message')) {
+      // Marketplace notifications group per entity (listing)
+      key = `${n.type}__${n.entity_id}`;
     } else {
       key = `${n.type}__${n.post_id ?? 'x'}`;
     }
@@ -84,16 +89,18 @@ function groupNotifications(notifs: AppNotification[]): GroupedNotif[] {
       if (n.created_at > g.created_at) g.created_at = n.created_at;
     } else {
       const g: GroupedNotif = {
-        groupKey:   key,
-        type:       n.type,
-        post_id:    n.post_id,
-        comment_id: n.comment_id,
-        ids:        [n.id],
-        actors:     [actor],
-        read:       n.read,
-        created_at: n.created_at,
-        post:       (n.post as any) ?? null,
-        message:    n.message,
+        groupKey:    key,
+        type:        n.type,
+        post_id:     n.post_id,
+        comment_id:  n.comment_id,
+        entity_id:   n.entity_id   ?? null,
+        entity_type: n.entity_type ?? null,
+        ids:         [n.id],
+        actors:      [actor],
+        read:        n.read,
+        created_at:  n.created_at,
+        post:        (n.post as any) ?? null,
+        message:     n.message,
       };
       map.set(key, g);
       order.push(key);
@@ -511,9 +518,10 @@ export default function NotificationsScreen() {
   // ── Handle tap ────────────────────────────────────────────────────────────
   const handlePress = useCallback(async (g: GroupedNotif) => {
     // Mark all IDs in group as read
-    const unreadIds = g.ids; // markReadBulk is idempotent for already-read
+    const unreadIds = g.ids;
     if (!g.read) await markReadBulk(unreadIds);
 
+    // ── Challenge notifications ───────────────────────────────────────────
     if (g.type === 'challenge_voting_open' ||
         g.type === 'challenge_voting_closing' ||
         g.type === 'challenge_result') {
@@ -521,6 +529,15 @@ export default function NotificationsScreen() {
       return;
     }
 
+    // ── Marketplace notifications → navigate to listing ───────────────────
+    if (g.entity_id && g.entity_type === 'listing' &&
+        (g.type === 'offer_accepted' || g.type === 'offer_declined' ||
+         g.type === 'new_offer'      || g.type === 'new_message')) {
+      router.push({ pathname: '/listing/[id]', params: { id: g.entity_id } });
+      return;
+    }
+
+    // ── Follow → show action sheet ────────────────────────────────────────
     if (g.type === 'follow') {
       setFollowSheet({
         actorId:     g.actors[0]?.id ?? '',
@@ -529,6 +546,7 @@ export default function NotificationsScreen() {
         otherCount:  Math.max(0, g.actors.length - 1),
       });
     } else if (g.post_id) {
+      // ── Post-based notifications → post screen ──────────────────────────
       router.push({
         pathname: '/post/[id]',
         params: {
