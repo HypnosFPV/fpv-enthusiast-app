@@ -87,7 +87,12 @@ function ReviewModal({
 }) {
   const [rating,  setRating]  = useState(0);
   const [comment, setComment] = useState('');
-  const scaleAnims = [1,2,3,4,5].map(() => useRef(new Animated.Value(1)).current);
+  const scaleAnim1 = useRef(new Animated.Value(1)).current;
+  const scaleAnim2 = useRef(new Animated.Value(1)).current;
+  const scaleAnim3 = useRef(new Animated.Value(1)).current;
+  const scaleAnim4 = useRef(new Animated.Value(1)).current;
+  const scaleAnim5 = useRef(new Animated.Value(1)).current;
+  const scaleAnims = [scaleAnim1, scaleAnim2, scaleAnim3, scaleAnim4, scaleAnim5];
 
   const pressstar = (star: number) => {
     setRating(star);

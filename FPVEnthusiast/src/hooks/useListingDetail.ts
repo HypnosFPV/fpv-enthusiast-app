@@ -74,6 +74,9 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
   const [activeOrder,  setActiveOrder]  = useState<ListingOrder | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [offers,       setOffers]       = useState<MarketplaceOffer[]>([]);
+  // Cache signed URLs so re-fetches don't generate new URL strings, preventing
+  // ExpoImage from re-loading the same image (which caused the visible flicker).
+  const signedUrlCache = useRef<Record<string, string>>({});
 
   // ── Fetch listing ─────────────────────────────────────────────────────────
   const fetchListing = useCallback(async () => {
@@ -134,16 +137,23 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
             return extracted ?? img.url;
           });
 
-          const { data: signed, error: signErr2 } = await supabase.storage
-            .from('media')
-            .createSignedUrls(paths, 60 * 60 * 24 * 365); // 1 year
-
-          if (signed && signed.length === rawImages.length) {
-            signedImages = rawImages.map((img: any, i: number) => ({
-              ...img,
-              url: signed[i]?.signedUrl ?? img.url,
-            }));
+          // Use cached URLs if the path hasn't changed, so re-renders don't
+          // generate different URL strings that cause ExpoImage to reload.
+          const uncachedPaths = paths.filter(p => !signedUrlCache.current[p]);
+          if (uncachedPaths.length > 0) {
+            const { data: signed } = await supabase.storage
+              .from('media')
+              .createSignedUrls(uncachedPaths, 60 * 60 * 24 * 365); // 1 year
+            if (signed) {
+              signed.forEach((s, i) => {
+                if (s?.signedUrl) signedUrlCache.current[uncachedPaths[i]] = s.signedUrl;
+              });
+            }
           }
+          signedImages = rawImages.map((img: any, i: number) => ({
+            ...img,
+            url: signedUrlCache.current[paths[i]] ?? img.url,
+          }));
         } catch (signErr: any) {
           console.warn('[useListingDetail] signed URL error:', signErr?.message);
         }

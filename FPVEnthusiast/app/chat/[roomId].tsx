@@ -238,7 +238,7 @@ export default function ChatRoomScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 44 : 0}
     >
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <View style={styles.header}>
@@ -276,6 +276,7 @@ export default function ChatRoomScreen() {
             data={listData}
             keyExtractor={item => (item as any).id}
             renderItem={renderItem}
+            style={{ flex: 1 }}
             contentContainerStyle={styles.messageList}
             onRefresh={fetchMessages}
             refreshing={messagesLoad}
@@ -377,7 +378,7 @@ const styles = StyleSheet.create({
   bubbleTimeMe:     { marginRight: 4 },
 
   // Input
-  inputBar:         { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingVertical: 10, paddingBottom: Platform.OS === 'ios' ? 28 : 12, backgroundColor: '#111', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#222', gap: 8 },
+  inputBar:         { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, backgroundColor: '#111', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#222', gap: 8 },
   input:            { flex: 1, backgroundColor: '#1e1e1e', color: '#fff', borderRadius: 20, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, fontSize: 15, maxHeight: 120 },
   sendBtn:          { width: 40, height: 40, borderRadius: 20, backgroundColor: '#ff4500', justifyContent: 'center', alignItems: 'center' },
   sendBtnDisabled:  { backgroundColor: '#333' },

@@ -47,10 +47,13 @@ serve(async (req) => {
     );
 
     // Resolve the calling user from their JWT
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(
-      authHeader.replace('Bearer ', ''),
-    );
-    if (authErr || !user) return json({ error: 'Invalid token' }, 401);
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+    if (authErr || !user) {
+      // Log the actual auth error so it's visible in Supabase function logs
+      console.error('Auth error:', authErr?.message ?? 'no user returned', 'token prefix:', token.slice(0, 20));
+      return json({ error: `Auth failed: ${authErr?.message ?? 'invalid token'}` }, 401);
+    }
 
     const buyerId = user.id;
 
