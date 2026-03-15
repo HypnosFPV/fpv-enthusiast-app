@@ -268,10 +268,11 @@ function PostGridCell({ item, onPress }: { item: Post; onPress: () => void }) {
 // ─── Tab config ───────────────────────────────────────────────────────────────
 
 const TABS = [
-  { key: 'posts',  label: 'Posts',  icon: 'grid-outline'      },
-  { key: 'media',  label: 'Media',  icon: 'film-outline'      },
-  { key: 'builds', label: 'Builds', icon: 'construct-outline' },
-  { key: 'boosts', label: 'Boosts', icon: 'flash-outline'     },
+  { key: 'posts',    label: 'Posts',    icon: 'grid-outline'       },
+  { key: 'media',    label: 'Media',    icon: 'film-outline'       },
+  { key: 'builds',   label: 'Builds',   icon: 'construct-outline'  },
+  { key: 'listings', label: 'Listings', icon: 'pricetag-outline'   },
+  { key: 'saved',    label: 'Saved',    icon: 'bookmark-outline'   },
 ] as const;
 
 type TabKey = typeof TABS[number]['key'];
@@ -318,9 +319,10 @@ export default function ProfileScreen() {
 
   // ── Tab / data state ──────────────────────────────────────────────────────
   const [activeTab,   setActiveTab]   = useState<TabKey>('posts');
-  const [myPosts,     setMyPosts]     = useState<Post[]>([]);
-  const [builds,      setBuilds]      = useState<Build[]>([]);
-  const [boostHistory, setBoostHistory] = useState<any[]>([]);
+  const [myPosts,       setMyPosts]       = useState<Post[]>([]);
+  const [builds,        setBuilds]        = useState<Build[]>([]);
+  const [myListings,    setMyListings]    = useState<any[]>([]);
+  const [savedListings, setSavedListings] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [refreshing,  setRefreshing]  = useState(false);
   const loadedTabsRef = useRef<Set<TabKey>>(new Set());
@@ -560,6 +562,38 @@ export default function ProfileScreen() {
     setBoostHistory(data ?? []);
   }, [user?.id]);
 
+  const loadMyListings = useCallback(async () => {
+    if (!user?.id) return;
+    const { data } = await supabase
+      .from('marketplace_listings')
+      .select(`
+        id, title, price, status, condition, created_at,
+        listing_images ( url, is_primary )
+      `)
+      .eq('seller_id', user.id)
+      .in('status', ['active', 'pending_sale'])
+      .order('created_at', { ascending: false })
+      .limit(50);
+    setMyListings(data ?? []);
+  }, [user?.id]);
+
+  const loadSavedListings = useCallback(async () => {
+    if (!user?.id) return;
+    const { data } = await supabase
+      .from('listing_watchlist')
+      .select(`
+        listing_id,
+        marketplace_listings (
+          id, title, price, status, condition, created_at,
+          listing_images ( url, is_primary )
+        )
+      `)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    setSavedListings((data ?? []).map((r: any) => r.marketplace_listings).filter(Boolean));
+  }, [user?.id]);
+
   const loadTabData = useCallback(async (tab: TabKey, force = false) => {
     if (!force && loadedTabsRef.current.has(tab)) return;
     setDataLoading(true);
@@ -571,12 +605,15 @@ export default function ProfileScreen() {
       } else if (tab === 'builds') {
         await loadBuilds();
         loadedTabsRef.current.add('builds');
-      } else if (tab === 'boosts') {
-        await loadBoostHistory();
-        loadedTabsRef.current.add('boosts');
+      } else if (tab === 'listings') {
+        await loadMyListings();
+        loadedTabsRef.current.add('listings');
+      } else if (tab === 'saved') {
+        await loadSavedListings();
+        loadedTabsRef.current.add('saved');
       }
     } finally { setDataLoading(false); }
-  }, [loadMyPosts, loadBuilds, loadBoostHistory]);
+  }, [loadMyPosts, loadBuilds, loadMyListings, loadSavedListings]);
 
   useEffect(() => { loadTabData(activeTab); }, [activeTab]);
 
@@ -1028,6 +1065,77 @@ export default function ProfileScreen() {
                           </Text>
                         </View>
                       </View>
+                    );
+                  })
+                )}
+              </View>
+            )}
+            {activeTab === 'listings' && (
+              <View style={{ padding: 12, gap: 10 }}>
+                {myListings.length === 0 ? (
+                  <EmptyState icon="pricetag-outline" text="No active listings" />
+                ) : (
+                  myListings.map((l: any) => {
+                    const img = l.listing_images?.find((i: any) => i.is_primary) ?? l.listing_images?.[0];
+                    const statusColor = l.status === 'active' ? '#22c55e' : '#ffcc00';
+                    return (
+                      <TouchableOpacity
+                        key={l.id}
+                        style={{ backgroundColor: '#1a1a1a', borderRadius: 12, padding: 12, flexDirection: 'row', gap: 12, alignItems: 'center', borderWidth: 1, borderColor: '#2a2a2a' }}
+                        activeOpacity={0.8}
+                        onPress={() => router.push({ pathname: '/listing/[id]', params: { id: l.id } })}
+                      >
+                        {img?.url ? (
+                          <Image source={{ uri: img.url }} style={{ width: 60, height: 60, borderRadius: 8 }} />
+                        ) : (
+                          <View style={{ width: 60, height: 60, borderRadius: 8, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name="image-outline" size={24} color="#666" />
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }} numberOfLines={1}>{l.title}</Text>
+                          <Text style={{ color: '#ff4500', fontWeight: '700', fontSize: 13, marginTop: 2 }}>${parseFloat(l.price ?? 0).toFixed(2)}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                            <View style={{ backgroundColor: statusColor + '22', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: statusColor + '66' }}>
+                              <Text style={{ color: statusColor, fontSize: 10, fontWeight: '700' }}>{l.status === 'pending_sale' ? 'OFFER ACCEPTED' : 'ACTIVE'}</Text>
+                            </View>
+                          </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#555" />
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </View>
+            )}
+            {activeTab === 'saved' && (
+              <View style={{ padding: 12, gap: 10 }}>
+                {savedListings.length === 0 ? (
+                  <EmptyState icon="bookmark-outline" text="No saved listings" />
+                ) : (
+                  savedListings.map((l: any) => {
+                    const img = l.listing_images?.find((i: any) => i.is_primary) ?? l.listing_images?.[0];
+                    return (
+                      <TouchableOpacity
+                        key={l.id}
+                        style={{ backgroundColor: '#1a1a1a', borderRadius: 12, padding: 12, flexDirection: 'row', gap: 12, alignItems: 'center', borderWidth: 1, borderColor: '#2a2a2a' }}
+                        activeOpacity={0.8}
+                        onPress={() => router.push({ pathname: '/listing/[id]', params: { id: l.id } })}
+                      >
+                        {img?.url ? (
+                          <Image source={{ uri: img.url }} style={{ width: 60, height: 60, borderRadius: 8 }} />
+                        ) : (
+                          <View style={{ width: 60, height: 60, borderRadius: 8, backgroundColor: '#333', alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name="image-outline" size={24} color="#666" />
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }} numberOfLines={1}>{l.title}</Text>
+                          <Text style={{ color: '#ff4500', fontWeight: '700', fontSize: 13, marginTop: 2 }}>${parseFloat(l.price ?? 0).toFixed(2)}</Text>
+                          <Text style={{ color: '#666', fontSize: 11, marginTop: 2 }}>{l.condition?.replace('_', ' ').toUpperCase()}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#555" />
+                      </TouchableOpacity>
                     );
                   })
                 )}

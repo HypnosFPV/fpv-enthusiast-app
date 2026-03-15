@@ -1636,10 +1636,13 @@ export default function MarketplaceScreen() {
         Alert.alert('🎉 Listing published!', 'Your item is now live in the marketplace.');
       }
       onRefresh();
+      // Refresh the user's own listing list so the new item appears
+      // immediately in the "Boost your listing" picker
+      refreshUserProps();
     } else {
       Alert.alert('Error', result.error ?? 'Failed to publish listing. Please try again.');
     }
-  }, [createListing, onRefresh]);
+  }, [createListing, onRefresh, refreshUserProps]);
 
   // ── List footer ────────────────────────────────────────────────────────────
   const ListFooter = useCallback(() => {
