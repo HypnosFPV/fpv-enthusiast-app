@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet } from 'react-native';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
+import { useChatContext } from '../../src/context/ChatContext';
 import DroneIcon from '../../src/components/icons/DroneIcon';
 import PropIcon    from '../../src/components/icons/PropIcon';
 import GogglesIcon from '../../src/components/icons/GogglesIcon';
@@ -10,6 +11,7 @@ import GogglesIcon from '../../src/components/icons/GogglesIcon';
 export default function TabLayout() {
   // ── FIX: use shared context instead of a separate hook instance ──────────
   const { unreadCount } = useNotificationsContext();
+  const { unreadCount: chatUnread } = useChatContext();
 
   return (
     <Tabs
@@ -60,6 +62,24 @@ export default function TabLayout() {
           title: 'Market',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="storefront-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Messages',
+          tabBarIcon: ({ color, size }) => (
+            <View>
+              <Ionicons name="chatbubbles-outline" size={size} color={color} />
+              {chatUnread > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {chatUnread > 9 ? '9+' : chatUnread}
+                  </Text>
+                </View>
+              )}
+            </View>
           ),
         }}
       />

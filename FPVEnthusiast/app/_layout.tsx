@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from '../src/context/AuthContext';
 import { NotificationsProvider } from '../src/context/NotificationsContext';
+import { ChatProvider } from '../src/context/ChatContext';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
 
 // Inner component so hooks run inside both providers
@@ -19,6 +20,7 @@ function AppContent() {
         <Stack.Screen name="post/[id]"    options={{ headerShown: false }} />
         <Stack.Screen name="listing/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="settings"      options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="chat/[roomId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
       </Stack>
 
       {/* Push notification pre-prompt modal (iOS only, shown once on first launch) */}
@@ -32,7 +34,9 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
         <NotificationsProvider>
-          <AppContent />
+          <ChatProvider>
+            <AppContent />
+          </ChatProvider>
         </NotificationsProvider>
       </AuthProvider>
     </GestureHandlerRootView>

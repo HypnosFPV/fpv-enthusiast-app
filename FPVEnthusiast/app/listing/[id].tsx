@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth }           from '../../src/context/AuthContext';
 import { useListingDetail }  from '../../src/hooks/useListingDetail';
+import { useChat }           from '../../src/hooks/useChat';
 import ImageZoomModal        from '../../src/components/ImageZoomModal';
 import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
 import {
@@ -697,6 +698,8 @@ export default function ListingDetailScreen() {
     updateListing, deletePhoto,
   } = useListingDetail(id ?? '', user?.id);
 
+  const { getOrCreateMarketplaceChat } = useChat(user?.id);
+
   // ── Sold-while-featured bonus toast (seller only) ──────────────────────────
   useEffect(() => {
     if (!user?.id || !listing || listing.status !== 'sold') return;
@@ -761,6 +764,21 @@ export default function ListingDetailScreen() {
       router.push({ pathname: '/user/[id]', params: { id: listing.seller_id } });
     }
   }, [listing?.seller_id, router]);
+
+  // ── Open unified chat room for this listing ───────────────────────────────
+  const [openingChat, setOpeningChat] = useState(false);
+  const openChatRoom = useCallback(async () => {
+    if (!listing?.id || !listing?.seller_id) return;
+    setOpeningChat(true);
+    const roomId = await getOrCreateMarketplaceChat(listing.id, listing.seller_id);
+    setOpeningChat(false);
+    if (roomId) {
+      router.push(`/chat/${roomId}` as any);
+    } else {
+      // Fallback to the legacy MessageSheet if RPC fails
+      setShowMsg(true);
+    }
+  }, [listing?.id, listing?.seller_id, getOrCreateMarketplaceChat, router]);
 
   // ── Mark shipped ──────────────────────────────────────────────────────────
   const handleShipped = useCallback(async (tracking: string, carrier: string) => {
@@ -1288,9 +1306,13 @@ export default function ListingDetailScreen() {
         <View style={styles.ctaBar}>
           <TouchableOpacity
             style={styles.ctaMsgBtn}
-            onPress={() => setShowMsg(true)}
+            onPress={openChatRoom}
+            disabled={openingChat}
           >
-            <Ionicons name="chatbubble-outline" size={18} color="#fff" />
+            {openingChat
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="chatbubble-outline" size={18} color="#fff" />
+            }
             <Text style={styles.ctaBtnTxt}>Message</Text>
             {offers.filter(o => o.status === 'pending').length > 0 && (
               <View style={styles.offerBadge}>
