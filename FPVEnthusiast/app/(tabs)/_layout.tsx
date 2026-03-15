@@ -4,9 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { View, Text, StyleSheet } from 'react-native';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
 import { useChatContext } from '../../src/context/ChatContext';
-import DroneIcon from '../../src/components/icons/DroneIcon';
+import DroneIcon   from '../../src/components/icons/DroneIcon';
 import PropIcon    from '../../src/components/icons/PropIcon';
 import GogglesIcon from '../../src/components/icons/GogglesIcon';
+import ChatIcon    from '../../src/components/icons/ChatIcon';
 
 export default function TabLayout() {
   // ── FIX: use shared context instead of a separate hook instance ──────────
@@ -69,9 +70,9 @@ export default function TabLayout() {
         name="chat"
         options={{
           title: 'Messages',
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color, size, focused }) => (
             <View>
-              <Ionicons name="chatbubbles-outline" size={size} color={color} />
+              <ChatIcon size={size} color={color} focused={focused} />
               {chatUnread > 0 && (
                 <View style={styles.badge}>
                   <Text style={styles.badgeText}>

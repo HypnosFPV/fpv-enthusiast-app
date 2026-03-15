@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
   TextInput, ActivityIndicator, Image, Modal, Alert,
-  KeyboardAvoidingView, Platform, Pressable,
+  KeyboardAvoidingView, Platform, Pressable, ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -110,7 +110,8 @@ function NewGroupModal({
           <TextInput
             style={styles.groupNameInput}
             placeholder="Group name…"
-            placeholderTextColor="#555"
+            placeholderTextColor="#888"
+            selectionColor="#ff4500"
             value={groupName}
             onChangeText={setGroupName}
           />
@@ -118,7 +119,8 @@ function NewGroupModal({
           <TextInput
             style={styles.searchInput}
             placeholder="Search users to add…"
-            placeholderTextColor="#555"
+            placeholderTextColor="#888"
+            selectionColor="#ff4500"
             value={search}
             onChangeText={searchUsers}
           />
@@ -152,7 +154,7 @@ function NewGroupModal({
                   {item.avatar_url
                     ? <Image source={{ uri: item.avatar_url }} style={styles.userAvatar} />
                     : <View style={[styles.userAvatar, styles.avatarFallback]}>
-                        <Ionicons name="person" size={16} color="#666" />
+                        <Ionicons name="person" size={16} color="#aaa" />
                       </View>
                   }
                   <Text style={styles.userRowName}>{item.username}</Text>
@@ -211,8 +213,12 @@ function NewDMModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={[styles.modalSheet, { minHeight: 300 }]} onPress={e => e.stopPropagation()}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
+        <View style={[styles.modalSheet, { maxHeight: '80%' }]}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>New Message</Text>
             <TouchableOpacity onPress={onClose}>
@@ -222,15 +228,18 @@ function NewDMModal({
           <TextInput
             style={styles.searchInput}
             placeholder="Search users…"
-            placeholderTextColor="#555"
+            placeholderTextColor="#888"
             value={search}
             onChangeText={searchUsers}
             autoFocus
+            selectionColor="#ff4500"
           />
           {loading && <ActivityIndicator color="#ff4500" style={{ marginTop: 12 }} />}
           <FlatList
             data={results}
             keyExtractor={u => u.id}
+            style={styles.dmResultsList}
+            keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={styles.userRow}
@@ -239,16 +248,21 @@ function NewDMModal({
                 {item.avatar_url
                   ? <Image source={{ uri: item.avatar_url }} style={styles.userAvatar} />
                   : <View style={[styles.userAvatar, styles.avatarFallback]}>
-                      <Ionicons name="person" size={18} color="#666" />
+                      <Ionicons name="person" size={18} color="#aaa" />
                     </View>
                 }
                 <Text style={styles.userRowName}>{item.username}</Text>
-                <Ionicons name="chevron-forward" size={16} color="#555" />
+                <Ionicons name="chevron-forward" size={16} color="#666" />
               </TouchableOpacity>
             )}
+            ListEmptyComponent={
+              search.trim().length >= 2 && !loading
+                ? <Text style={styles.noResults}>No users found</Text>
+                : null
+            }
           />
-        </Pressable>
-      </Pressable>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -458,15 +472,17 @@ const styles = StyleSheet.create({
   modalSheet:     { backgroundColor: '#111', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 32 },
   modalHeader:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#222' },
   modalTitle:     { color: '#fff', fontSize: 17, fontWeight: '700' },
-  groupNameInput: { backgroundColor: '#1e1e1e', color: '#fff', borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 12, fontSize: 15 },
-  searchInput:    { backgroundColor: '#1e1e1e', color: '#fff', borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 8, fontSize: 15 },
+  groupNameInput: { backgroundColor: '#2a2a2a', color: '#fff', borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 12, fontSize: 15, borderWidth: 1, borderColor: '#3a3a3a' },
+  searchInput:    { backgroundColor: '#2a2a2a', color: '#fff', borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 8, fontSize: 15, borderWidth: 1, borderColor: '#3a3a3a' },
+  dmResultsList:  { backgroundColor: '#111', maxHeight: 280 },
+  noResults:      { color: '#666', textAlign: 'center', padding: 20, fontSize: 14 },
   selectedChips:  { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, marginTop: 8 },
   chip:           { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ff4500', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, gap: 4 },
   chipTxt:        { color: '#fff', fontSize: 13, fontWeight: '600' },
-  userRow:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#1e1e1e' },
+  userRow:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2a2a2a', backgroundColor: '#111' },
   userRowSelected:{ backgroundColor: '#1a1a1a' },
   userAvatar:     { width: 38, height: 38, borderRadius: 19 },
-  userRowName:    { flex: 1, color: '#fff', fontSize: 15 },
+  userRowName:    { flex: 1, color: '#f0f0f0', fontSize: 15, fontWeight: '500' },
   createBtn:      { backgroundColor: '#ff4500', margin: 16, borderRadius: 12, padding: 14, alignItems: 'center' },
   createBtnTxt:   { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
