@@ -1,9 +1,12 @@
 // src/components/icons/ChatIcon.tsx
-// RadioMaster Boxer FPV radio controller — front-face view
-// Stroke-only SVG matching DroneIcon / GogglesIcon style
+// Radiomaster Boxer FPV radio — front-face lineart replica
+// Layout (top→bottom): flat antenna bar | 4 shoulder switches | body |
+//   power pill (center) | left gimbal + right gimbal | trim sliders |
+//   oval button row | [nav stack left] [LCD center] [scroll wheel right]
+// Stroke-only SVG matching DroneIcon / GogglesIcon visual weight
 // viewBox 0 0 32 32
 import React from 'react';
-import Svg, { Rect, Circle, Line, Path } from 'react-native-svg';
+import Svg, { Rect, Circle, Line, Path, G } from 'react-native-svg';
 
 interface ChatIconProps {
   size?: number;
@@ -16,87 +19,100 @@ export default function ChatIcon({
   color = '#888',
   focused = false,
 }: ChatIconProps) {
-  const sw = focused ? 1.9 : 1.6;   // primary stroke
-  const sd = focused ? 1.3 : 1.0;   // detail stroke
-  const ss = focused ? 1.0 : 0.8;   // fine detail
+  const sw = focused ? 1.8 : 1.5;   // body / gimbal stroke
+  const sd = focused ? 1.2 : 0.9;   // detail stroke
+  const ss = focused ? 0.9 : 0.7;   // fine / sub-detail
 
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
 
-      {/* ── SHOULDER SWITCHES — top edge, 4 small tabs ─────────────────── */}
-      {/* Left pair (SWA / SWB) */}
-      <Rect x="3"  y="3.5" width="3" height="2.5" rx="0.6"
+      {/* ── ANTENNA — flat bar across top center ───────────────────────── */}
+      <Rect x="9" y="1" width="14" height="1.8" rx="0.9"
+        stroke={color} strokeWidth={sw} fill="none" />
+
+      {/* ── SHOULDER SWITCHES — 4 toggle tabs at top edge of body ──────── */}
+      {/* Far-left */}
+      <Rect x="2"    y="2.5" width="2.5" height="3.5" rx="0.5"
         stroke={color} strokeWidth={ss} fill="none" />
-      <Rect x="7.5" y="3.5" width="3" height="2.5" rx="0.6"
+      {/* Left-center */}
+      <Rect x="5.5"  y="2.5" width="2.5" height="3.5" rx="0.5"
         stroke={color} strokeWidth={ss} fill="none" />
-      {/* Right pair (SWC / SWD) */}
-      <Rect x="21.5" y="3.5" width="3" height="2.5" rx="0.6"
+      {/* Right-center */}
+      <Rect x="24"   y="2.5" width="2.5" height="3.5" rx="0.5"
         stroke={color} strokeWidth={ss} fill="none" />
-      <Rect x="26" y="3.5" width="3" height="2.5" rx="0.6"
+      {/* Far-right */}
+      <Rect x="27.5" y="2.5" width="2.5" height="3.5" rx="0.5"
         stroke={color} strokeWidth={ss} fill="none" />
 
       {/* ── MAIN BODY ───────────────────────────────────────────────────── */}
-      {/* Body with slight grips at bottom corners */}
-      <Path
-        d={
-          'M 2 6 ' +          // top-left
-          'L 30 6 ' +         // top-right
-          'L 30 27 ' +        // bottom-right
-          'Q 30 29 28 29 ' +  // grip bottom-right
-          'L 22 29 ' +
-          'Q 20 29 20 27 ' +  // waist-in right
-          'L 12 27 ' +
-          'Q 12 29 10 29 ' +  // waist-in left
-          'L 4 29 ' +
-          'Q 2 29 2 27 ' +    // grip bottom-left
-          'Z'
-        }
-        stroke={color}
-        strokeWidth={sw}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        fill="none"
-      />
+      <Rect x="1" y="4" width="30" height="27" rx="3"
+        stroke={color} strokeWidth={sw} fill="none" />
 
-      {/* ── LCD SCREEN — top center ─────────────────────────────────────── */}
-      <Rect x="11" y="8" width="10" height="7" rx="1"
+      {/* ── POWER BUTTON — oval pill, center between gimbals at top ─────── */}
+      <Rect x="13" y="5.5" width="6" height="2.5" rx="1.25"
         stroke={color} strokeWidth={sd} fill="none" />
-      {/* Screen glare / scanline detail */}
-      <Line x1="12.5" y1="9.5" x2="19.5" y2="9.5"
-        stroke={color} strokeWidth={ss} strokeLinecap="round" opacity={0.6} />
-      <Line x1="12.5" y1="11"  x2="17"   y2="11"
-        stroke={color} strokeWidth={ss} strokeLinecap="round" opacity={0.4} />
-
-      {/* ── MENU BUTTONS — small row below screen ───────────────────────── */}
-      <Circle cx="13.5" cy="17" r="0.8" stroke={color} strokeWidth={ss} fill="none" />
-      <Circle cx="16"   cy="17" r="0.8" stroke={color} strokeWidth={ss} fill="none" />
-      <Circle cx="18.5" cy="17" r="0.8" stroke={color} strokeWidth={ss} fill="none" />
 
       {/* ── LEFT GIMBAL ─────────────────────────────────────────────────── */}
       {/* Outer ring */}
-      <Circle cx="8" cy="22" r="4.5"
+      <Circle cx="9" cy="15" r="6.2"
+        stroke={color} strokeWidth={sw} fill="none" />
+      {/* Inner ring (gimbal plate) */}
+      <Circle cx="9" cy="15" r="3.6"
         stroke={color} strokeWidth={sd} fill="none" />
-      {/* Inner ring (gimbal movement indicator) */}
-      <Circle cx="8" cy="22" r="2.5"
-        stroke={color} strokeWidth={ss} fill="none" />
-      {/* Center dot */}
-      <Circle cx="8" cy="22" r="0.9"
-        stroke={color} strokeWidth={ss} fill="none" />
+      {/* Stick nub */}
+      <Circle cx="9" cy="15" r="1.3"
+        stroke={color} strokeWidth={sd} fill="none" />
 
       {/* ── RIGHT GIMBAL ────────────────────────────────────────────────── */}
-      {/* Outer ring */}
-      <Circle cx="24" cy="22" r="4.5"
+      <Circle cx="23" cy="15" r="6.2"
+        stroke={color} strokeWidth={sw} fill="none" />
+      <Circle cx="23" cy="15" r="3.6"
         stroke={color} strokeWidth={sd} fill="none" />
-      {/* Inner ring */}
-      <Circle cx="24" cy="22" r="2.5"
-        stroke={color} strokeWidth={ss} fill="none" />
-      {/* Center dot */}
-      <Circle cx="24" cy="22" r="0.9"
-        stroke={color} strokeWidth={ss} fill="none" />
+      <Circle cx="23" cy="15" r="1.3"
+        stroke={color} strokeWidth={sd} fill="none" />
 
-      {/* ── NECK STRAP CLIP — center between screen and gimbals ─────────── */}
-      <Circle cx="16" cy="19.5" r="1"
-        stroke={color} strokeWidth={ss} fill="none" />
+      {/* ── TRIM SLIDERS — short horizontal bars between/below gimbals ──── */}
+      {/* Left trim (below left gimbal) */}
+      <Line x1="13.5" y1="21.2" x2="16" y2="21.2"
+        stroke={color} strokeWidth={sd} strokeLinecap="round" />
+      {/* Right trim */}
+      <Line x1="16" y1="21.2" x2="18.5" y2="21.2"
+        stroke={color} strokeWidth={sd} strokeLinecap="round" />
+      {/* Trim tick marks */}
+      <Line x1="14.8" y1="20.4" x2="14.8" y2="22"
+        stroke={color} strokeWidth={ss} strokeLinecap="round" />
+      <Line x1="17.2" y1="20.4" x2="17.2" y2="22"
+        stroke={color} strokeWidth={ss} strokeLinecap="round" />
+
+      {/* ── OVAL BUTTON ROW — 6 small pills below gimbals ───────────────── */}
+      {[4.5, 8, 11.5, 15, 18.5, 22, 25.5].map((x, i) => (
+        <Rect key={i} x={x} y="22.5" width="2.5" height="1.4" rx="0.7"
+          stroke={color} strokeWidth={ss} fill="none" />
+      ))}
+
+      {/* ── NAV BUTTONS — vertical stack, lower-left ────────────────────── */}
+      {[24.5, 26.2, 27.9, 29.6].map((y, i) => (
+        <Rect key={i} x="2" y={y} width="4" height="1.3" rx="0.65"
+          stroke={color} strokeWidth={ss} fill="none" />
+      ))}
+
+      {/* ── LCD SCREEN — bottom center ──────────────────────────────────── */}
+      <Rect x="9" y="24.5" width="14" height="6" rx="1"
+        stroke={color} strokeWidth={sd} fill="none" />
+      {/* Screen glare line */}
+      <Line x1="10" y1="25.6" x2="22" y2="25.6"
+        stroke={color} strokeWidth={ss} strokeLinecap="round" opacity={0.5} />
+
+      {/* ── SCROLL WHEEL — lower-right, ridged ──────────────────────────── */}
+      <Rect x="26.5" y="24.5" width="3" height="6" rx="1"
+        stroke={color} strokeWidth={sd} fill="none" />
+      {/* Ridges */}
+      <Line x1="26.5" y1="26.2" x2="29.5" y2="26.2"
+        stroke={color} strokeWidth={ss} strokeLinecap="square" />
+      <Line x1="26.5" y1="27.5" x2="29.5" y2="27.5"
+        stroke={color} strokeWidth={ss} strokeLinecap="square" />
+      <Line x1="26.5" y1="28.8" x2="29.5" y2="28.8"
+        stroke={color} strokeWidth={ss} strokeLinecap="square" />
 
     </Svg>
   );

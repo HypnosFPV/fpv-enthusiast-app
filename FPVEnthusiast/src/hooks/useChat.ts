@@ -50,7 +50,12 @@ export function useChat(currentUserId?: string) {
   const fetchRooms = useCallback(async () => {
     if (!currentUserId) return;
     setRoomsLoad(true);
-    const { data, error } = await supabase
+
+    // Strategy 1: full query with member join (requires is_room_member RLS fix)
+    let data: ChatRoom[] | null = null;
+    let error: { message: string } | null = null;
+
+    const res1 = await supabase
       .from('chat_rooms')
       .select(`
         id, type, name, avatar_url, listing_id,
@@ -59,11 +64,54 @@ export function useChat(currentUserId?: string) {
           user_id, role, last_read_at,
           user:user_id ( username, avatar_url )
         ),
-        listing:listing_id ( title, price, image_url:images )
+        listing:listing_id ( title, price )
       `)
       .order('updated_at', { ascending: false });
-    if (error) {
-      console.warn('[useChat] fetchRooms error:', error.message);
+
+    if (!res1.error) {
+      data = res1.data as ChatRoom[];
+    } else {
+      // Strategy 2: RLS recursion bug — fall back to membership-first approach.
+      // Query chat_room_members for rooms this user belongs to, then fetch rooms.
+      console.warn('[useChat] fetchRooms join failed, trying fallback:', res1.error.message);
+      const { data: memberRows, error: mErr } = await supabase
+        .from('chat_room_members')
+        .select('room_id')
+        .eq('user_id', currentUserId);
+
+      if (mErr || !memberRows?.length) {
+        console.warn('[useChat] fetchRooms fallback also failed:', mErr?.message);
+        error = mErr ?? { message: 'No rooms found' };
+      } else {
+        const roomIds = memberRows.map(r => r.room_id);
+        const res2 = await supabase
+          .from('chat_rooms')
+          .select(`
+            id, type, name, avatar_url, listing_id,
+            last_message, last_message_at, updated_at, created_by
+          `)
+          .in('id', roomIds)
+          .order('updated_at', { ascending: false });
+        if (!res2.error) {
+          // Fetch members separately for each room
+          const roomsWithMembers = await Promise.all(
+            ((res2.data ?? []) as ChatRoom[]).map(async room => {
+              const { data: mems } = await supabase
+                .from('chat_room_members')
+                .select('user_id, role, last_read_at, user:user_id ( username, avatar_url )')
+                .eq('room_id', room.id);
+              return { ...room, members: (mems ?? []) as ChatMember[], listing: null };
+            })
+          );
+          data = roomsWithMembers;
+        } else {
+          error = res2.error;
+        }
+      }
+    }
+
+    if (error || !data) {
+      console.warn('[useChat] fetchRooms all strategies failed:', error?.message);
       setRoomsLoad(false);
       return;
     }
