@@ -149,9 +149,9 @@ export default function ChatRoomScreen() {
     const text = draft.trim();
     if (!text) return;
     setDraft('');
-    const ok = await sendMessage(text, 'text');
-    if (!ok) {
-      Alert.alert('Error', 'Could not send message. Please try again.');
+    const result = await sendMessage(text, 'text');
+    if (!result.ok) {
+      Alert.alert('Error', result.error ?? 'Could not send message. Please try again.');
       setDraft(text);
     } else {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);

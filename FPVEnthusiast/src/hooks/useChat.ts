@@ -212,8 +212,8 @@ export function useChatRoom(roomId: string | null, currentUserId?: string) {
     body:     string,
     type:     ChatMessage['type'] = 'text',
     metadata: Record<string, unknown> | null = null,
-  ): Promise<boolean> => {
-    if (!roomId || !currentUserId || !body.trim()) return false;
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!roomId || !currentUserId || !body.trim()) return { ok: false, error: 'Missing room or user' };
     setSending(true);
     const { error } = await supabase.from('chat_messages').insert({
       room_id:   roomId,
@@ -222,9 +222,12 @@ export function useChatRoom(roomId: string | null, currentUserId?: string) {
       type,
       metadata,
     });
-    if (error) console.warn('[useChatRoom] sendMessage error:', error.message);
     setSending(false);
-    return !error;
+    if (error) {
+      console.warn('[useChatRoom] sendMessage error:', error.message, error.code, error.details);
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
   }, [roomId, currentUserId]);
 
   const subscribeMessages = useCallback(() => {
