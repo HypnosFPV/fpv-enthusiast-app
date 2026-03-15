@@ -235,35 +235,39 @@ export function useMarketplace(currentUserId?: string) {
     );
     setWatchlist(wlSet);
 
-    if (error) {
-      console.error('[useMarketplace] loadListings error:', JSON.stringify(error));
-      // If join failed (e.g. missing FK) try a bare query without embedded user join
-      if (error.code === 'PGRST200' || error.message?.includes('could not find')) {
-        const { data: bare, error: bareErr } = await supabase
-          .from('marketplace_listings')
-          .select('id, seller_id, title, description, category, subcategory, condition, condition_notes, price, buy_now_price, listing_type, status, auction_end, current_bid, bid_count, ships_from_state, shipping_cost, free_shipping, lipo_hazmat, view_count, created_at, updated_at, listing_images (id, url, position, is_primary)')
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-          .range(0, PAGE_SIZE - 1);
-        if (!bareErr && bare) {
-          const bareSellerIds = [...new Set(bare.map((r: any) => r.seller_id).filter(Boolean))];
-          const bareSellerMap = await fetchSellerMap(bareSellerIds);
-          const normalized = bare.map((r: any) => normalize(r, wlSet, bareSellerMap));
-          setListings(normalized);
-          if (bare.length < PAGE_SIZE) setHasMore(false);
-        } else {
-          console.error('[useMarketplace] bare fallback error:', JSON.stringify(bareErr));
+    try {
+      if (error) {
+        console.error('[useMarketplace] loadListings error:', JSON.stringify(error));
+        // If join failed (e.g. missing FK) try a bare query without embedded user join
+        if (error.code === 'PGRST200' || error.message?.includes('could not find')) {
+          const { data: bare, error: bareErr } = await supabase
+            .from('marketplace_listings')
+            .select('id, seller_id, title, description, category, subcategory, condition, condition_notes, price, buy_now_price, listing_type, status, auction_end, current_bid, bid_count, ships_from_state, shipping_cost, free_shipping, lipo_hazmat, view_count, created_at, updated_at, listing_images (id, url, position, is_primary)')
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
+            .range(0, PAGE_SIZE - 1);
+          if (!bareErr && bare) {
+            const bareSellerIds = [...new Set(bare.map((r: any) => r.seller_id).filter(Boolean))];
+            const bareSellerMap = await fetchSellerMap(bareSellerIds);
+            const normalized = bare.map((r: any) => normalize(r, wlSet, bareSellerMap));
+            setListings(normalized);
+            if (bare.length < PAGE_SIZE) setHasMore(false);
+          } else {
+            console.error('[useMarketplace] bare fallback error:', JSON.stringify(bareErr));
+          }
         }
+      } else if (data) {
+        const sellerIds = [...new Set(data.map((r: any) => r.seller_id).filter(Boolean))];
+        const sellerMap = await fetchSellerMap(sellerIds);
+        const normalized = data.map((r: any) => normalize(r, wlSet, sellerMap));
+        setListings(normalized);
+        if (data.length < PAGE_SIZE) setHasMore(false);
       }
-    } else if (data) {
-      const sellerIds = [...new Set(data.map((r: any) => r.seller_id).filter(Boolean))];
-      const sellerMap = await fetchSellerMap(sellerIds);
-      const normalized = data.map((r: any) => normalize(r, wlSet, sellerMap));
-      setListings(normalized);
-      if (data.length < PAGE_SIZE) setHasMore(false);
+    } finally {
+      // Always clear loading/refreshing so the spinner never gets stuck
+      setLoading(false);
+      setRefreshing(false);
     }
-    setLoading(false);
-    setRefreshing(false);
   }, [buildQuery, normalize, currentUserId]);
 
   // ── Load more ──────────────────────────────────────────────────────────────

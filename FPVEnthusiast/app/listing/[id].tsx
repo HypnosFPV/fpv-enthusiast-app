@@ -772,17 +772,17 @@ export default function ListingDetailScreen() {
     }
 
     // Immediately update the order banner to 'paid' without waiting for the
-    // stripe-webhook to fire (which can take a few seconds).
-    // Delay fetchOrder() by 5 s so the webhook has time to mark the DB row
-    // as 'paid'; calling it immediately would overwrite the optimistic update
-    // with a stale 'pending' row.
+    // stripe-webhook to fire (which can take several seconds).
+    // Do NOT call fetchOrder() here — it would overwrite the optimistic 'paid'
+    // state with the still-'pending' DB row before the webhook marks it paid.
+    // optimisticMarkPaid now handles the prev=null case too (new Buy Now where
+    // no prior pending order existed in state).
     if (orderId) optimisticMarkPaid(orderId);
-    setTimeout(() => fetchOrder(), 5000); // delayed background refresh
     Alert.alert(
       '\uD83C\uDF89 Order Placed!',
       'Payment received. The seller has been notified and will ship within 3 business days.',
     );
-  }, [listing?.id, myAcceptedOffer, initCheckout, confirmPayment, resetCheckout, fetchOrder, optimisticMarkPaid]);
+  }, [listing?.id, myAcceptedOffer, initCheckout, confirmPayment, resetCheckout, optimisticMarkPaid]);
 
   const [showEdit,     setShowEdit]     = useState(false);
   const [showPhotoMgr, setShowPhotoMgr] = useState(false);

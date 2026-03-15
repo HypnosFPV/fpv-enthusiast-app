@@ -27,10 +27,11 @@ function AppContent() {
         <Stack.Screen name="login"        options={{ headerShown: false }} />
         <Stack.Screen name="signup"       options={{ headerShown: false }} />
         <Stack.Screen name="user/[id]"    options={{ headerShown: false }} />
-        <Stack.Screen name="post/[id]"    options={{ headerShown: false }} />
-        <Stack.Screen name="listing/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="settings"      options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="chat/[roomId]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="post/[id]"      options={{ headerShown: false }} />
+        <Stack.Screen name="listing/[id]"    options={{ headerShown: false }} />
+        <Stack.Screen name="settings"        options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="chat/[roomId]"   options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="stripe-redirect" options={{ headerShown: false, animation: 'none' }} />
       </Stack>
 
       {/* Push notification pre-prompt modal (iOS only, shown once on first launch) */}

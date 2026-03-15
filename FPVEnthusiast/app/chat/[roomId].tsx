@@ -6,7 +6,6 @@ import {
   TextInput, ActivityIndicator, Image, KeyboardAvoidingView,
   Platform, Pressable, Alert,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
@@ -106,7 +105,6 @@ export default function ChatRoomScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const router = useRouter();
   const { user } = useAuth();
-  const insets = useSafeAreaInsets();
 
   const {
     messages, messagesLoad, sendMessage, sending, fetchMessages,
@@ -240,7 +238,7 @@ export default function ChatRoomScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 64 : 0}
+      keyboardVerticalOffset={0}
     >
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <View style={styles.header}>
@@ -288,9 +286,12 @@ export default function ChatRoomScreen() {
                 listRef.current?.scrollToEnd({ animated: false });
               }
             }}
-            // Also scroll to bottom when layout changes (keyboard open/close)
+            // Also scroll to bottom when layout changes (keyboard open/close),
+            // but only if there are messages to avoid jumping on empty chat.
             onLayout={() => {
-              listRef.current?.scrollToEnd({ animated: false });
+              if (messages.length > 0) {
+                listRef.current?.scrollToEnd({ animated: false });
+              }
             }}
             onScroll={e => {
               const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;

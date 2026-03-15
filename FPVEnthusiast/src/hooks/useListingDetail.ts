@@ -684,14 +684,31 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
   // update the banner immediately without waiting for the webhook.
   const optimisticMarkPaid = useCallback((orderId: string) => {
     setActiveOrder(prev => {
-      if (!prev) return prev;
+      if (!prev) {
+        // No activeOrder in state yet (first-time Buy Now, no prior pending row
+        // loaded).  Inject a synthetic order so the status banner shows 'paid'
+        // immediately instead of waiting for the delayed fetchOrder() to return
+        // and still show 'pending'.
+        return {
+          id:                  orderId,
+          listing_id:          listingId,
+          buyer_id:            currentUserId ?? '',
+          seller_id:           '',          // unknown here; refreshed later
+          amount_cents:        0,
+          platform_fee_cents:  0,
+          seller_payout_cents: 0,
+          status:              'paid',
+          created_at:          new Date().toISOString(),
+          paid_at:             new Date().toISOString(),
+        } as ListingOrder;
+      }
       // Only update if this is the same order and it's still 'pending'
       if (prev.id === orderId && prev.status === 'pending') {
         return { ...prev, status: 'paid', paid_at: new Date().toISOString() };
       }
       return prev;
     });
-  }, []);
+  }, [listingId, currentUserId]);
 
   return {
     listing, loading, fetchListing,
