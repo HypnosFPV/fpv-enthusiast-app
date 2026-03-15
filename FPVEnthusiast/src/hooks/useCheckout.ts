@@ -19,6 +19,7 @@
 // =============================================================================
 
 import { useState, useCallback, useRef } from 'react';
+import * as Linking from 'expo-linking';
 import {
   initStripe,
   initPaymentSheet,
@@ -143,7 +144,7 @@ export function useCheckout() {
       const { error: initErr } = await initPaymentSheet({
         paymentIntentClientSecret: clientSecret,
         merchantDisplayName:       'FPV Enthusiast Marketplace',
-        returnURL:                 'fpventhusiast://stripe-redirect',
+        returnURL:                 Linking.createURL('stripe-redirect'),
         style:                     'alwaysDark',
         appearance: {
           colors: {

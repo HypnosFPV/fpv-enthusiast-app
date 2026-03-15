@@ -126,7 +126,21 @@ export function useChat(currentUserId?: string) {
         : false;
       return { ...room, unread_count: hasUnread ? 1 : 0 };
     });
-    setRooms(roomsWithUnread);
+
+    // Deduplicate by room ID (Strategy 1 + fallback can occasionally return
+    // the same room twice; also filter to rooms this user is actually in)
+    const seen = new Set<string>();
+    const deduped = roomsWithUnread.filter(room => {
+      if (seen.has(room.id)) return false;
+      seen.add(room.id);
+      // Only show rooms where currentUser is a member
+      if (room.members && room.members.length > 0) {
+        return room.members.some(m => m.user_id === currentUserId);
+      }
+      return true; // fallback path (no members array) — keep it
+    });
+
+    setRooms(deduped);
     setRoomsLoad(false);
   }, [currentUserId]);
 

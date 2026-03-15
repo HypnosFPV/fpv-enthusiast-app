@@ -773,9 +773,11 @@ export default function ListingDetailScreen() {
 
     // Immediately update the order banner to 'paid' without waiting for the
     // stripe-webhook to fire (which can take a few seconds).
-    // fetchOrder() runs in the background to confirm once the webhook updates the DB.
+    // Delay fetchOrder() by 5 s so the webhook has time to mark the DB row
+    // as 'paid'; calling it immediately would overwrite the optimistic update
+    // with a stale 'pending' row.
     if (orderId) optimisticMarkPaid(orderId);
-    fetchOrder(); // background refresh — don't await so Alert shows immediately
+    setTimeout(() => fetchOrder(), 5000); // delayed background refresh
     Alert.alert(
       '\uD83C\uDF89 Order Placed!',
       'Payment received. The seller has been notified and will ship within 3 business days.',
