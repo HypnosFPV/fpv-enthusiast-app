@@ -279,7 +279,13 @@ export function useChatRoom(roomId: string | null, currentUserId?: string) {
     };
     setMessages(prev => [...prev, optimisticMsg]);
 
-    const { data: inserted, error } = await supabase
+    // ── INSERT only — do NOT chain .select() here.
+    // Chaining .select().single() after .insert() fires a second SELECT that is
+    // blocked by the chat_messages RLS SELECT policy on Supabase free tier,
+    // returning an error even though the INSERT succeeded.  That error was
+    // incorrectly triggering the optimistic-rollback path, making the message
+    // vanish from the UI until the user re-entered the room.
+    const { error: insertError } = await supabase
       .from('chat_messages')
       .insert({
         room_id:   roomId,
@@ -287,28 +293,21 @@ export function useChatRoom(roomId: string | null, currentUserId?: string) {
         body:      body.trim(),
         type,
         metadata,
-      })
-      .select('id, room_id, sender_id, body, type, metadata, deleted_at, created_at')
-      .single();
+      });
 
     setSending(false);
 
-    if (error) {
-      // Roll back optimistic message
+    if (insertError) {
+      // Genuine write failure — roll back optimistic message and restore draft
       setMessages(prev => prev.filter(m => m.id !== optimisticId));
-      console.warn('[useChatRoom] sendMessage error:', error.message, error.code, error.details);
-      return { ok: false, error: error.message };
+      console.warn('[useChatRoom] sendMessage insert error:', insertError.message, insertError.code);
+      return { ok: false, error: insertError.message };
     }
 
-    // Replace optimistic placeholder with real server row
-    if (inserted) {
-      setMessages(prev => prev.map(m =>
-        m.id === optimisticId ? (inserted as ChatMessage) : m
-      ));
-    }
-
-    // Also do a background fetch after 1s to catch any missed realtime events
-    setTimeout(() => fetchMessages(), 1000);
+    // INSERT succeeded.  The optimistic message is already visible.
+    // Fetch from DB after a short delay so the optimistic placeholder is
+    // replaced with the real server row (gets the proper UUID + timestamps).
+    setTimeout(() => fetchMessages(), 600);
 
     return { ok: true };
   }, [roomId, currentUserId, fetchMessages]);
@@ -327,12 +326,20 @@ export function useChatRoom(roomId: string | null, currentUserId?: string) {
       }, payload => {
         const msg = payload.new as ChatMessage;
         setMessages(prev => {
-          // Ignore if already present (optimistic or duplicate)
-          if (prev.some(m => m.id === msg.id || m.id.startsWith('optimistic_'))) {
-            // Replace any matching optimistic by re-fetching
-            fetchMessages();
+          // Skip exact duplicate (already in list)
+          if (prev.some(m => m.id === msg.id)) return prev;
+
+          // If there are pending optimistic messages, do a full fetch to
+          // reconcile rather than appending a potentially-duplicate row.
+          // This only triggers when OUR own send is still in-flight, which
+          // is rare since the realtime event fires after the INSERT commits.
+          const hasPendingOptimistic = prev.some(m => m.id.startsWith('optimistic_'));
+          if (hasPendingOptimistic) {
+            // Schedule fetch outside the state-updater (can't call async here)
+            setTimeout(() => fetchMessages(), 0);
             return prev;
           }
+
           return [...prev, msg];
         });
       })
