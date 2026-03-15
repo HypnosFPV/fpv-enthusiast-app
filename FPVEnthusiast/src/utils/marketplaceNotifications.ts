@@ -33,6 +33,9 @@ export async function sendMarketplaceNotification(p: MarketplaceNotifParams) {
   };
 
   // 1. Insert in-app notification (fire-and-forget — don't block UI)
+  // Write BOTH listing_id (FK column, added by 20260314 migration) and
+  // entity_id / entity_type (generic columns, added by 20260315 migration)
+  // so tap-to-navigate works regardless of which column the client reads.
   supabase.from('notifications').insert({
     user_id:     p.recipientId,
     actor_id:    p.actorId,
@@ -40,7 +43,8 @@ export async function sendMarketplaceNotification(p: MarketplaceNotifParams) {
     message:     messages[p.type],
     post_id:     null,
     comment_id:  null,
-    entity_id:   p.listingId,      // ← enables tap-to-navigate in notifications screen
+    listing_id:  p.listingId,      // FK to marketplace_listings
+    entity_id:   p.listingId,      // generic — enables tap-to-navigate
     entity_type: 'listing',
     read:        false,
   }).then(({ error }) => {

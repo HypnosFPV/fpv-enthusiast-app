@@ -676,11 +676,28 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     return data as { ok: boolean; error?: string } | null;
   }, [fetchOffers, offers, listingId, listing?.title]);
 
+  // ── Optimistic order state ────────────────────────────────────────────────
+  // After Stripe confirms payment on the client side, the stripe-webhook needs
+  // a few seconds to fire and update the DB row to 'paid'.  Calling fetchOrder()
+  // immediately after confirmPayment() returns the old 'pending' row, leaving
+  // the UI stuck on "Payment Pending".  This helper lets the listing screen
+  // update the banner immediately without waiting for the webhook.
+  const optimisticMarkPaid = useCallback((orderId: string) => {
+    setActiveOrder(prev => {
+      if (!prev) return prev;
+      // Only update if this is the same order and it's still 'pending'
+      if (prev.id === orderId && prev.status === 'pending') {
+        return { ...prev, status: 'paid', paid_at: new Date().toISOString() };
+      }
+      return prev;
+    });
+  }, []);
+
   return {
     listing, loading, fetchListing,
     isWatched, toggleWatch,
     messages, messagesLoad, sendMessage, sending,
-    activeOrder, fetchOrder,
+    activeOrder, fetchOrder, optimisticMarkPaid,
     markShipped, confirmReceipt,
     submitReview,
     addPhotos,

@@ -697,7 +697,7 @@ export default function ListingDetailScreen() {
     listing, loading, fetchListing,
     isWatched, toggleWatch,
     messages, messagesLoad, sendMessage, sending,
-    activeOrder, fetchOrder,
+    activeOrder, fetchOrder, optimisticMarkPaid,
     markShipped, confirmReceipt,
     submitReview,
     sendOffer, acceptOffer, declineOffer, counterOffer, offers,
@@ -771,13 +771,16 @@ export default function ListingDetailScreen() {
       return;
     }
 
-    // Refresh order state so UI transitions to 'paid' banner
-    await fetchOrder();
+    // Immediately update the order banner to 'paid' without waiting for the
+    // stripe-webhook to fire (which can take a few seconds).
+    // fetchOrder() runs in the background to confirm once the webhook updates the DB.
+    if (orderId) optimisticMarkPaid(orderId);
+    fetchOrder(); // background refresh — don't await so Alert shows immediately
     Alert.alert(
       '\uD83C\uDF89 Order Placed!',
       'Payment received. The seller has been notified and will ship within 3 business days.',
     );
-  }, [listing?.id, myAcceptedOffer, initCheckout, confirmPayment, resetCheckout, fetchOrder]);
+  }, [listing?.id, myAcceptedOffer, initCheckout, confirmPayment, resetCheckout, fetchOrder, optimisticMarkPaid]);
 
   const [showEdit,     setShowEdit]     = useState(false);
   const [showPhotoMgr, setShowPhotoMgr] = useState(false);

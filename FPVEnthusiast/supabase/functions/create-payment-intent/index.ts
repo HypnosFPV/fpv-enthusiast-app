@@ -130,31 +130,67 @@ serve(async (req) => {
 
     const paymentIntent = await stripe.paymentIntents.create(piParams);
 
-    // ── Create pending order ──────────────────────────────────────────────────
-    const { data: order, error: orderErr } = await supabase
+    // ── Reuse or create pending order ───────────────────────────────────────
+    // If the buyer already has a 'pending' order for this listing (e.g., from
+    // a previous abandoned payment attempt), reuse it and update the
+    // stripe_payment_intent to the new PI rather than creating a duplicate row.
+    // This prevents the "Payment Pending" banner from appearing on subsequent
+    // visits after a cancelled checkout.
+    const { data: existingOrder } = await supabase
       .from('marketplace_orders')
-      .insert({
-        listing_id,
-        buyer_id:            buyerId,
-        seller_id:           listing.seller_id,
-        amount_cents:        amountCents,
-        platform_fee_cents:  platformFeeCents,
-        seller_payout_cents: sellerPayoutCents,
-        stripe_payment_intent: paymentIntent.id,
-        status: 'pending',
-      })
       .select('id')
-      .single();
+      .eq('listing_id', listing_id)
+      .eq('buyer_id', buyerId)
+      .eq('status', 'pending')
+      .maybeSingle();
 
-    if (orderErr || !order) {
-      console.error('Order insert error', JSON.stringify(orderErr));
-      // Surface the real Postgres error so the client can display it
-      return json({ error: orderErr?.message ?? 'Could not create order' }, 500);
+    let orderId: string;
+
+    if (existingOrder?.id) {
+      // Update the existing order with the fresh PaymentIntent
+      const { error: updateErr } = await supabase
+        .from('marketplace_orders')
+        .update({
+          amount_cents:        amountCents,
+          platform_fee_cents:  platformFeeCents,
+          seller_payout_cents: sellerPayoutCents,
+          stripe_payment_intent: paymentIntent.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingOrder.id);
+
+      if (updateErr) {
+        console.error('Order update error', JSON.stringify(updateErr));
+        return json({ error: updateErr.message ?? 'Could not update order' }, 500);
+      }
+      orderId = existingOrder.id;
+    } else {
+      // Create fresh order
+      const { data: order, error: orderErr } = await supabase
+        .from('marketplace_orders')
+        .insert({
+          listing_id,
+          buyer_id:            buyerId,
+          seller_id:           listing.seller_id,
+          amount_cents:        amountCents,
+          platform_fee_cents:  platformFeeCents,
+          seller_payout_cents: sellerPayoutCents,
+          stripe_payment_intent: paymentIntent.id,
+          status: 'pending',
+        })
+        .select('id')
+        .single();
+
+      if (orderErr || !order) {
+        console.error('Order insert error', JSON.stringify(orderErr));
+        return json({ error: orderErr?.message ?? 'Could not create order' }, 500);
+      }
+      orderId = order.id;
     }
 
     return json({
       clientSecret:   paymentIntent.client_secret,
-      orderId:        order.id,
+      orderId,
       publishableKey: Deno.env.get('STRIPE_PUBLISHABLE_KEY'),
       amountCents,
     });

@@ -32,7 +32,7 @@ interface GroupedNotif {
   type:        AppNotification['type'];
   post_id:     string | null;
   comment_id:  string | null;
-  entity_id:   string | null;   // listing_id for marketplace notifs
+  entity_id:   string | null;   // listing_id for marketplace notifs (entity_id ?? listing_id)
   entity_type: string | null;
   /** All raw notification IDs belonging to this group */
   ids:        string[];
@@ -64,9 +64,11 @@ function groupNotifications(notifs: AppNotification[]): GroupedNotif[] {
       key = 'follow__all';
     } else if (n.type === 'reply') {
       key = `reply__${n.comment_id ?? n.post_id ?? 'x'}`;
-    } else if (n.entity_id && (n.type === 'new_offer' || n.type === 'offer_accepted' || n.type === 'offer_declined' || n.type === 'new_message')) {
+    } else if ((n.entity_id ?? n.listing_id) && (n.type === 'new_offer' || n.type === 'offer_accepted' || n.type === 'offer_declined' || n.type === 'new_message')) {
       // Marketplace notifications group per entity (listing)
-      key = `${n.type}__${n.entity_id}`;
+      // Use entity_id (new column) with fallback to listing_id (old FK column)
+      const eid = n.entity_id ?? n.listing_id;
+      key = `${n.type}__${eid}`;
     } else {
       key = `${n.type}__${n.post_id ?? 'x'}`;
     }
@@ -93,7 +95,7 @@ function groupNotifications(notifs: AppNotification[]): GroupedNotif[] {
         type:        n.type,
         post_id:     n.post_id,
         comment_id:  n.comment_id,
-        entity_id:   n.entity_id   ?? null,
+        entity_id:   n.entity_id ?? n.listing_id ?? null,  // prefer entity_id, fall back to listing_id
         entity_type: n.entity_type ?? null,
         ids:         [n.id],
         actors:      [actor],

@@ -12,7 +12,8 @@ export interface AppNotification {
              | 'new_message' | 'new_offer' | 'offer_accepted' | 'offer_declined';
   post_id:     string | null;
   comment_id:  string | null;
-  entity_id:   string | null;   // listing_id for marketplace notifications
+  listing_id:  string | null;   // FK column (added by 20260314 migration)
+  entity_id:   string | null;   // generic column (added by 20260315 migration)
   entity_type: string | null;   // 'listing' | 'order' | etc.
   message:      string | null;
   challenge_id: string | null;
