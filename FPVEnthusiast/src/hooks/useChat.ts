@@ -326,18 +326,27 @@ export function useChatRoom(roomId: string | null, currentUserId?: string) {
       }, payload => {
         const msg = payload.new as ChatMessage;
         setMessages(prev => {
-          // Skip exact duplicate (already in list)
+          // Skip exact duplicate by real UUID (already in list from a prior fetch)
           if (prev.some(m => m.id === msg.id)) return prev;
 
-          // If there are pending optimistic messages, do a full fetch to
-          // reconcile rather than appending a potentially-duplicate row.
-          // This only triggers when OUR own send is still in-flight, which
-          // is rare since the realtime event fires after the INSERT commits.
-          const hasPendingOptimistic = prev.some(m => m.id.startsWith('optimistic_'));
-          if (hasPendingOptimistic) {
-            // Schedule fetch outside the state-updater (can't call async here)
-            setTimeout(() => fetchMessages(), 0);
-            return prev;
+          // If there is an optimistic placeholder from the SAME sender with the
+          // same body, swap it out for the confirmed server row in-place.
+          // This avoids calling fetchMessages() (which would schedule a second
+          // fetch alongside the 600 ms one in sendMessage) and eliminates the
+          // race that caused messages to appear twice.
+          const optimisticIndex = prev.findIndex(
+            m =>
+              m.id.startsWith('optimistic_') &&
+              m.sender_id === msg.sender_id &&
+              m.body === msg.body,
+          );
+          if (optimisticIndex !== -1) {
+            const updated = [...prev];
+            // Replace the optimistic placeholder with the real server row.
+            // Cast because the realtime payload lacks the joined `sender` field;
+            // the 600 ms fetchMessages() call will hydrate it shortly after.
+            updated[optimisticIndex] = { ...msg, sender: prev[optimisticIndex].sender };
+            return updated;
           }
 
           return [...prev, msg];

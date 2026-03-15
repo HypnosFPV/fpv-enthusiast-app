@@ -10,9 +10,15 @@
 //
 //   // 2. Present the payment sheet — handled internally by this hook
 //   //    Returns { ok, orderId } on success.
+//
+// Fix (2026-03-15): Replaced state-based readiness check with a useRef so
+// confirmPayment() never sees a stale 'loading' snapshot from a React
+// batched-state update.  The ref is set synchronously inside initCheckout
+// right before the function returns { ok:true }, guaranteeing that
+// confirmPayment() can always trust it.
 // =============================================================================
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   initStripe,
   initPaymentSheet,
@@ -42,16 +48,34 @@ const INITIAL: CheckoutState = {
   amountCents: null,
 };
 
+// Synchronous ref shape — updated immediately (not via React batching)
+interface ReadyRef {
+  ready:   boolean;
+  orderId: string | null;
+}
+
 export function useCheckout() {
   const [state, setState] = useState<CheckoutState>(INITIAL);
 
-  const reset = useCallback(() => setState(INITIAL), []);
+  // ── Synchronous readiness ref ──────────────────────────────────────────────
+  // React batches setState calls, so confirmPayment() cannot rely on
+  // state.status being 'ready' immediately after initCheckout() returns.
+  // We keep a ref that is set synchronously before initCheckout resolves,
+  // ensuring confirmPayment() always reads the correct value.
+  const readyRef = useRef<ReadyRef>({ ready: false, orderId: null });
+
+  const reset = useCallback(() => {
+    readyRef.current = { ready: false, orderId: null };
+    setState(INITIAL);
+  }, []);
 
   // ── Step 1: create PaymentIntent on server, init payment sheet ────────────
   const initCheckout = useCallback(async (
     listingId: string,
     offerId?: string,
   ): Promise<{ ok: boolean; error?: string }> => {
+    // Clear previous readiness so a stale ref never leaks into a new checkout
+    readyRef.current = { ready: false, orderId: null };
     setState({ ...INITIAL, status: 'loading' });
 
     try {
@@ -135,6 +159,12 @@ export function useCheckout() {
 
       if (initErr) return fail(initErr.message);
 
+      // ── CRITICAL: update the ref BEFORE setState and BEFORE returning ──────
+      // setState is batched by React and will not be visible to confirmPayment()
+      // if it is called synchronously after initCheckout() returns.
+      // The ref is updated synchronously here, so confirmPayment() can always
+      // trust readyRef.current.ready === true when it runs.
+      readyRef.current = { ready: true, orderId };
       setState({ status: 'ready', orderId, error: null, amountCents });
       return { ok: true };
 
@@ -143,6 +173,7 @@ export function useCheckout() {
     }
 
     function fail(msg: string) {
+      readyRef.current = { ready: false, orderId: null };
       setState(s => ({ ...s, status: 'error', error: msg }));
       return { ok: false, error: msg };
     }
@@ -154,9 +185,15 @@ export function useCheckout() {
     orderId: string | null;
     error?: string;
   }> => {
-    if (state.status !== 'ready') {
+    // Use the ref instead of state.status — the ref is updated synchronously
+    // inside initCheckout(), so it is always correct even if React has not yet
+    // flushed the corresponding setState({ status: 'ready' }) call.
+    if (!readyRef.current.ready) {
+      console.warn('[Checkout] confirmPayment called before sheet was ready');
       return { ok: false, orderId: null, error: 'Payment sheet not initialised' };
     }
+
+    const currentOrderId = readyRef.current.orderId;
 
     setState(s => ({ ...s, status: 'processing' }));
 
@@ -168,13 +205,17 @@ export function useCheckout() {
         setState(s => ({ ...s, status: 'ready' }));
         return { ok: false, orderId: null, error: 'cancelled' };
       }
+      readyRef.current = { ready: false, orderId: null };
       setState(s => ({ ...s, status: 'error', error: error.message }));
       return { ok: false, orderId: null, error: error.message };
     }
 
+    readyRef.current = { ready: false, orderId: null };
     setState(s => ({ ...s, status: 'success' }));
-    return { ok: true, orderId: state.orderId };
-  }, [state.status, state.orderId]);
+    return { ok: true, orderId: currentOrderId };
+  // confirmPayment no longer depends on state — it reads from the ref.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return { initCheckout, confirmPayment, checkoutState: state, resetCheckout: reset };
 }
