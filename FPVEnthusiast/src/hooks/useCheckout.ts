@@ -72,9 +72,11 @@ export function useCheckout() {
         },
       );
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.clientSecret) {
-        return fail(data.error ?? 'Could not create payment');
+        // Show the real server error so it's easier to debug
+        const msg = data.error ?? data.message ?? `Server error ${res.status}`;
+        return fail(msg);
       }
 
       const { clientSecret, orderId, publishableKey, amountCents } = data;

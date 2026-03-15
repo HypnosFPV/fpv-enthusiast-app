@@ -139,29 +139,33 @@ export default function ChatRoomScreen() {
     if (roomId) markRoomRead(roomId);
   }, [roomId]);
 
-  // Scroll to bottom when messages load
+  // ── Scroll to bottom whenever the last message ID changes ────────────────
+  // Using lastMsgId (not messages.length) catches BOTH:
+  //  1. A brand-new message being appended (length grows)
+  //  2. The optimistic placeholder being swapped for the real server row
+  //     (length stays the same but the last item's id changes)
+  // This prevents the FlatList from jumping back up when fetchMessages()
+  // replaces the optimistic key with the real UUID 600 ms after send.
+  const lastMsgId = messages[messages.length - 1]?.id ?? null;
   useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 80);
-    }
-  }, [messages.length]);
+    if (!lastMsgId) return;
+    // Small delay lets the FlatList finish its layout pass first
+    const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: !!lastMsgId }), 80);
+    return () => clearTimeout(t);
+  }, [lastMsgId]);
 
   const handleSend = useCallback(async () => {
     const text = draft.trim();
     if (!text) return;
     setDraft('');
-    // Optimistic message is appended inside sendMessage immediately —
-    // scroll right away before the async insert even returns.
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     const result = await sendMessage(text, 'text');
     if (!result.ok) {
-      // Genuine DB failure — restore draft
+      // Genuine DB failure — restore draft so user doesn't lose their message
       console.warn('[Chat] sendMessage failed:', result.error);
       setDraft(text);
-    } else {
-      // Scroll again after server row replaces optimistic placeholder
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
     }
+    // Scrolling is handled entirely by the lastMsgId useEffect above —
+    // no manual scrollToEnd calls needed here.
   }, [draft, sendMessage]);
 
   // ── Header info ────────────────────────────────────────────────────────────
