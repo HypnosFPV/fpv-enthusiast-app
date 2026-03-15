@@ -1,0 +1,59 @@
+# supabase/config.toml
+# Project-level Supabase CLI configuration.
+# See: https://supabase.com/docs/reference/cli/config
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+
+[auth]
+enabled = true
+site_url = "http://localhost:8081"
+additional_redirect_urls = ["http://localhost:8081"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+
+# ── Edge Function per-function configuration ──────────────────────────────────
+# Setting verify_jwt = false disables the Supabase GATEWAY-level JWT check for
+# these functions. Each function still performs its own auth check internally
+# (calling supabase.auth.getUser(token)), so security is not reduced.
+#
+# Without this setting, the gateway rejects requests whose access_token is
+# even slightly expired (a common race condition in React Native / AsyncStorage)
+# with "Invalid JWT" before the function code runs, causing the payment error.
+
+[functions.create-payment-intent]
+verify_jwt = false
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.challenge-notifications]
+verify_jwt = false
+
+[functions.sync-multigp]
+verify_jwt = false

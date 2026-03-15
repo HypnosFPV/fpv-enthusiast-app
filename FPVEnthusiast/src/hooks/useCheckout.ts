@@ -55,12 +55,26 @@ export function useCheckout() {
     setState({ ...INITIAL, status: 'loading' });
 
     try {
-      // Explicitly refresh the session before invoking to prevent
-      // "Invalid JWT" errors caused by an expired access_token.
-      // supabase.auth.getSession() will use the refresh_token if the
-      // access_token has expired, ensuring we always send a fresh JWT.
-      const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
-      if (sessionErr || !session) {
+      // Force a session refresh so the access_token is always fresh.
+      // supabase.auth.refreshSession() rotates the token even if it hasn't
+      // expired yet, guaranteeing the Supabase gateway won't reject with
+      // "Invalid JWT" due to a near-expiry or stale cached token.
+      // Falls back to getSession() if the refresh itself fails (e.g. offline).
+      let session: import('@supabase/supabase-js').Session | null = null;
+      try {
+        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+        if (refreshErr || !refreshed.session) {
+          // Refresh failed — try the cached session as last resort
+          const { data: cached } = await supabase.auth.getSession();
+          session = cached.session;
+        } else {
+          session = refreshed.session;
+        }
+      } catch {
+        const { data: cached } = await supabase.auth.getSession();
+        session = cached.session;
+      }
+      if (!session) {
         return fail('Not signed in. Please log in and try again.');
       }
 
