@@ -29,8 +29,9 @@ import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
 import {
   CATEGORIES, CONDITIONS,
 } from '../../src/hooks/useMarketplace';
-import { supabase }    from '../../src/services/supabase';
-import * as FileSystem from 'expo-file-system/legacy';
+import { supabase }      from '../../src/services/supabase';
+import { useCheckout }   from '../../src/hooks/useCheckout';
+import * as FileSystem   from 'expo-file-system/legacy';
 
 const { width: W } = Dimensions.get('window');
 const IMG_H        = W * 0.78;   // ~78 % wide = square-ish hero
@@ -738,7 +739,43 @@ export default function ListingDetailScreen() {
   const shownBonusRef = useRef(false);
   const [addingPhotos,   setAddingPhotos]   = useState(false);
 
-  // ── Edit listing sheet state ─────────────────────────────────────────────
+  // ── Stripe checkout ─────────────────────────────────────────────────────
+  const { initCheckout, confirmPayment, checkoutState, resetCheckout } = useCheckout();
+
+  const handleBuyNow = useCallback(async () => {
+    if (!listing?.id) return;
+
+    // Find accepted offer (if buyer has one)
+    const acceptedOffer = offers.find(
+      o => o.buyer_id === user?.id && o.status === 'accepted'
+    );
+
+    const { ok, error: initErr } = await initCheckout(
+      listing.id,
+      acceptedOffer?.offer_id,
+    );
+    if (!ok) {
+      Alert.alert('Payment Error', initErr ?? 'Could not start checkout');
+      return;
+    }
+
+    const { ok: paid, orderId, error: payErr } = await confirmPayment();
+    if (!paid) {
+      if (payErr !== 'cancelled') {
+        Alert.alert('Payment Failed', payErr ?? 'Payment was not completed');
+      }
+      resetCheckout();
+      return;
+    }
+
+    // Refresh order state so UI transitions to 'paid' banner
+    await fetchOrder();
+    Alert.alert(
+      '🎉 Order Placed!',
+      'Payment received. The seller has been notified and will ship within 3 business days.',
+    );
+  }, [listing?.id, offers, user?.id, initCheckout, confirmPayment, resetCheckout, fetchOrder]);
+
   const [showEdit,     setShowEdit]     = useState(false);
   const [showPhotoMgr, setShowPhotoMgr] = useState(false);
   const [editSaving,   setEditSaving]   = useState(false);
@@ -1332,15 +1369,14 @@ export default function ListingDetailScreen() {
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={styles.ctaBuyBtn}
-              onPress={() =>
-                Alert.alert(
-                  'Buy Now',
-                  `Pay $${listing.price.toFixed(2)} for "${listing.title}"?\n\nStripe checkout coming in Phase 2.`,
-                )
-              }
+              style={[styles.ctaBuyBtn, checkoutState.status === 'loading' && { opacity: 0.6 }]}
+              onPress={handleBuyNow}
+              disabled={checkoutState.status === 'loading' || checkoutState.status === 'processing'}
             >
-              <Ionicons name="card-outline" size={18} color="#fff" />
+              {(checkoutState.status === 'loading' || checkoutState.status === 'processing')
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="card-outline" size={18} color="#fff" />
+              }
               <Text style={styles.ctaBtnTxt}>{`Buy · $${listing.price.toFixed(2)}`}</Text>
             </TouchableOpacity>
           )}

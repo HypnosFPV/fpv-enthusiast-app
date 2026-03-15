@@ -1,10 +1,13 @@
 // app/_layout.tsx
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import { AuthProvider } from '../src/context/AuthContext';
 import { NotificationsProvider } from '../src/context/NotificationsContext';
 import { ChatProvider } from '../src/context/ChatContext';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
+
+const STRIPE_PK = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 
 // Inner component so hooks run inside both providers
 function AppContent() {
@@ -32,13 +35,19 @@ function AppContent() {
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <NotificationsProvider>
-          <ChatProvider>
-            <AppContent />
-          </ChatProvider>
-        </NotificationsProvider>
-      </AuthProvider>
+      <StripeProvider
+        publishableKey={STRIPE_PK}
+        merchantIdentifier="merchant.com.fpventhusiast"
+        urlScheme="fpventhusiast"
+      >
+        <AuthProvider>
+          <NotificationsProvider>
+            <ChatProvider>
+              <AppContent />
+            </ChatProvider>
+          </NotificationsProvider>
+        </AuthProvider>
+      </StripeProvider>
     </GestureHandlerRootView>
   );
 }
