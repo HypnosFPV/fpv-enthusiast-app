@@ -143,6 +143,7 @@ export function useCheckout() {
       const { error: initErr } = await initPaymentSheet({
         paymentIntentClientSecret: clientSecret,
         merchantDisplayName:       'FPV Enthusiast Marketplace',
+        returnURL:                 'fpventhusiast://stripe-redirect',
         style:                     'alwaysDark',
         appearance: {
           colors: {
