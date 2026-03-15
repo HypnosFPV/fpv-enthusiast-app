@@ -115,6 +115,8 @@ export default function ChatRoomScreen() {
   const [draft, setDraft] = useState('');
   const [room,  setRoom]  = useState<ChatRoom | null>(null);
   const listRef = useRef<FlatList>(null);
+  // Track whether user has scrolled up (don't snap to bottom if reading history)
+  const isNearBottom = useRef(true);
 
   // Fetch room metadata for the header
   useEffect(() => {
@@ -277,6 +279,18 @@ export default function ChatRoomScreen() {
             contentContainerStyle={styles.messageList}
             onRefresh={fetchMessages}
             refreshing={messagesLoad}
+            // Pin scroll to bottom whenever content grows (new messages / optimistic swap)
+            onContentSizeChange={() => {
+              if (isNearBottom.current) {
+                listRef.current?.scrollToEnd({ animated: false });
+              }
+            }}
+            onScroll={e => {
+              const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+              const distFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+              isNearBottom.current = distFromBottom < 80;
+            }}
+            scrollEventThrottle={100}
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
                 <Ionicons name="chatbubbles-outline" size={48} color="#333" />

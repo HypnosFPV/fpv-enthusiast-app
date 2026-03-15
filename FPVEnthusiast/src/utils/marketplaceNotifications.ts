@@ -34,13 +34,15 @@ export async function sendMarketplaceNotification(p: MarketplaceNotifParams) {
 
   // 1. Insert in-app notification (fire-and-forget — don't block UI)
   supabase.from('notifications').insert({
-    user_id:    p.recipientId,
-    actor_id:   p.actorId,
-    type:       p.type,
-    message:    messages[p.type],
-    post_id:    null,
-    comment_id: null,
-    read:       false,
+    user_id:     p.recipientId,
+    actor_id:    p.actorId,
+    type:        p.type,
+    message:     messages[p.type],
+    post_id:     null,
+    comment_id:  null,
+    entity_id:   p.listingId,      // ← enables tap-to-navigate in notifications screen
+    entity_type: 'listing',
+    read:        false,
   }).then(({ error }) => {
     if (error) console.warn('[marketplaceNotif] in-app insert error:', error.message);
   });

@@ -66,7 +66,10 @@ serve(async (req) => {
       .single();
 
     if (listErr || !listing) return json({ error: 'Listing not found' }, 404);
-    if (listing.status !== 'active') return json({ error: 'Listing not available' }, 400);
+    // Allow checkout for 'active' listings (Buy Now) AND 'pending_sale' (accepted offer awaiting payment)
+    if (!['active', 'pending_sale'].includes(listing.status)) {
+      return json({ error: 'Listing not available for purchase' }, 400);
+    }
     if (listing.seller_id === buyerId) return json({ error: 'Cannot buy your own listing' }, 400);
 
     // ── Determine price ───────────────────────────────────────────────────────

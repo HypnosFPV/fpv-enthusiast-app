@@ -1079,17 +1079,34 @@ const CreateListingModal = ({
               />
 
               {/* Description */}
-              <Text style={styles.fieldLabel}>Description * (min 20 chars)</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, marginTop: 4 }}>
+                <Text style={styles.fieldLabel}>Description *</Text>
+                <Text style={[
+                  styles.charCount,
+                  { marginTop: 0, marginBottom: 0,
+                    color: description.trim().length === 0 ? '#444'
+                         : description.trim().length < 20  ? '#ff6b35'
+                         : '#22c55e' }
+                ]}>
+                  {description.trim().length < 20
+                    ? `${20 - description.trim().length} more chars needed`
+                    : `${description.length}/2000 ✓`}
+                </Text>
+              </View>
               <TextInput
-                style={[styles.fieldInput, styles.textArea]}
+                style={[
+                  styles.fieldInput, styles.textArea,
+                  description.trim().length > 0 && description.trim().length < 20
+                    ? { borderColor: '#ff6b35', borderWidth: 1 }
+                    : {}
+                ]}
                 value={description}
                 onChangeText={setDescription}
-                placeholder="Describe your item — specs, flight time, what's included, any known issues..."
+                placeholder="Describe your item — specs, flight time, what's included, any known issues (min 20 chars)..."
                 placeholderTextColor="#444"
                 multiline
                 maxLength={2000}
               />
-              <Text style={styles.charCount}>{description.length}/2000</Text>
             </View>
           )}
 
@@ -1288,23 +1305,25 @@ const FilterModal = ({
         </View>
         <ScrollView style={styles.filterBody}>
           <Text style={styles.fieldLabel}>Condition</Text>
-          <View style={styles.condRow}>
-            <TouchableOpacity
-              style={[styles.condChip, !condition && styles.condChipAllActive]}
-              onPress={() => setCondition(null)}
-            >
-              <Text style={[styles.condChipTxt, !condition && { color: '#fff' }]}>Any</Text>
-            </TouchableOpacity>
-            {CONDITIONS.map(c => (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+            <View style={[styles.condRow, { flexWrap: 'nowrap', marginBottom: 0 }]}>
               <TouchableOpacity
-                key={c.value}
-                style={[styles.condChip, condition === c.value && { backgroundColor: c.color + '33', borderColor: c.color }]}
-                onPress={() => setCondition(condition === c.value ? null : c.value)}
+                style={[styles.condChip, !condition && styles.condChipAllActive]}
+                onPress={() => setCondition(null)}
               >
-                <Text style={[styles.condChipTxt, condition === c.value && { color: c.color }]}>{c.label}</Text>
+                <Text style={[styles.condChipTxt, !condition && { color: '#fff' }]}>Any</Text>
               </TouchableOpacity>
-            ))}
-          </View>
+              {CONDITIONS.map(c => (
+                <TouchableOpacity
+                  key={c.value}
+                  style={[styles.condChip, condition === c.value && { backgroundColor: c.color + '33', borderColor: c.color }]}
+                  onPress={() => setCondition(condition === c.value ? null : c.value)}
+                >
+                  <Text style={[styles.condChipTxt, condition === c.value && { color: c.color }]}>{c.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
 
           <Text style={styles.fieldLabel}>Price range</Text>
           <View style={styles.priceRangeRow}>
