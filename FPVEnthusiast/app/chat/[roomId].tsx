@@ -9,7 +9,8 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
-import { useChatRoom, useChat, ChatMessage, ChatRoom } from '../../src/hooks/useChat';
+import { useChatRoom, ChatMessage, ChatRoom } from '../../src/hooks/useChat';
+import { useChatContext } from '../../src/context/ChatContext';
 import { supabase } from '../../src/services/supabase';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ export default function ChatRoomScreen() {
     messages, messagesLoad, sendMessage, sending, fetchMessages,
   } = useChatRoom(roomId ?? null, user?.id);
 
-  const { markRoomRead } = useChat(user?.id);
+  const { markRoomRead } = useChatContext();
 
   const [draft, setDraft] = useState('');
   const [room,  setRoom]  = useState<ChatRoom | null>(null);
@@ -149,24 +150,19 @@ export default function ChatRoomScreen() {
     const text = draft.trim();
     if (!text) return;
     setDraft('');
-    const msgCountBefore = messages.length;
+    // Optimistic message is appended inside sendMessage immediately —
+    // scroll right away before the async insert even returns.
+    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
     const result = await sendMessage(text, 'text');
     if (!result.ok) {
-      // Supabase RLS can return an error while the INSERT still succeeds
-      // (recursive policy race). Wait briefly to see if realtime delivers it.
-      await new Promise(r => setTimeout(r, 600));
-      if (messages.length > msgCountBefore) {
-        // Message appeared via realtime — treat as success
-        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-        return;
-      }
-      // Genuine failure — restore draft so user can retry
+      // Genuine DB failure — restore draft
       console.warn('[Chat] sendMessage failed:', result.error);
       setDraft(text);
     } else {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+      // Scroll again after server row replaces optimistic placeholder
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 150);
     }
-  }, [draft, sendMessage, messages.length]);
+  }, [draft, sendMessage]);
 
   // ── Header info ────────────────────────────────────────────────────────────
   const getRoomTitle = (): string => {

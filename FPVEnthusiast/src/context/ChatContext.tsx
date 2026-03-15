@@ -1,21 +1,28 @@
 // src/context/ChatContext.tsx
-// Provides chat unread count to the tab bar badge
+// Single shared useChat instance — provides unread badge + markRoomRead
+// to both the tab bar AND the chat room screen so badge clears on open.
 import React, { createContext, useContext } from 'react';
 import { useAuth } from './AuthContext';
 import { useChat } from '../hooks/useChat';
 
 interface ChatContextValue {
-  unreadCount: number;
+  unreadCount:  number;
+  markRoomRead: (roomId: string) => Promise<void>;
+  fetchRooms:   () => Promise<void>;
 }
 
-const ChatContext = createContext<ChatContextValue>({ unreadCount: 0 });
+const ChatContext = createContext<ChatContextValue>({
+  unreadCount:  0,
+  markRoomRead: async () => {},
+  fetchRooms:   async () => {},
+});
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const { totalUnread } = useChat(user?.id);
+  const { totalUnread, markRoomRead, fetchRooms } = useChat(user?.id);
 
   return (
-    <ChatContext.Provider value={{ unreadCount: totalUnread }}>
+    <ChatContext.Provider value={{ unreadCount: totalUnread, markRoomRead, fetchRooms }}>
       {children}
     </ChatContext.Provider>
   );

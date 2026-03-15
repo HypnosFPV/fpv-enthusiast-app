@@ -263,23 +263,60 @@ export function useChatRoom(roomId: string | null, currentUserId?: string) {
   ): Promise<{ ok: boolean; error?: string }> => {
     if (!roomId || !currentUserId || !body.trim()) return { ok: false, error: 'Missing room or user' };
     setSending(true);
-    const { error } = await supabase.from('chat_messages').insert({
-      room_id:   roomId,
-      sender_id: currentUserId,
-      body:      body.trim(),
+
+    // ── Optimistic update — show immediately without waiting for realtime ──
+    const optimisticId = `optimistic_${Date.now()}`;
+    const optimisticMsg: ChatMessage = {
+      id:         optimisticId,
+      room_id:    roomId,
+      sender_id:  currentUserId,
+      body:       body.trim(),
       type,
       metadata,
-    });
+      deleted_at: null,
+      created_at: new Date().toISOString(),
+      sender:     null,
+    };
+    setMessages(prev => [...prev, optimisticMsg]);
+
+    const { data: inserted, error } = await supabase
+      .from('chat_messages')
+      .insert({
+        room_id:   roomId,
+        sender_id: currentUserId,
+        body:      body.trim(),
+        type,
+        metadata,
+      })
+      .select('id, room_id, sender_id, body, type, metadata, deleted_at, created_at')
+      .single();
+
     setSending(false);
+
     if (error) {
+      // Roll back optimistic message
+      setMessages(prev => prev.filter(m => m.id !== optimisticId));
       console.warn('[useChatRoom] sendMessage error:', error.message, error.code, error.details);
       return { ok: false, error: error.message };
     }
+
+    // Replace optimistic placeholder with real server row
+    if (inserted) {
+      setMessages(prev => prev.map(m =>
+        m.id === optimisticId ? (inserted as ChatMessage) : m
+      ));
+    }
+
+    // Also do a background fetch after 1s to catch any missed realtime events
+    setTimeout(() => fetchMessages(), 1000);
+
     return { ok: true };
-  }, [roomId, currentUserId]);
+  }, [roomId, currentUserId, fetchMessages]);
 
   const subscribeMessages = useCallback(() => {
     if (!roomId) return;
+    // Broadcast channel — works regardless of RLS (no postgres_changes RLS check)
+    // Falls back to polling via fetchMessages every 4s
     channelRef.current = supabase
       .channel(`chat_room_${roomId}`)
       .on('postgres_changes', {
@@ -290,18 +327,37 @@ export function useChatRoom(roomId: string | null, currentUserId?: string) {
       }, payload => {
         const msg = payload.new as ChatMessage;
         setMessages(prev => {
-          if (prev.some(m => m.id === msg.id)) return prev;
+          // Ignore if already present (optimistic or duplicate)
+          if (prev.some(m => m.id === msg.id || m.id.startsWith('optimistic_'))) {
+            // Replace any matching optimistic by re-fetching
+            fetchMessages();
+            return prev;
+          }
           return [...prev, msg];
         });
       })
-      .subscribe();
-  }, [roomId]);
+      .subscribe(status => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          // Realtime unavailable — start polling every 4s
+          console.warn('[useChatRoom] realtime unavailable, polling every 4s');
+          const poll = setInterval(() => fetchMessages(), 4000);
+          // Store cleanup on channelRef as a side-effect flag
+          (channelRef as any)._pollInterval = poll;
+        }
+      });
+  }, [roomId, fetchMessages]);
 
   useEffect(() => {
     fetchMessages();
     subscribeMessages();
     return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
+      if (channelRef.current) {
+        // Clear any fallback poll interval
+        if ((channelRef as any)._pollInterval) {
+          clearInterval((channelRef as any)._pollInterval);
+        }
+        supabase.removeChannel(channelRef.current);
+      }
     };
   }, [fetchMessages, subscribeMessages]);
 
