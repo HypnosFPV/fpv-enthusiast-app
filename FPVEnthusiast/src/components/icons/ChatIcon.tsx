@@ -1,9 +1,9 @@
 // src/components/icons/ChatIcon.tsx
-// 🗣️ side-profile head (facing right) WEARING FPV goggles over the eyes + 3 speech lines
-// Stroke-only SVG, matches DroneIcon / GogglesIcon visual weight.
+// RadioMaster Boxer FPV radio controller — front-face view
+// Stroke-only SVG matching DroneIcon / GogglesIcon style
 // viewBox 0 0 32 32
 import React from 'react';
-import Svg, { Path, Rect, Line, Circle } from 'react-native-svg';
+import Svg, { Rect, Circle, Line, Path } from 'react-native-svg';
 
 interface ChatIconProps {
   size?: number;
@@ -16,30 +16,39 @@ export default function ChatIcon({
   color = '#888',
   focused = false,
 }: ChatIconProps) {
-  const sw = focused ? 1.9 : 1.6;   // outer stroke
-  const sd = focused ? 1.4 : 1.1;   // detail stroke
+  const sw = focused ? 1.9 : 1.6;   // primary stroke
+  const sd = focused ? 1.3 : 1.0;   // detail stroke
+  const ss = focused ? 1.0 : 0.8;   // fine detail
 
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
 
-      {/* ── HEAD — clean side profile facing RIGHT ────────────────────────
-          Back of head on left (~x6), face on right (~x20)
-          Crown at top, neck at bottom-center                           */}
+      {/* ── SHOULDER SWITCHES — top edge, 4 small tabs ─────────────────── */}
+      {/* Left pair (SWA / SWB) */}
+      <Rect x="3"  y="3.5" width="3" height="2.5" rx="0.6"
+        stroke={color} strokeWidth={ss} fill="none" />
+      <Rect x="7.5" y="3.5" width="3" height="2.5" rx="0.6"
+        stroke={color} strokeWidth={ss} fill="none" />
+      {/* Right pair (SWC / SWD) */}
+      <Rect x="21.5" y="3.5" width="3" height="2.5" rx="0.6"
+        stroke={color} strokeWidth={ss} fill="none" />
+      <Rect x="26" y="3.5" width="3" height="2.5" rx="0.6"
+        stroke={color} strokeWidth={ss} fill="none" />
+
+      {/* ── MAIN BODY ───────────────────────────────────────────────────── */}
+      {/* Body with slight grips at bottom corners */}
       <Path
         d={
-          'M 10 27 ' +          // neck base left
-          'L 10 24 ' +          // up left neck
-          'Q 9 22 9 19 ' +      // back jaw / lower cheek
-          'Q 8.5 14 10 11 ' +   // cheek curving up toward top
-          'Q 12 6  16 5 ' +     // crown arc (back of skull)
-          'Q 20 4  22 8 ' +     // top-forehead
-          'Q 23.5 10 23 13 ' +  // forehead sloping down toward brow
-          'Q 22.5 16 22 17 ' +  // nose bridge / top of nose
-          'L 23 18 ' +          // nose tip protrudes
-          'Q 22.5 20 21 21 ' +  // under-nose / upper lip
-          'Q 20 22.5 19 23.5 ' + // mouth / chin
-          'Q 16 26 13 26 ' +    // chin curves back
-          'L 13 27 ' +          // neck base right
+          'M 2 6 ' +          // top-left
+          'L 30 6 ' +         // top-right
+          'L 30 27 ' +        // bottom-right
+          'Q 30 29 28 29 ' +  // grip bottom-right
+          'L 22 29 ' +
+          'Q 20 29 20 27 ' +  // waist-in right
+          'L 12 27 ' +
+          'Q 12 29 10 29 ' +  // waist-in left
+          'L 4 29 ' +
+          'Q 2 29 2 27 ' +    // grip bottom-left
           'Z'
         }
         stroke={color}
@@ -49,65 +58,45 @@ export default function ChatIcon({
         fill="none"
       />
 
-      {/* ── EAR — small bump on back side of head ─────────────────────── */}
-      <Path
-        d="M 9.5 15 Q 7.5 15.5 7.5 17 Q 7.5 18.5 9.5 19"
-        stroke={color}
-        strokeWidth={sd - 0.2}
-        strokeLinecap="round"
-        fill="none"
-      />
+      {/* ── LCD SCREEN — top center ─────────────────────────────────────── */}
+      <Rect x="11" y="8" width="10" height="7" rx="1"
+        stroke={color} strokeWidth={sd} fill="none" />
+      {/* Screen glare / scanline detail */}
+      <Line x1="12.5" y1="9.5" x2="19.5" y2="9.5"
+        stroke={color} strokeWidth={ss} strokeLinecap="round" opacity={0.6} />
+      <Line x1="12.5" y1="11"  x2="17"   y2="11"
+        stroke={color} strokeWidth={ss} strokeLinecap="round" opacity={0.4} />
 
-      {/* ── FPV GOGGLES — ON THE EYES (front of face, eye area) ──────────
-          Goggles body sits across x:12→23, y:10→16.5
-          This is right in the "eye zone" of the side profile above.     */}
+      {/* ── MENU BUTTONS — small row below screen ───────────────────────── */}
+      <Circle cx="13.5" cy="17" r="0.8" stroke={color} strokeWidth={ss} fill="none" />
+      <Circle cx="16"   cy="17" r="0.8" stroke={color} strokeWidth={ss} fill="none" />
+      <Circle cx="18.5" cy="17" r="0.8" stroke={color} strokeWidth={ss} fill="none" />
 
-      {/* Main goggle body */}
-      <Rect
-        x="12"
-        y="10"
-        width="11"
-        height="6"
-        rx="1.4"
-        stroke={color}
-        strokeWidth={sd}
-        fill="none"
-      />
+      {/* ── LEFT GIMBAL ─────────────────────────────────────────────────── */}
+      {/* Outer ring */}
+      <Circle cx="8" cy="22" r="4.5"
+        stroke={color} strokeWidth={sd} fill="none" />
+      {/* Inner ring (gimbal movement indicator) */}
+      <Circle cx="8" cy="22" r="2.5"
+        stroke={color} strokeWidth={ss} fill="none" />
+      {/* Center dot */}
+      <Circle cx="8" cy="22" r="0.9"
+        stroke={color} strokeWidth={ss} fill="none" />
 
-      {/* Center lens divider */}
-      <Line
-        x1="17.5" y1="10"
-        x2="17.5" y2="16"
-        stroke={color}
-        strokeWidth={sd - 0.2}
-        strokeLinecap="round"
-      />
+      {/* ── RIGHT GIMBAL ────────────────────────────────────────────────── */}
+      {/* Outer ring */}
+      <Circle cx="24" cy="22" r="4.5"
+        stroke={color} strokeWidth={sd} fill="none" />
+      {/* Inner ring */}
+      <Circle cx="24" cy="22" r="2.5"
+        stroke={color} strokeWidth={ss} fill="none" />
+      {/* Center dot */}
+      <Circle cx="24" cy="22" r="0.9"
+        stroke={color} strokeWidth={ss} fill="none" />
 
-      {/* Goggle strap — goes from back of goggles (x12) to back of head */}
-      <Path
-        d="M 12 12.5 Q 10.5 12 10 13 Q 9.5 14 10.5 14.5"
-        stroke={color}
-        strokeWidth={sd - 0.3}
-        strokeLinecap="round"
-        fill="none"
-      />
-
-      {/* Visor/camera bump on front-right of goggles */}
-      <Rect
-        x="23"
-        y="11.5"
-        width="2"
-        height="3"
-        rx="0.5"
-        stroke={color}
-        strokeWidth={sd - 0.3}
-        fill="none"
-      />
-
-      {/* ── SPEECH LINES — from mouth area, fanning right ─────────────── */}
-      <Line x1="21.5" y1="19.5"  x2="27" y2="17.5" stroke={color} strokeWidth={sw - 0.4} strokeLinecap="round" />
-      <Line x1="22"   y1="21.5"  x2="28" y2="21.5" stroke={color} strokeWidth={sw - 0.4} strokeLinecap="round" />
-      <Line x1="21.5" y1="23.5"  x2="27" y2="25.5" stroke={color} strokeWidth={sw - 0.4} strokeLinecap="round" />
+      {/* ── NECK STRAP CLIP — center between screen and gimbals ─────────── */}
+      <Circle cx="16" cy="19.5" r="1"
+        stroke={color} strokeWidth={ss} fill="none" />
 
     </Svg>
   );
