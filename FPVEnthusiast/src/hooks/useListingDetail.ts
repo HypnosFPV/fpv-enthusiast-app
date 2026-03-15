@@ -78,7 +78,10 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
   // ── Fetch listing ─────────────────────────────────────────────────────────
   const fetchListing = useCallback(async () => {
     if (!listingId) return;
-    setLoading(true);
+    // Only show the full loading skeleton on the very first load.
+    // Background refreshes must NOT call setLoading(true) as it causes
+    // the rapid "vibrating" flicker on the listing detail screen.
+    setLoading(prev => (prev ? true : false));
 
     const { data, error } = await supabase
       .from('marketplace_listings')
@@ -128,24 +131,18 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
           const paths = rawImages.map((img: any) => {
             const m = img.url.match(/\/object\/(?:public|sign)\/media\/(.+?)(?:\?|$)/);
             const extracted = m ? m[1] : null;
-            console.log('[img-debug] raw url:', img.url);
-            console.log('[img-debug] extracted path:', extracted);
             return extracted ?? img.url;
           });
 
-          console.log('[img-debug] calling createSignedUrls with paths:', JSON.stringify(paths));
           const { data: signed, error: signErr2 } = await supabase.storage
             .from('media')
             .createSignedUrls(paths, 60 * 60 * 24 * 365); // 1 year
-          console.log('[img-debug] signed result:', JSON.stringify(signed));
-          console.log('[img-debug] signed error:', signErr2);
 
           if (signed && signed.length === rawImages.length) {
             signedImages = rawImages.map((img: any, i: number) => ({
               ...img,
               url: signed[i]?.signedUrl ?? img.url,
             }));
-            console.log('[img-debug] final URLs:', signedImages.map((x: any) => x.url));
           }
         } catch (signErr: any) {
           console.warn('[useListingDetail] signed URL error:', signErr?.message);
@@ -315,7 +312,10 @@ export function useListingDetail(listingId: string, currentUserId?: string) {
     return () => {
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
-  }, [fetchListing, fetchWatchStatus, fetchOrder, fetchMessages, fetchOffers, subscribeMessages]);
+  // Pin to primitive IDs only — callback refs in deps caused the whole effect
+  // (including fetchListing) to re-fire on every render, producing flicker.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listingId, currentUserId]);
 
   // ── Add photos to an existing listing (owner only) ────────────────────
   const addPhotos = useCallback(async (

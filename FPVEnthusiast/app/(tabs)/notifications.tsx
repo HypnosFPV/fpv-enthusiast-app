@@ -530,10 +530,17 @@ export default function NotificationsScreen() {
     }
 
     // ── Marketplace notifications → navigate to listing ───────────────────
-    if (g.entity_id && g.entity_type === 'listing' &&
-        (g.type === 'offer_accepted' || g.type === 'offer_declined' ||
-         g.type === 'new_offer'      || g.type === 'new_message')) {
-      router.push({ pathname: '/listing/[id]', params: { id: g.entity_id } });
+    const isMarketplaceType = g.type === 'offer_accepted' || g.type === 'offer_declined' ||
+                              g.type === 'new_offer'      || g.type === 'new_message';
+    if (isMarketplaceType) {
+      if (g.entity_id) {
+        // New notifications (after fix) carry entity_id → go straight to listing
+        router.push({ pathname: '/listing/[id]', params: { id: g.entity_id } });
+      } else {
+        // Legacy notifications without entity_id → open marketplace tab
+        // (best-effort; no listing ID stored in old rows)
+        router.push('/(tabs)/marketplace');
+      }
       return;
     }
 

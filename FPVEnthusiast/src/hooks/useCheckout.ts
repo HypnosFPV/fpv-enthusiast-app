@@ -14,7 +14,6 @@
 
 import { useState, useCallback } from 'react';
 import {
-  useStripe,
   initStripe,
   initPaymentSheet,
   presentPaymentSheet,
@@ -56,27 +55,17 @@ export function useCheckout() {
     setState({ ...INITIAL, status: 'loading' });
 
     try {
-      // Get session token for the edge function
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return fail('Not authenticated');
-
-      const res = await fetch(
-        `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/create-payment-intent`,
-        {
-          method:  'POST',
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey':         process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
-          },
-          body: JSON.stringify({ listing_id: listingId, offer_id: offerId }),
-        },
+      // Use supabase.functions.invoke so the client automatically:
+      //  • refreshes an expired JWT before sending
+      //  • injects the correct Authorization + apikey headers
+      // This eliminates the "Invalid JWT" error caused by a stale access_token.
+      const { data, error: fnErr } = await supabase.functions.invoke(
+        'create-payment-intent',
+        { body: { listing_id: listingId, offer_id: offerId } },
       );
 
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.clientSecret) {
-        // Show the real server error so it's easier to debug
-        const msg = data.error ?? data.message ?? `Server error ${res.status}`;
+      if (fnErr || !data?.clientSecret) {
+        const msg = data?.error ?? fnErr?.message ?? 'Server error';
         return fail(msg);
       }
 
