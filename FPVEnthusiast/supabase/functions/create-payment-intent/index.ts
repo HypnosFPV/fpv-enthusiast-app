@@ -144,8 +144,9 @@ serve(async (req) => {
       .single();
 
     if (orderErr || !order) {
-      console.error('Order insert error', orderErr);
-      return json({ error: 'Could not create order' }, 500);
+      console.error('Order insert error', JSON.stringify(orderErr));
+      // Surface the real Postgres error so the client can display it
+      return json({ error: orderErr?.message ?? 'Could not create order' }, 500);
     }
 
     return json({

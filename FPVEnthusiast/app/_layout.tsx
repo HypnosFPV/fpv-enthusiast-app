@@ -8,6 +8,13 @@ import { ChatProvider } from '../src/context/ChatContext';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
 
 const STRIPE_PK = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
+if (!STRIPE_PK) {
+  console.warn('[Stripe] EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set in .env — payments will fail');
+} else if (STRIPE_PK.startsWith('pk_live_')) {
+  console.warn('[Stripe] .env still uses a LIVE publishable key. If Supabase secrets use test keys the modes will mismatch. Update EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY to your pk_test_... key.');
+} else {
+  console.log('[Stripe] Using publishable key mode:', STRIPE_PK.startsWith('pk_test_') ? 'TEST ✓' : 'unknown');
+}
 
 // Inner component so hooks run inside both providers
 function AppContent() {

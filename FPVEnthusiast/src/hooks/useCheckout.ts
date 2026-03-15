@@ -15,6 +15,7 @@
 import { useState, useCallback } from 'react';
 import {
   useStripe,
+  initStripe,
   initPaymentSheet,
   presentPaymentSheet,
 } from '@stripe/stripe-react-native';
@@ -80,6 +81,14 @@ export function useCheckout() {
       }
 
       const { clientSecret, orderId, publishableKey, amountCents } = data;
+
+      // Re-initialise Stripe with the key the SERVER returned.
+      // This guarantees the publishable key and the client_secret are always
+      // in the same mode (both test OR both live), regardless of what
+      // EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY is set to in the local .env file.
+      if (publishableKey) {
+        await initStripe({ publishableKey, merchantIdentifier: 'merchant.com.fpventhusiast' });
+      }
 
       // Init Stripe payment sheet
       const { error: initErr } = await initPaymentSheet({
