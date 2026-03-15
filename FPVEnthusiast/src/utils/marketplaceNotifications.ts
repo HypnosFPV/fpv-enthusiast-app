@@ -20,7 +20,7 @@ export async function sendMarketplaceNotification(p: MarketplaceNotifParams) {
     new_message:    `sent you a message about "${p.listingTitle}"`,
     new_offer:      `made an offer of ${p.extraMessage ?? ''} on "${p.listingTitle}"`,
     offer_accepted: `accepted your offer on "${p.listingTitle}"`,
-    offer_declined: `declined your offer on "${p.listingTitle}",`
+    offer_declined: `declined your offer on "${p.listingTitle}"`,
     offer_countered: `sent a counter-offer on "${p.listingTitle}"`,
   };
 
