@@ -286,10 +286,11 @@ export default function ChatRoomScreen() {
                 listRef.current?.scrollToEnd({ animated: false });
               }
             }}
-            // Also scroll to bottom when layout changes (keyboard open/close),
-            // but only if there are messages to avoid jumping on empty chat.
+            // Scroll to bottom when layout changes (keyboard open/close).
+            // Only fires if: there are messages AND user is near the bottom.
+            // This prevents a jarring jump when user has scrolled up to read history.
             onLayout={() => {
-              if (messages.length > 0) {
+              if (messages.length > 0 && isNearBottom.current) {
                 listRef.current?.scrollToEnd({ animated: false });
               }
             }}

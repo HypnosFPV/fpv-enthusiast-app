@@ -770,6 +770,12 @@ export default function ListingDetailScreen() {
       return;
     }
 
+    // Capture amountCents NOW (while checkoutState is 'ready') before confirmPayment
+    // triggers a status transition to 'processing'/'success'.
+    // React batches state, so reading checkoutState after confirmPayment returns
+    // may give a stale 0 value.
+    const capturedAmount = checkoutState.amountCents ?? 0;
+
     const { ok: paid, orderId, error: payErr } = await confirmPayment();
     if (!paid) {
       if (payErr !== 'cancelled') {
@@ -786,7 +792,7 @@ export default function ListingDetailScreen() {
     // optimisticMarkPaid now handles the prev=null case too (new Buy Now where
     // no prior pending order existed in state).
     if (orderId) optimisticMarkPaid(orderId);
-    setSuccessAmount(checkoutState.amountCents ?? 0);
+    setSuccessAmount(capturedAmount);
     setShowOrderSuccess(true);
   }, [listing?.id, myAcceptedOffer, initCheckout, confirmPayment, resetCheckout, optimisticMarkPaid]);
 
