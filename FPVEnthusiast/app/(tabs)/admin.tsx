@@ -4,9 +4,8 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity, RefreshControl,
-  ActivityIndicator, Alert, RefreshControl, ScrollView,
-  StatusBar, Linking,
+  View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity,
+  RefreshControl, ActivityIndicator, Alert, StatusBar, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
