@@ -125,7 +125,7 @@ export function useStripeConnect(userId?: string | null): UseStripeConnectResult
     try {
       const result = await callEdge({ action: 'check_status' });
       if (result.onboarded) {
-        Alert.alert('🎉 Payouts Enabled!', 'Your Stripe account is verified. You'll receive payouts automatically after buyers confirm delivery.');
+        Alert.alert('🎉 Payouts Enabled!', "Your Stripe account is verified. You'll receive payouts automatically after buyers confirm delivery.");
       } else {
         Alert.alert(
           'Not Complete',

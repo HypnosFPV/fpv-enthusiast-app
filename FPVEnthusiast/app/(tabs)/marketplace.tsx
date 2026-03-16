@@ -1625,7 +1625,7 @@ export default function MarketplaceScreen() {
         const proceed = await new Promise<boolean>(resolve => {
           Alert.alert(
             '⚠️ Payouts Not Set Up',
-            'You haven\'t connected a Stripe account yet. You can still list, but you won\'t receive payouts until you set up Seller Payouts in Settings.',
+            "You haven't connected a Stripe account yet. You can still list, but you won't receive payouts until you set up Seller Payouts in Settings.",
             [
               { text: 'Cancel Listing', style: 'cancel', onPress: () => resolve(false) },
               { text: 'List Anyway', onPress: () => resolve(true) },
