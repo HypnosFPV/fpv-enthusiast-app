@@ -1067,7 +1067,11 @@ export default function ListingDetailScreen() {
     );
   }
 
-  const orderStatus = activeOrder ? ORDER_STATUS[activeOrder.status] : null;
+  // Context-aware order status: sellers see slightly different label for 'pending'
+  const _rawStatus = activeOrder ? ORDER_STATUS[activeOrder.status] : null;
+  const orderStatus = _rawStatus && activeOrder?.status === 'pending' && isOwner
+    ? { ..._rawStatus, label: 'Awaiting Buyer Payment', icon: 'time-outline' }
+    : _rawStatus;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -1113,6 +1117,10 @@ export default function ListingDetailScreen() {
                 horizontal
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
+                removeClippedSubviews={false}
+                windowSize={3}
+                initialNumToRender={1}
+                maxToRenderPerBatch={2}
                 onMomentumScrollEnd={e => {
                   setActiveImg(Math.round(e.nativeEvent.contentOffset.x / W));
                 }}
@@ -1126,7 +1134,7 @@ export default function ListingDetailScreen() {
                       source={{ uri: item.url }}
                       style={styles.heroImg}
                       contentFit="cover"
-                      transition={200}
+                      cachePolicy="memory-disk"
                       onError={() => console.warn('[ListingDetail] image failed:', item.url)}
                     />
                   </TouchableOpacity>
@@ -1949,8 +1957,8 @@ const styles = StyleSheet.create({
   metaValue:      { color: '#ccc', fontSize: 12, fontWeight: '600' },
 
   // trust reminder
-  trustReminder:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#0f1a2e', borderRadius: 10, borderWidth: 1, borderColor: '#1e3a5f', padding: 12, marginBottom: 4 },
-  trustReminderTxt:{ color: '#93c5fd', fontSize: 12, flex: 1, lineHeight: 18 },
+  trustReminder:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#0d1f3c', borderRadius: 10, borderWidth: 1, borderColor: '#2563eb', padding: 12, marginBottom: 4 },
+  trustReminderTxt:{ color: '#bfdbfe', fontSize: 12, flex: 1, lineHeight: 18 },
 
   // CTA bar
   ctaBar:         { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingVertical: 12, paddingBottom: Platform.OS === 'ios' ? 30 : 14, backgroundColor: '#0a0a0a', borderTopWidth: 1, borderTopColor: '#1a1a1a' },

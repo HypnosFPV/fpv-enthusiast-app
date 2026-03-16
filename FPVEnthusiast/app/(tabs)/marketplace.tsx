@@ -692,7 +692,7 @@ const ListingCard = React.memo(({
             source={{ uri: image.url }}
             style={styles.cardImage}
             contentFit="cover"
-            transition={200}
+            cachePolicy="memory-disk"
             placeholder={{ color: '#1a1a1a' }}
             onError={() => { console.warn('[ListingCard] failed to load:', image.url); setImgOk(false); }}
           />

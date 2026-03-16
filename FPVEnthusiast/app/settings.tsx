@@ -14,6 +14,7 @@ import { useMultiGP }          from '../src/hooks/useMultiGP';
 import { useMute }             from '../src/hooks/useMute';
 import MuteListModal           from '../src/components/MuteListModal';
 import { useNotificationsContext } from '../src/context/NotificationsContext';
+import { useStripeConnect }       from '../src/hooks/useStripeConnect';
 
 // ─── Section / Row components ─────────────────────────────────────────────────
 
@@ -92,6 +93,11 @@ export default function SettingsScreen() {
   const { linked: ytLinked, loading: ytAuthLoading, promptAsync: promptYouTubeAuth, unlinkYouTube } = useYouTubeAuth(user?.id);
   const { connection: mgpConnection, loading: mgpLoading } = useMultiGP(user?.id);
   const { challengePrefs, updatePreferences } = useNotificationsContext();
+  const {
+    sellerProfile: stripeProfile, loading: stripeLoading,
+    onboarding: stripeOnboarding, checking: stripeChecking,
+    startOnboarding: stripeStartOnboarding, checkStatus: stripeCheckStatus,
+  } = useStripeConnect(user?.id);
 
   const [signingOut,   setSigningOut]   = useState(false);
   const [showMuteList,  setShowMuteList]  = useState(false);
@@ -185,6 +191,51 @@ export default function SettingsScreen() {
             left={<Ionicons name="volume-mute-outline" size={18} color="#a78bfa" />}
             right={<Ionicons name="chevron-forward" size={16} color="#444" />}
             onPress={() => setShowMuteList(true)}
+            last
+          />
+        </Section>
+
+        {/* ── MARKETPLACE ── */}
+        <Section title="MARKETPLACE" icon="bag-handle-outline" iconColor="#ff4500">
+          <Row
+            label="My Orders"
+            sublabel="View purchases & sales"
+            left={<Ionicons name="bag-outline" size={18} color="#ff4500" />}
+            right={<Ionicons name="chevron-forward" size={16} color="#444" />}
+            onPress={() => router.push('/orders')}
+          />
+          <Row
+            label="Seller Payouts"
+            sublabel={
+              stripeLoading ? 'Loading…'
+                : stripeProfile?.stripe_onboarded
+                  ? `● Active — ${stripeProfile.total_sales} sale${stripeProfile.total_sales !== 1 ? 's' : ''}`
+                  : stripeProfile?.stripe_account_id
+                    ? '⚠ Incomplete — tap to finish'
+                    : '○ Not set up — required to receive payments'
+            }
+            left={
+              <Ionicons
+                name="card-outline"
+                size={18}
+                color={stripeProfile?.stripe_onboarded ? '#22c55e' : '#f59e0b'}
+              />
+            }
+            right={
+              stripeOnboarding || stripeChecking || stripeLoading
+                ? <ActivityIndicator size="small" color="#888" />
+                : (
+                  <TouchableOpacity
+                    style={[s.chipBtn, stripeProfile?.stripe_onboarded ? s.chipBtnOrange : s.chipBtnGreen]}
+                    onPress={stripeProfile?.stripe_onboarded ? stripeCheckStatus : stripeStartOnboarding}
+                    disabled={stripeOnboarding || stripeChecking || stripeLoading}
+                  >
+                    <Text style={s.chipBtnText}>
+                      {stripeProfile?.stripe_onboarded ? 'View' : stripeProfile?.stripe_account_id ? 'Continue' : 'Set Up'}
+                    </Text>
+                  </TouchableOpacity>
+                )
+            }
             last
           />
         </Section>
