@@ -1172,7 +1172,7 @@ export default function ChallengesScreen() {
             <Image source={{ uri: e.thumbnail_url }} style={styles.entryThumb} resizeMode="cover" />
             {e.video_url && (
               <View style={styles.entryPlayOverlay}>
-                <Ionicons name="play-circle" size={28} color="rgba(255,255,255,0.85)" />
+                <Ionicons name="play-circle" size={40} color="rgba(255,255,255,0.9)" />
               </View>
             )}
           </TouchableOpacity>
@@ -2400,7 +2400,7 @@ const styles = StyleSheet.create({
   },
   entryCard: { flexDirection: 'row', gap: 12, padding: 12,
     borderBottomWidth: 1, borderBottomColor: C.border },
-  entryThumb: { width: 80, height: 56, borderRadius: 10, backgroundColor: C.card },
+  entryThumb: { width: 96, height: 68, borderRadius: 10, backgroundColor: C.card },
   entryThumbPlaceholder: { justifyContent: 'center', alignItems: 'center' },
   entryInfo:    { flex: 1, gap: 4 },
   entryAuthor:  { color: C.cyan, fontSize: 13, fontWeight: '700' },

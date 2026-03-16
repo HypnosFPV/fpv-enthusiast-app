@@ -736,6 +736,8 @@ export default function ListingDetailScreen() {
   const [shipLoading,  setShipLoading]  = useState(false);
   const [receiptLoad,  setReceiptLoad]  = useState(false);
   const [showReview,   setShowReview]   = useState(false);
+  const [showOrderSuccess, setShowOrderSuccess] = useState(false);
+  const [successAmount,    setSuccessAmount]    = useState(0);
   const [reviewDone,   setReviewDone]   = useState(false);
   const [showOffer,    setShowOffer]    = useState(false);
   const [offerSaving,  setOfferSaving]  = useState(false);
@@ -778,10 +780,8 @@ export default function ListingDetailScreen() {
     // optimisticMarkPaid now handles the prev=null case too (new Buy Now where
     // no prior pending order existed in state).
     if (orderId) optimisticMarkPaid(orderId);
-    Alert.alert(
-      '\uD83C\uDF89 Order Placed!',
-      'Payment received. The seller has been notified and will ship within 3 business days.',
-    );
+    setSuccessAmount(checkoutState.amountCents ?? 0);
+    setShowOrderSuccess(true);
   }, [listing?.id, myAcceptedOffer, initCheckout, confirmPayment, resetCheckout, optimisticMarkPaid]);
 
   const [showEdit,     setShowEdit]     = useState(false);
@@ -1470,6 +1470,36 @@ export default function ListingDetailScreen() {
       )}
 
       {/* ── Modals ── */}
+
+      {/* ════ Order Success Modal ════ */}
+      <Modal
+        visible={showOrderSuccess}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOrderSuccess(false)}
+      >
+        <View style={styles.successOverlay}>
+          <View style={styles.successCard}>
+            <Text style={styles.successEmoji}>🎉</Text>
+            <Text style={styles.successTitle}>Order Placed!</Text>
+            <Text style={styles.successSub}>
+              Payment of{' '}
+              <Text style={styles.successAmt}>${(successAmount / 100).toFixed(2)}</Text>
+              {' '}received.
+            </Text>
+            <Text style={styles.successDetail}>
+              The seller has been notified and will ship within 3 business days.
+            </Text>
+            <TouchableOpacity
+              style={styles.successBtn}
+              onPress={() => setShowOrderSuccess(false)}
+            >
+              <Text style={styles.successBtnTxt}>Got it  ✓</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <PropsToast toast={propsToast} />
       <ImageZoomModal
         visible={showZoom}
@@ -1745,6 +1775,16 @@ function MetaRow({ icon, label, value }: { icon: string; label: string; value: s
 const styles = StyleSheet.create({
   root:            { flex: 1, backgroundColor: '#0a0a0a' },
   center:          { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0a0a0a', gap: 14 },
+  // ── Order success modal ─────────────────────────────────────────────────
+  successOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  successCard:     { backgroundColor: '#0f1b2d', borderRadius: 24, padding: 28, alignItems: 'center', width: '100%', borderWidth: 1, borderColor: '#0057d9', shadowColor: '#0057d9', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 20 },
+  successEmoji:    { fontSize: 52, marginBottom: 8 },
+  successTitle:    { color: '#fff', fontSize: 24, fontWeight: '800', marginBottom: 6, letterSpacing: 0.3 },
+  successSub:      { color: '#9ca3af', fontSize: 15, textAlign: 'center', marginBottom: 4 },
+  successAmt:      { color: '#00d4ff', fontWeight: '800', fontSize: 16 },
+  successDetail:   { color: '#6b7280', fontSize: 13, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  successBtn:      { backgroundColor: '#0057d9', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 48, shadowColor: '#0057d9', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10 },
+  successBtnTxt:   { color: '#fff', fontSize: 16, fontWeight: '700' },
   notFound:        { color: '#888', fontSize: 15 },
   backBtn:         { marginTop: 8 },
   backBtnTxt:      { color: '#ff4500', fontSize: 14 },

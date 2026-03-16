@@ -145,16 +145,23 @@ export function useCheckout() {
         paymentIntentClientSecret: clientSecret,
         merchantDisplayName:       'FPV Enthusiast Marketplace',
         returnURL:                 Linking.createURL('stripe-redirect'),
+        billingDetailsCollectionConfiguration: {
+          name:    'never',
+          phone:   'never',
+          email:   'never',
+          address: 'never',
+        },
         style:                     'alwaysDark',
         appearance: {
           colors: {
-            primary:    '#ff6b35',
+            primary:    '#0057d9',
             background: '#0a0a0a',
             componentBackground: '#1a1a2e',
             primaryText: '#ffffff',
             secondaryText: '#9ca3af',
             componentText: '#ffffff',
             placeholderText: '#6b7280',
+            error:       '#ff6b6b',
           },
         },
       });

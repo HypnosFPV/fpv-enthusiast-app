@@ -183,9 +183,9 @@ const dtStyles = StyleSheet.create({
   container:      { flexDirection: 'row', gap: 4, marginBottom: 12, backgroundColor: '#0d0d0d', borderRadius: 14, padding: 8, borderWidth: 1, borderColor: '#222' },
   col:            { flex: 1, alignItems: 'center' },
   colLabel:       { color: '#555', fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginBottom: 4 },
-  scroll:         { height: 120 },
+  scroll:         { height: 90 },
   item:           { paddingVertical: 6, paddingHorizontal: 2, borderRadius: 8, alignItems: 'center', width: '100%' },
-  itemActive:     { backgroundColor: '#ff4500' },
+  itemActive:     { backgroundColor: '#0057d9' },
   itemText:       { color: '#555', fontSize: 13, fontWeight: '600' },
   itemTextActive: { color: '#fff', fontWeight: '800' },
 });
