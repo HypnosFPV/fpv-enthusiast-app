@@ -898,7 +898,7 @@ export default function ListingDetailScreen() {
     });
     setShowDispute(false);
     setDisputeReason('');
-    Alert.alert('Dispute Opened', 'We'll review this transaction. Check your notifications for updates.');
+    Alert.alert('Dispute Opened', "We'll review this transaction. Check your notifications for updates.");
   }, [activeOrder, disputeReason, user?.id, listing]);
 
   // ── Report listing (any non-owner) ───────────────────────────────────────
