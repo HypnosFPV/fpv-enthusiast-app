@@ -1617,6 +1617,24 @@ export default function MarketplaceScreen() {
   }, [filters, applyFilters]);
 
   const handleCreateSubmit = useCallback(async (params: CreateListingParams) => {
+    // Soft-gate: warn seller if payouts not set up yet, but still allow listing
+    if (user?.id) {
+      const { data: sp } = await supabase
+        .from('seller_profiles').select('stripe_onboarded').eq('user_id', user.id).maybeSingle();
+      if (!sp?.stripe_onboarded) {
+        const proceed = await new Promise<boolean>(resolve => {
+          Alert.alert(
+            '⚠️ Payouts Not Set Up',
+            'You haven\'t connected a Stripe account yet. You can still list, but you won\'t receive payouts until you set up Seller Payouts in Settings.',
+            [
+              { text: 'Cancel Listing', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'List Anyway', onPress: () => resolve(true) },
+            ],
+          );
+        });
+        if (!proceed) return;
+      }
+    }
     const result = await createListing(params);
     if (result.ok) {
       const hadImages = (params.imageUris?.length ?? 0) > 0;

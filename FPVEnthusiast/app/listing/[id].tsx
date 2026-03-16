@@ -745,6 +745,12 @@ export default function ListingDetailScreen() {
   const propsToast   = usePropsToast();
   const shownBonusRef = useRef(false);
   const [addingPhotos,   setAddingPhotos]   = useState(false);
+  const [showDispute,    setShowDispute]    = useState(false);
+  const [disputeReason,  setDisputeReason]  = useState('');
+  const [disputeSaving,  setDisputeSaving]  = useState(false);
+  const [showReport,     setShowReport]     = useState(false);
+  const [reportReason,   setReportReason]   = useState('');
+  const [reportSaving,   setReportSaving]   = useState(false);
 
   // ── Stripe checkout ─────────────────────────────────────────────────────
   const { initCheckout, confirmPayment, checkoutState, resetCheckout } = useCheckout();
@@ -870,6 +876,48 @@ export default function ListingDetailScreen() {
       ],
     );
   }, [activeOrder, confirmReceipt, reviewDone]);
+
+  // ── Open dispute (buyer, shipped/delivered, not already disputed) ─────────
+  const handleOpenDispute = useCallback(async () => {
+    if (!activeOrder?.id || !disputeReason.trim()) return;
+    setDisputeSaving(true);
+    const { error } = await supabase
+      .from('marketplace_orders')
+      .update({ status: 'disputed', updated_at: new Date().toISOString() })
+      .eq('id', activeOrder.id)
+      .eq('buyer_id', user?.id);
+    setDisputeSaving(false);
+    if (error) { Alert.alert('Error', error.message); return; }
+    // Notify seller
+    await supabase.from('notifications').insert({
+      user_id: listing?.seller_id,
+      type: 'marketplace_dispute',
+      title: '⚠️ Dispute opened',
+      body: `Buyer opened a dispute on "${listing?.title ?? 'your listing'}". Reason: ${disputeReason.trim()}`,
+      data: { listing_id: listing?.id, order_id: activeOrder.id },
+    });
+    setShowDispute(false);
+    setDisputeReason('');
+    Alert.alert('Dispute Opened', 'We'll review this transaction. Check your notifications for updates.');
+  }, [activeOrder, disputeReason, user?.id, listing]);
+
+  // ── Report listing (any non-owner) ───────────────────────────────────────
+  const handleReportListing = useCallback(async () => {
+    if (!listing?.id || !reportReason.trim()) return;
+    setReportSaving(true);
+    const { error } = await supabase
+      .from('listing_reports')
+      .insert({
+        listing_id: listing.id,
+        reporter_id: user?.id,
+        reason: reportReason.trim(),
+      });
+    setReportSaving(false);
+    if (error) { Alert.alert('Error', error.message); return; }
+    setShowReport(false);
+    setReportReason('');
+    Alert.alert('Report Submitted', 'Thanks — our team will review this listing.');
+  }, [listing, reportReason, user?.id]);
 
   // ── Add photos (owner only) ───────────────────────────────────────────────
   const handleAddPhotos = useCallback(async () => {
@@ -1465,6 +1513,33 @@ export default function ListingDetailScreen() {
                   <Text style={styles.ctaBtnTxt}>Confirm Receipt</Text>
                 </>
             }
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Open Dispute button (buyer, shipped or delivered, not already disputed/resolved) ── */}
+      {isBuyer && activeOrder && ['shipped', 'delivered'].includes(activeOrder.status) &&
+        !['disputed', 'resolved'].includes(activeOrder.status) && (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+          <TouchableOpacity
+            style={[styles.ctaBuyBtn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#ef4444' }]}
+            onPress={() => setShowDispute(true)}
+          >
+            <Ionicons name="warning-outline" size={16} color="#ef4444" />
+            <Text style={[styles.ctaBtnTxt, { color: '#ef4444' }]}>Open Dispute</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Report listing (non-owner, listing is active) ── */}
+      {!isOwner && listing?.status === 'active' && (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-end', opacity: 0.6 }}
+            onPress={() => setShowReport(true)}
+          >
+            <Ionicons name="flag-outline" size={14} color="#888" />
+            <Text style={{ fontSize: 12, color: '#888' }}>Report listing</Text>
           </TouchableOpacity>
         </View>
       )}

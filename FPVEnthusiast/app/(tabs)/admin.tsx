@@ -4,13 +4,14 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
+  View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity, RefreshControl,
   ActivityIndicator, Alert, RefreshControl, ScrollView,
   StatusBar, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMapModeration, SpotReport, EventReport } from '../../src/hooks/useMapModeration';
+import { supabase } from '../../src/services/supabase';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -200,20 +201,71 @@ export default function AdminDashboard() {
     dismissEventReport, deleteEvent,
   } = useMapModeration();
 
-  const [tab, setTab] = useState<'spots' | 'events'>('spots');
+  const [tab, setTab] = useState<'spots' | 'events' | 'disputes'>('spots');
+  const [disputes,       setDisputes]       = useState<any[]>([]);
+  const [listingReports, setListingReports] = useState<any[]>([]);
+  const [disputeLoading, setDisputeLoading] = useState(false);
+  const [resolvingId,    setResolvingId]    = useState<string | null>(null);
 
   // ── Boot: verify admin, then load both lists ──────────────────────────────
   useEffect(() => {
     (async () => {
       const ok = await checkAdmin();
       if (!ok) return; // gate rendered below
-      await Promise.all([loadSpotReports(), loadEventReports()]);
+      await Promise.all([loadSpotReports(), loadEventReports(), loadDisputes()]);
     })();
   }, []);
 
+  const loadDisputes = useCallback(async () => {
+    setDisputeLoading(true);
+    try {
+      const [{ data: d }, { data: r }] = await Promise.all([
+        supabase.from('marketplace_disputes').select('*').order('created_at', { ascending: false }),
+        supabase.from('listing_reports').select(`
+          id, reason, status, created_at,
+          listing_id, marketplace_listings(title),
+          reporter:users!listing_reports_reporter_id_fkey(username)
+        `).eq('status', 'pending').order('created_at', { ascending: false }).limit(50),
+      ]);
+      setDisputes(d ?? []);
+      setListingReports(r ?? []);
+    } finally {
+      setDisputeLoading(false);
+    }
+  }, []);
+
+  const handleResolveDispute = (orderId: string, action: string, label: string) => {
+    Alert.alert(
+      'Resolve Dispute',
+      `Action: "${label}" — this will notify both parties.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', style: 'destructive', onPress: async () => {
+          setResolvingId(orderId);
+          const { error } = await supabase.rpc('resolve_dispute', {
+            p_order_id: orderId, p_action: action,
+          });
+          setResolvingId(null);
+          if (error) Alert.alert('Error', error.message);
+          else { Alert.alert('Done', 'Dispute resolved.'); loadDisputes(); }
+        }},
+      ],
+    );
+  };
+
+  const handleDismissReport = (reportId: string) => {
+    Alert.alert('Dismiss Report', 'Mark this listing report as reviewed/dismissed?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Dismiss', onPress: async () => {
+        await supabase.from('listing_reports').update({ status: 'dismissed' }).eq('id', reportId);
+        loadDisputes();
+      }},
+    ]);
+  };
+
   const refresh = useCallback(async () => {
-    await Promise.all([loadSpotReports(), loadEventReports()]);
-  }, [loadSpotReports, loadEventReports]);
+    await Promise.all([loadSpotReports(), loadEventReports(), loadDisputes()]);
+  }, [loadSpotReports, loadEventReports, loadDisputes]);
 
   // ─── Spot actions with confirm dialogs ────────────────────────────────────
   const handleVerifySpot = (r: SpotReport) => {
@@ -312,8 +364,9 @@ export default function AdminDashboard() {
   }
 
   // ─── Dashboard ────────────────────────────────────────────────────────────
-  const spotCount  = spotReports.length;
-  const eventCount = eventReports.length;
+  const spotCount     = spotReports.length;
+  const eventCount    = eventReports.length;
+  const disputeCount  = disputes.filter(d => d.status === 'disputed').length + listingReports.length;
 
   return (
     <View style={styles.root}>
@@ -458,6 +511,9 @@ const styles = StyleSheet.create({
   tabBtnTxt:        { color: '#666', fontSize: 14, fontWeight: '600' },
   tabBtnTxtActive:  { color: '#ff4500' },
   tabBadge:         { color: '#FF9800', fontWeight: '700' },
+  sectionTitle:     { color: '#fff', fontSize: 15, fontWeight: '700' },
+  actionBtn:        { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  actionBtnTxt:     { color: '#fff', fontSize: 13, fontWeight: '600' },
 
   // List
   listContent:      { padding: 12, paddingBottom: 40 },

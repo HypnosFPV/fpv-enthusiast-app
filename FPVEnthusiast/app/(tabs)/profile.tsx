@@ -23,6 +23,7 @@ import FollowListModal      from '../../src/components/FollowListModal';
 import { useMute }          from '../../src/hooks/useMute';
 import MuteListModal        from '../../src/components/MuteListModal';
 import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
+import { useStripeConnect } from '../../src/hooks/useStripeConnect';
 
 const { width: W } = Dimensions.get('window');
 const CELL = (W - 4) / 3;
@@ -317,6 +318,14 @@ export default function ProfileScreen() {
     unmuteUser, fetchMutedUsers,
   } = useMute(user?.id);
 
+  const {
+    sellerProfile: stripeProfile, loading: stripeLoading,
+    onboarding: stripeOnboarding, checking: stripeChecking,
+    startOnboarding: stripeStartOnboarding,
+    checkStatus: stripeCheckStatus,
+    refreshProfile: stripeRefreshProfile,
+  } = useStripeConnect(user?.id);
+
   // ── Tab / data state ──────────────────────────────────────────────────────
   const [activeTab,   setActiveTab]   = useState<TabKey>('posts');
   const [myPosts,       setMyPosts]       = useState<Post[]>([]);
@@ -336,6 +345,7 @@ export default function ProfileScreen() {
   const [selectedPost,    setSelectedPost]    = useState<Post | null>(null);
   const [showMuteList,    setShowMuteList]    = useState(false);
   const [showMultiGP,     setShowMultiGP]     = useState(false);
+  const [showStripeConnect, setShowStripeConnect] = useState(false);
   const [followModal,     setFollowModal]     = useState<'followers' | 'following' | null>(null);
   const [showPropsLog,    setShowPropsLog]    = useState(false);
   const [propsLog,        setPropsLog]        = useState<{ id: string; amount: number; reason: string; created_at: string; isSpend?: boolean }[]>([]);
@@ -1213,6 +1223,51 @@ export default function ProfileScreen() {
                 </View>
                 <Ionicons name="chevron-forward" size={18} color="#555" />
               </TouchableOpacity>
+            </View>
+
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsSectionTitle}>Marketplace</Text>
+
+              {/* My Orders */}
+              <TouchableOpacity style={styles.settingsRow} onPress={() => { setShowSettings(false); setTimeout(() => router.push('/orders'), 350); }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="bag-outline" size={20} color="#aaa" />
+                  <Text style={styles.settingsLabel}>My Orders</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#555" />
+              </TouchableOpacity>
+
+              {/* Seller Payouts (Stripe Connect) */}
+              <View style={[styles.settingsRow, { borderTopWidth: 1, borderTopColor: '#2a2a4a', marginTop: 4, paddingTop: 10 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="card-outline" size={20} color={stripeProfile?.stripe_onboarded ? '#22c55e' : '#f59e0b'} />
+                  <View>
+                    <Text style={styles.settingsLabel}>Seller Payouts</Text>
+                    <Text style={[styles.settingsValue, { fontSize: 11, color: stripeProfile?.stripe_onboarded ? '#4caf50' : '#f59e0b' }]}>
+                      {stripeLoading ? 'Loading…'
+                        : stripeProfile?.stripe_onboarded
+                          ? `● Active — ${stripeProfile.total_sales} sale${stripeProfile.total_sales !== 1 ? 's' : ''}`
+                          : stripeProfile?.stripe_account_id
+                            ? '⚠ Incomplete — tap to finish setup'
+                            : '○ Not set up — sellers need this to get paid'}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[styles.ytAuthBtn,
+                    stripeProfile?.stripe_onboarded ? styles.ytAuthBtnUnlink : styles.ytAuthBtnLink,
+                    { backgroundColor: stripeProfile?.stripe_onboarded ? '#1a1a2e' : '#0057d9' }]}
+                  onPress={stripeProfile?.stripe_onboarded ? stripeCheckStatus : stripeStartOnboarding}
+                  disabled={stripeOnboarding || stripeChecking || stripeLoading}
+                >
+                  {stripeOnboarding || stripeChecking
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Text style={styles.ytAuthBtnText}>
+                        {stripeProfile?.stripe_onboarded ? 'View' : stripeProfile?.stripe_account_id ? 'Continue' : 'Set Up'}
+                      </Text>
+                  }
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.settingsSection}>
