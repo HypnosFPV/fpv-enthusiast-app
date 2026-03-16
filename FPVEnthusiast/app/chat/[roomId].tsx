@@ -243,7 +243,7 @@ export default function ChatRoomScreen() {
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={26} color="#ff4500" />
+          <Ionicons name="chevron-back" size={26} color="#00d4ff" />
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
@@ -269,7 +269,7 @@ export default function ChatRoomScreen() {
 
       {/* ── Messages ──────────────────────────────────────────────────────── */}
       {messagesLoad && messages.length === 0
-        ? <ActivityIndicator color="#ff4500" style={{ flex: 1 }} />
+        ? <ActivityIndicator color="#00d4ff" style={{ flex: 1 }} />
         : (
           <FlatList
             ref={listRef}
@@ -376,7 +376,7 @@ const styles = StyleSheet.create({
   bubbleWrapThem:   { alignItems: 'flex-start' },
   senderName:       { color: '#aaa', fontSize: 11, marginBottom: 2, marginLeft: 12 },
   bubble:           { borderRadius: 18, paddingVertical: 8, paddingHorizontal: 14 },
-  bubbleMe:         { backgroundColor: '#ff4500' },
+  bubbleMe:         { backgroundColor: '#0057d9' },
   bubbleThem:       { backgroundColor: '#1e1e1e' },
   bubbleDeleted:    { backgroundColor: '#111', borderWidth: 1, borderColor: '#2a2a2a' },
   bubbleText:       { color: '#fff', fontSize: 15, lineHeight: 20 },
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
 
   // Input
   inputBar:         { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, backgroundColor: '#111', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#222', gap: 8 },
-  input:            { flex: 1, backgroundColor: '#1e1e1e', color: '#fff', borderRadius: 20, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, fontSize: 15, maxHeight: 120 },
-  sendBtn:          { width: 40, height: 40, borderRadius: 20, backgroundColor: '#ff4500', justifyContent: 'center', alignItems: 'center' },
+  input:            { flex: 1, backgroundColor: '#1e1e1e', color: '#fff', borderRadius: 20, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, fontSize: 15, minHeight: 40, maxHeight: 120 },
+  sendBtn:          { width: 40, height: 40, borderRadius: 20, backgroundColor: '#0057d9', justifyContent: 'center', alignItems: 'center' },
   sendBtnDisabled:  { backgroundColor: '#333' },
 });

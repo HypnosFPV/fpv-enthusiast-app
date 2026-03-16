@@ -980,7 +980,7 @@ export default function ProfileScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00d4ff" />
         }
       >
-        {dataLoading ? (
+        {(dataLoading && !loadedTabsRef.current.has(activeTab)) ? (
           <ActivityIndicator style={{ marginTop: 40 }} color="#00d4ff" />
         ) : (
           <>

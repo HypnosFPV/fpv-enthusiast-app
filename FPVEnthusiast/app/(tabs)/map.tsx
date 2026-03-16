@@ -2107,7 +2107,7 @@ const styles = StyleSheet.create({
   addrPinBtnText:  { color: '#fff', fontSize: 11, fontWeight: '700' },
 
   // Quick filter row (replaces old legend)
-  quickFilterRow: { flexDirection: 'row', paddingHorizontal: 12, paddingBottom: 6, gap: 8 },
+  quickFilterRow: { flexDirection: 'row', paddingHorizontal: 12, paddingBottom: 6, paddingTop: 4, gap: 8, flexWrap: 'wrap' },
   qfBtn:          { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
   qfBtnRace:      { backgroundColor: '#cc0000' },
   qfBtnMeetup:    { backgroundColor: '#cc7000' },

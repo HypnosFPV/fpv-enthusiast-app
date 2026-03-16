@@ -1003,7 +1003,7 @@ export default function ListingDetailScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#ff4500" />
+        <ActivityIndicator size="large" color="#00d4ff" />
       </View>
     );
   }
@@ -1233,9 +1233,9 @@ export default function ListingDetailScreen() {
                 ) : (
                   <Text style={styles.sellerNewBadge}>🆕 New seller</Text>
                 )}
-                {listing.seller?.total_sales != null && listing.seller.total_sales > 0 && (
+                {listing.seller?.total_sales != null && (
                   <Text style={styles.sellerSales}>
-                    · {listing.seller.total_sales} sale{listing.seller.total_sales !== 1 ? 's' : ''}
+                    · {listing.seller.total_sales > 0 ? `${listing.seller.total_sales} sale${listing.seller.total_sales !== 1 ? 's' : ''}` : '0 sales'}
                   </Text>
                 )}
               </View>

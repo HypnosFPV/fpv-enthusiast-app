@@ -1648,7 +1648,7 @@ export default function MarketplaceScreen() {
   const ListFooter = useCallback(() => {
     if (loadingMore) return (
       <View style={styles.footerLoader}>
-        <ActivityIndicator size="small" color="#ff4500" />
+        <ActivityIndicator size="small" color="#00d4ff" />
         <Text style={styles.footerLoaderTxt}>Loading more...</Text>
       </View>
     );
@@ -1693,7 +1693,7 @@ export default function MarketplaceScreen() {
     return (
       <View style={styles.loadingWrap}>
         <StatusBar barStyle="light-content" backgroundColor="#0a0a0a" />
-        <ActivityIndicator size="large" color="#ff4500" />
+        <ActivityIndicator size="large" color="#00d4ff" />
       </View>
     );
   }
@@ -1875,7 +1875,7 @@ export default function MarketplaceScreen() {
           />
         )}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ff4500" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00d4ff" />
         }
         onEndReached={() => { if (hasMore && !loadingMore) loadMore(); }}
         onEndReachedThreshold={0.4}

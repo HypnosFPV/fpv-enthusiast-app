@@ -93,9 +93,9 @@ function SellerRepCard({ stats }: { stats: SellerStats }) {
         ) : (
           <Text style={styles.repNoRating}>No ratings yet</Text>
         )}
-        {stats.total_sales > 0 && (
-          <Text style={styles.repSales}>· {stats.total_sales} sale{stats.total_sales !== 1 ? 's' : ''}</Text>
-        )}
+        <Text style={styles.repSales}>
+          {stats.total_sales > 0 ? `· ${stats.total_sales} sale${stats.total_sales !== 1 ? 's' : ''}` : '· 0 sales'}
+        </Text>
       </View>
       {tier > 0 && (
         <View style={styles.repTierRow}>

@@ -1710,6 +1710,11 @@ export default function ChallengesScreen() {
       {/* ════ Suggest Modal ════ */}
       <Modal visible={suggestVisible} animationType="slide" transparent
         onRequestClose={() => setSuggestVisible(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeaderRow}>
@@ -1761,6 +1766,7 @@ export default function ChallengesScreen() {
             </ScrollView>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ════ Archive Detail Modal ════ */}
