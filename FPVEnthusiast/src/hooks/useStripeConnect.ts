@@ -27,9 +27,7 @@ interface UseStripeConnectResult {
   refreshProfile:   () => Promise<void>;
 }
 
-const EDGE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL
-  ? `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/stripe-connect-onboard`
-  : null;
+// EDGE_URL removed — now using supabase.functions.invoke() which handles URL + auth
 
 export function useStripeConnect(userId?: string | null): UseStripeConnectResult {
   const [sellerProfile, setSellerProfile] = useState<SellerProfile | null>(null);
@@ -57,21 +55,30 @@ export function useStripeConnect(userId?: string | null): UseStripeConnectResult
 
   useEffect(() => { refreshProfile(); }, [refreshProfile]);
 
+  // ── callEdge: use supabase.functions.invoke() instead of raw fetch() ────────
+  // Raw fetch() + getSession() was causing "Edge Function error" because:
+  //  1. The Supabase gateway verifies the JWT before the function runs.
+  //  2. A near-expired token from getSession() (not refreshed) gets rejected
+  //     with { "message": "Invalid JWT" } — note "message" not "error".
+  //  3. The hook read json.error (null) → fell back to 'Edge Function error'.
+  // supabase.functions.invoke() auto-refreshes the JWT and injects the correct
+  // Authorization + apikey headers, exactly like useCheckout.ts does.
   const callEdge = useCallback(async (body: object) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) throw new Error('Not authenticated');
-    if (!EDGE_URL) throw new Error('SUPABASE_URL env var missing');
-    const res = await fetch(EDGE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error ?? 'Edge Function error');
-    return json;
+    const { data, error: fnErr } = await supabase.functions.invoke(
+      'stripe-connect-onboard',
+      { body },
+    );
+    if (fnErr) {
+      // Try to surface a meaningful message from the gateway or function body
+      let msg: string = fnErr.message ?? 'Edge Function error';
+      try {
+        const bodyJson = await (fnErr as any).context?.json?.();
+        msg = bodyJson?.error ?? bodyJson?.message ?? msg;
+      } catch { /* ignore parse errors */ }
+      throw new Error(msg);
+    }
+    if (data?.error) throw new Error(data.error);
+    return data;
   }, []);
 
   const startOnboarding = useCallback(async () => {

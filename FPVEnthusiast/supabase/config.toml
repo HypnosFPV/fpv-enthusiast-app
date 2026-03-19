@@ -46,6 +46,9 @@ enable_confirmations = false
 # even slightly expired (a common race condition in React Native / AsyncStorage)
 # with "Invalid JWT" before the function code runs, causing the payment error.
 
+[functions.stripe-connect-onboard]
+verify_jwt = false
+
 [functions.create-payment-intent]
 verify_jwt = false
 
