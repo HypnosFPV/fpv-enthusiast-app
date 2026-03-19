@@ -74,7 +74,7 @@ export function useCheckout() {
   const initCheckout = useCallback(async (
     listingId: string,
     offerId?: string,
-  ): Promise<{ ok: boolean; error?: string }> => {
+  ): Promise<{ ok: boolean; error?: string; amountCents?: number }> => {
     // Clear previous readiness so a stale ref never leaks into a new checkout
     readyRef.current = { ready: false, orderId: null };
     setState({ ...INITIAL, status: 'loading' });
@@ -175,7 +175,9 @@ export function useCheckout() {
       // trust readyRef.current.ready === true when it runs.
       readyRef.current = { ready: true, orderId };
       setState({ status: 'ready', orderId, error: null, amountCents });
-      return { ok: true };
+      // Return amountCents so callers can capture it without reading stale React state.
+      // (checkoutState is batched by React and may still be null in the caller's closure)
+      return { ok: true, amountCents: amountCents ?? undefined };
 
     } catch (err) {
       return fail(String(err));

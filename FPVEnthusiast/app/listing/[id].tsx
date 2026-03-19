@@ -761,7 +761,10 @@ export default function ListingDetailScreen() {
     // Use the pre-computed myAcceptedOffer (works even when listing is pending_sale)
     const offerId = myAcceptedOffer?.id ?? myAcceptedOffer?.offer_id;
 
-    const { ok, error: initErr } = await initCheckout(
+    // initCheckout now returns amountCents directly so we never read stale
+    // React state.  checkoutState.amountCents is batched and may still be null
+    // in this closure even after the await resolves.
+    const { ok, error: initErr, amountCents: capturedAmount } = await initCheckout(
       listing.id,
       offerId,
     );
@@ -769,12 +772,6 @@ export default function ListingDetailScreen() {
       Alert.alert('Payment Error', initErr ?? 'Could not start checkout');
       return;
     }
-
-    // Capture amountCents NOW (while checkoutState is 'ready') before confirmPayment
-    // triggers a status transition to 'processing'/'success'.
-    // React batches state, so reading checkoutState after confirmPayment returns
-    // may give a stale 0 value.
-    const capturedAmount = checkoutState.amountCents ?? 0;
 
     const { ok: paid, orderId, error: payErr } = await confirmPayment();
     if (!paid) {

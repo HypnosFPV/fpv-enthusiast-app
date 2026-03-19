@@ -99,14 +99,15 @@ export function useOrders(userId: string | undefined) {
           .from('marketplace_orders')
           .select(ORDER_QUERY)
           .eq('buyer_id', userId)
-          .not('status', 'eq', 'pending')   // hide unpaid intents
+          // Include 'pending' orders so a just-paid order appears immediately
+          // before the Stripe webhook has updated the status to 'paid'.
           .order('created_at', { ascending: false })
           .limit(50),
         supabase
           .from('marketplace_orders')
           .select(ORDER_QUERY)
           .eq('seller_id', userId)
-          .not('status', 'eq', 'pending')
+          // Include 'pending' so the sales tab also reflects immediate inserts.
           .order('created_at', { ascending: false })
           .limit(50),
       ]);
@@ -120,6 +121,42 @@ export function useOrders(userId: string | undefined) {
   }, [userId]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  // ── Realtime: auto-refresh when order status changes (e.g. webhook sets 'paid') ──
+  // This fires within ~1 s of the Stripe webhook updating the row, so users
+  // never need to manually pull-to-refresh after completing a purchase.
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`orders_live_${userId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'marketplace_orders',
+          filter: `buyer_id=eq.${userId}` },
+        () => fetchOrders(true),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'marketplace_orders',
+          filter: `buyer_id=eq.${userId}` },
+        () => fetchOrders(true),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'marketplace_orders',
+          filter: `seller_id=eq.${userId}` },
+        () => fetchOrders(true),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'marketplace_orders',
+          filter: `seller_id=eq.${userId}` },
+        () => fetchOrders(true),
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [userId, fetchOrders]);
 
   const refresh = useCallback(() => fetchOrders(true), [fetchOrders]);
 
