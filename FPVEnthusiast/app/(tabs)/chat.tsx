@@ -436,26 +436,26 @@ function NewCommunityModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen" onRequestClose={handleDismiss}>
-      <KeyboardAvoidingView
-        style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
-      >
+      <View style={styles.modalOverlay}>
         <Pressable style={{ flex: 1 }} onPress={handleDismiss} />
-        <View style={[styles.modalSheet, styles.communitySheet]}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Create community</Text>
-            <TouchableOpacity onPress={handleDismiss}><Ionicons name="close" size={22} color="#aaa" /></TouchableOpacity>
-          </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 84 : 0}
+        >
+          <View style={[styles.modalSheet, styles.communitySheet]}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create community</Text>
+              <TouchableOpacity onPress={handleDismiss}><Ionicons name="close" size={22} color="#aaa" /></TouchableOpacity>
+            </View>
 
-          <ScrollView
-            style={styles.communityScroll}
-            contentContainerStyle={styles.communityScrollContent}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-            showsVerticalScrollIndicator={false}
-          >
+            <ScrollView
+              style={styles.communityScroll}
+              contentContainerStyle={styles.communityScrollContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              showsVerticalScrollIndicator={false}
+            >
             <TextInput
               style={styles.input}
               placeholder="Community name"
@@ -534,19 +534,20 @@ function NewCommunityModal({
             })}
           </ScrollView>
 
-          <View style={styles.communityFooter}>
-            <TouchableOpacity
-              style={[styles.primaryBtn, styles.primaryBtnNoMargin, (!name.trim() || saving) && { opacity: 0.45 }]}
-              disabled={!name.trim() || saving}
-              onPress={handleCreate}
-            >
-              {saving
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={styles.primaryBtnText}>Create community</Text>}
-            </TouchableOpacity>
+            <View style={styles.communityFooter}>
+              <TouchableOpacity
+                style={[styles.primaryBtn, styles.primaryBtnNoMargin, (!name.trim() || saving) && { opacity: 0.45 }]}
+                disabled={!name.trim() || saving}
+                onPress={handleCreate}
+              >
+                {saving
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.primaryBtnText}>Create community</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -746,6 +747,10 @@ export default function ChatTab() {
           <Ionicons name="people-outline" size={48} color="#2f2f2f" />
           <Text style={styles.emptyTitle}>No communities yet</Text>
           <Text style={styles.emptySubtitle}>Create a moderated team space with posts, members, and group chat.</Text>
+          <TouchableOpacity style={styles.emptyCtaBtn} onPress={() => setShowNewCommunity(true)}>
+            <Ionicons name="add" size={16} color="#fff" />
+            <Text style={styles.emptyCtaText}>Create community</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -1185,6 +1190,17 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: '#f1f1f1', fontSize: 18, fontWeight: '700', marginTop: 14 },
   emptySubtitle: { color: '#6f6f6f', fontSize: 14, textAlign: 'center', lineHeight: 20, marginTop: 8 },
+  emptyCtaBtn: {
+    marginTop: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ff6a2f',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 999,
+  },
+  emptyCtaText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
   modalSheet: {
@@ -1194,8 +1210,7 @@ const styles = StyleSheet.create({
     maxHeight: '88%',
   },
   communitySheet: {
-    minHeight: '78%',
-    maxHeight: '92%',
+    maxHeight: '86%',
     overflow: 'hidden',
   },
   sheetHandle: {
@@ -1235,7 +1250,7 @@ const styles = StyleSheet.create({
   communityFooter: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 18,
+    paddingBottom: Platform.OS === 'ios' ? 18 : 14,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#212121',
     backgroundColor: '#101010',
