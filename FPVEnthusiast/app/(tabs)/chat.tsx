@@ -15,6 +15,7 @@ import {
   ScrollView,
   RefreshControl,
   FlatList,
+  Keyboard,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -366,6 +367,11 @@ function NewCommunityModal({
     canInvite: SocialGroupPermission;
   }) => Promise<void>;
 }) {
+  const handleDismiss = useCallback(() => {
+    Keyboard.dismiss();
+    onClose();
+  }, [onClose]);
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [privacy, setPrivacy] = useState<SocialGroupPrivacy>('private');
@@ -429,100 +435,117 @@ function NewCommunityModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <ScrollView style={styles.modalSheet} contentContainerStyle={{ paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
+    <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen" onRequestClose={handleDismiss}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+      >
+        <Pressable style={{ flex: 1 }} onPress={handleDismiss} />
+        <View style={[styles.modalSheet, styles.communitySheet]}>
+          <View style={styles.sheetHandle} />
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Create community</Text>
-            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color="#aaa" /></TouchableOpacity>
+            <TouchableOpacity onPress={handleDismiss}><Ionicons name="close" size={22} color="#aaa" /></TouchableOpacity>
           </View>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Community name"
-            placeholderTextColor="#777"
-            value={name}
-            onChangeText={setName}
-          />
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="What is this group for?"
-            placeholderTextColor="#777"
-            multiline
-            value={description}
-            onChangeText={setDescription}
-          />
-
-          <SectionHeader title="Privacy" subtitle="Who can discover and open the community" />
-          <View style={styles.choiceRow}>
-            <ChoicePill label="Public" active={privacy === 'public'} onPress={() => setPrivacy('public')} />
-            <ChoicePill label="Private" active={privacy === 'private'} onPress={() => setPrivacy('private')} />
-            <ChoicePill label="Invite only" active={privacy === 'invite_only'} onPress={() => setPrivacy('invite_only')} />
-          </View>
-
-          <SectionHeader title="Permissions" subtitle="Moderation defaults for posts, chat, and invites" />
-          <Text style={styles.permissionLabel}>Who can post?</Text>
-          <View style={styles.choiceRow}>
-            <ChoicePill label="Members" active={canPost === 'members'} onPress={() => setCanPost('members')} />
-            <ChoicePill label="Mods only" active={canPost === 'mods'} onPress={() => setCanPost('mods')} />
-          </View>
-          <Text style={styles.permissionLabel}>Who can chat?</Text>
-          <View style={styles.choiceRow}>
-            <ChoicePill label="Members" active={canChat === 'members'} onPress={() => setCanChat('members')} />
-            <ChoicePill label="Mods only" active={canChat === 'mods'} onPress={() => setCanChat('mods')} />
-          </View>
-          <Text style={styles.permissionLabel}>Who can invite?</Text>
-          <View style={styles.choiceRow}>
-            <ChoicePill label="Members" active={canInvite === 'members'} onPress={() => setCanInvite('members')} />
-            <ChoicePill label="Mods only" active={canInvite === 'mods'} onPress={() => setCanInvite('mods')} />
-          </View>
-
-          <SectionHeader title="Invite people" subtitle="Add initial members now or invite them later" />
-          <TextInput
-            style={styles.input}
-            placeholder="Search usernames"
-            placeholderTextColor="#777"
-            value={search}
-            onChangeText={searchUsers}
-          />
-
-          {selected.length > 0 ? (
-            <View style={styles.selectedWrap}>
-              {selected.map(item => (
-                <TouchableOpacity key={item.id} style={styles.selectedChip} onPress={() => toggleSelected(item)}>
-                  <Text style={styles.selectedChipText}>{item.username}</Text>
-                  <Ionicons name="close-circle" size={14} color="#fff" />
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : null}
-
-          {results.map(item => {
-            const picked = selected.some(user => user.id === item.id);
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.userRow, picked && styles.userRowSelected]}
-                onPress={() => toggleSelected(item)}
-              >
-                <Avatar uri={item.avatar_url} icon="person" size={40} />
-                <Text style={styles.userName}>{item.username}</Text>
-                <Ionicons name={picked ? 'checkmark-circle' : 'add-circle-outline'} size={18} color="#ff6a2f" />
-              </TouchableOpacity>
-            );
-          })}
-
-          <TouchableOpacity
-            style={[styles.primaryBtn, (!name.trim() || saving) && { opacity: 0.45 }]}
-            disabled={!name.trim() || saving}
-            onPress={handleCreate}
+          <ScrollView
+            style={styles.communityScroll}
+            contentContainerStyle={styles.communityScrollContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            showsVerticalScrollIndicator={false}
           >
-            {saving
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Text style={styles.primaryBtnText}>Create community</Text>}
-          </TouchableOpacity>
-        </ScrollView>
+            <TextInput
+              style={styles.input}
+              placeholder="Community name"
+              placeholderTextColor="#777"
+              value={name}
+              onChangeText={setName}
+              autoFocus
+              returnKeyType="next"
+            />
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="What is this group for?"
+              placeholderTextColor="#777"
+              multiline
+              value={description}
+              onChangeText={setDescription}
+            />
+
+            <SectionHeader title="Privacy" subtitle="Who can discover and open the community" />
+            <View style={styles.choiceRow}>
+              <ChoicePill label="Public" active={privacy === 'public'} onPress={() => setPrivacy('public')} />
+              <ChoicePill label="Private" active={privacy === 'private'} onPress={() => setPrivacy('private')} />
+              <ChoicePill label="Invite only" active={privacy === 'invite_only'} onPress={() => setPrivacy('invite_only')} />
+            </View>
+
+            <SectionHeader title="Permissions" subtitle="Moderation defaults for posts, chat, and invites" />
+            <Text style={styles.permissionLabel}>Who can post?</Text>
+            <View style={styles.choiceRow}>
+              <ChoicePill label="Members" active={canPost === 'members'} onPress={() => setCanPost('members')} />
+              <ChoicePill label="Mods only" active={canPost === 'mods'} onPress={() => setCanPost('mods')} />
+            </View>
+            <Text style={styles.permissionLabel}>Who can chat?</Text>
+            <View style={styles.choiceRow}>
+              <ChoicePill label="Members" active={canChat === 'members'} onPress={() => setCanChat('members')} />
+              <ChoicePill label="Mods only" active={canChat === 'mods'} onPress={() => setCanChat('mods')} />
+            </View>
+            <Text style={styles.permissionLabel}>Who can invite?</Text>
+            <View style={styles.choiceRow}>
+              <ChoicePill label="Members" active={canInvite === 'members'} onPress={() => setCanInvite('members')} />
+              <ChoicePill label="Mods only" active={canInvite === 'mods'} onPress={() => setCanInvite('mods')} />
+            </View>
+
+            <SectionHeader title="Invite people" subtitle="Add initial members now or invite them later" />
+            <TextInput
+              style={styles.input}
+              placeholder="Search usernames"
+              placeholderTextColor="#777"
+              value={search}
+              onChangeText={searchUsers}
+            />
+
+            {selected.length > 0 ? (
+              <View style={styles.selectedWrap}>
+                {selected.map(item => (
+                  <TouchableOpacity key={item.id} style={styles.selectedChip} onPress={() => toggleSelected(item)}>
+                    <Text style={styles.selectedChipText}>{item.username}</Text>
+                    <Ionicons name="close-circle" size={14} color="#fff" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+
+            {results.map(item => {
+              const picked = selected.some(user => user.id === item.id);
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.userRow, picked && styles.userRowSelected]}
+                  onPress={() => toggleSelected(item)}
+                >
+                  <Avatar uri={item.avatar_url} icon="person" size={40} />
+                  <Text style={styles.userName}>{item.username}</Text>
+                  <Ionicons name={picked ? 'checkmark-circle' : 'add-circle-outline'} size={18} color="#ff6a2f" />
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.communityFooter}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, styles.primaryBtnNoMargin, (!name.trim() || saving) && { opacity: 0.45 }]}
+              disabled={!name.trim() || saving}
+              onPress={handleCreate}
+            >
+              {saving
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={styles.primaryBtnText}>Create community</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -1170,6 +1193,19 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 22,
     maxHeight: '88%',
   },
+  communitySheet: {
+    minHeight: '78%',
+    maxHeight: '92%',
+    overflow: 'hidden',
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#2d2d2d',
+    marginTop: 10,
+  },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1194,6 +1230,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   textArea: { minHeight: 90, textAlignVertical: 'top' },
+  communityScroll: { flex: 1 },
+  communityScrollContent: { paddingBottom: 18 },
+  communityFooter: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 18,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#212121',
+    backgroundColor: '#101010',
+  },
   choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16 },
   choicePill: {
     paddingHorizontal: 12,
@@ -1241,6 +1287,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  primaryBtnNoMargin: {
+    marginHorizontal: 0,
+    marginTop: 0,
   },
   primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });
