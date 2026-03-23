@@ -563,6 +563,7 @@ export default function ChatTab() {
   } = useChat(user?.id);
   const {
     groups,
+    discoverableGroups,
     pendingInvites,
     loading: groupsLoad,
     refreshing: groupsRefreshing,
@@ -633,6 +634,15 @@ export default function ChatTab() {
       return hay.includes(q);
     });
   }, [pendingInvites, search]);
+
+  const filteredDiscoverableGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return discoverableGroups;
+    return discoverableGroups.filter(group => {
+      const hay = `${group.name} ${group.description ?? ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [discoverableGroups, search]);
 
   const dmRooms = useMemo(
     () => filteredRooms.filter(room => room.type === 'dm'),
@@ -737,7 +747,12 @@ export default function ChatTab() {
   };
 
   const renderGroups = () => {
-    if (filteredPendingInvites.length === 0 && filteredGroups.length === 0 && adHocGroupChats.length === 0) {
+    if (
+      filteredPendingInvites.length === 0
+      && filteredGroups.length === 0
+      && filteredDiscoverableGroups.length === 0
+      && adHocGroupChats.length === 0
+    ) {
       return (
         <View style={styles.emptyState}>
           <Ionicons name="people-outline" size={48} color="#2f2f2f" />
@@ -763,7 +778,7 @@ export default function ChatTab() {
           />
         ))}
 
-        {filteredGroups.length > 0 ? <SectionHeader title="Communities" subtitle="Posts, moderation, and a linked group chat" /> : null}
+        {filteredGroups.length > 0 ? <SectionHeader title="Your communities" subtitle="Posts, moderation, and a linked group chat" /> : null}
         {filteredGroups.map(group => (
           <ConversationRow
             key={group.id}
@@ -773,6 +788,20 @@ export default function ChatTab() {
             avatarUri={group.avatar_url}
             icon="people"
             badge={(group.my_role ?? 'member').toUpperCase()}
+            onPress={() => openGroup(group.id)}
+          />
+        ))}
+
+        {filteredDiscoverableGroups.length > 0 ? <SectionHeader title="Discover communities" subtitle="Public communities you can open even before joining" /> : null}
+        {filteredDiscoverableGroups.map(group => (
+          <ConversationRow
+            key={`discover-${group.id}`}
+            title={group.name}
+            subtitle={group.description || `${group.member_count ?? 1} members • ${group.privacy.replace('_', ' ')}`}
+            time={timeAgo(group.updated_at)}
+            avatarUri={group.avatar_url}
+            icon="compass-outline"
+            badge="OPEN"
             onPress={() => openGroup(group.id)}
           />
         ))}
@@ -795,7 +824,7 @@ export default function ChatTab() {
   };
 
   const renderAll = () => {
-    const hasAnything = marketplaceBundles.length || dmRooms.length || filteredPendingInvites.length || filteredGroups.length || adHocGroupChats.length;
+    const hasAnything = marketplaceBundles.length || dmRooms.length || filteredPendingInvites.length || filteredGroups.length || filteredDiscoverableGroups.length || adHocGroupChats.length;
 
     if (!hasAnything) {
       return (
@@ -826,7 +855,7 @@ export default function ChatTab() {
           />
         ))}
 
-        {(filteredPendingInvites.length > 0 || filteredGroups.length > 0 || adHocGroupChats.length > 0) ? <SectionHeader title="Groups" subtitle="Invites first, then communities and classic group chats" /> : null}
+        {(filteredPendingInvites.length > 0 || filteredGroups.length > 0 || filteredDiscoverableGroups.length > 0 || adHocGroupChats.length > 0) ? <SectionHeader title="Groups" subtitle="Invites first, then your communities, public communities, and classic group chats" /> : null}
         {filteredPendingInvites.slice(0, 2).map(invite => (
           <PendingInviteCard
             key={invite.id}
@@ -844,6 +873,18 @@ export default function ChatTab() {
             avatarUri={group.avatar_url}
             icon="people"
             badge={(group.my_role ?? 'member').toUpperCase()}
+            onPress={() => openGroup(group.id)}
+          />
+        ))}
+        {filteredDiscoverableGroups.slice(0, 3).map(group => (
+          <ConversationRow
+            key={`discover-all-${group.id}`}
+            title={group.name}
+            subtitle={group.description || `${group.member_count ?? 1} members • public`}
+            time={timeAgo(group.updated_at)}
+            avatarUri={group.avatar_url}
+            icon="compass-outline"
+            badge="OPEN"
             onPress={() => openGroup(group.id)}
           />
         ))}
@@ -913,7 +954,7 @@ export default function ChatTab() {
         ))}
       </View>
 
-      {isLoading && rooms.length === 0 && groups.length === 0 ? (
+      {isLoading && rooms.length === 0 && groups.length === 0 && discoverableGroups.length === 0 ? (
         <ActivityIndicator color="#ff6a2f" style={{ marginTop: 40 }} />
       ) : (
         <ScrollView
