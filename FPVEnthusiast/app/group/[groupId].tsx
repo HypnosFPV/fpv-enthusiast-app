@@ -23,6 +23,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import {
   SocialGroup,
   SocialGroupMember,
+  SocialGroupModerationMode,
   SocialGroupPermission,
   SocialGroupPrivacy,
   useSocialGroups,
@@ -117,7 +118,9 @@ export default function GroupDetailScreen() {
     addMember,
     updateMemberRole,
     removeMember,
+    moderatePost,
     updateGroupSettings,
+    deleteGroup,
   } = useSocialGroups(user?.id);
 
   const [group, setGroup] = useState<SocialGroup | null>(null);
@@ -126,18 +129,22 @@ export default function GroupDetailScreen() {
   const [posts, setPosts] = useState<GroupPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [tab, setTab] = useState<'posts' | 'members' | 'about'>('posts');
+  const [tab, setTab] = useState<'posts' | 'members' | 'moderation' | 'about'>('posts');
   const [draft, setDraft] = useState('');
   const [posting, setPosting] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
   const [memberResults, setMemberResults] = useState<{ id: string; username: string; avatar_url: string | null }[]>([]);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [moderatingPostId, setModeratingPostId] = useState<string | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deletingGroup, setDeletingGroup] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
   const [privacyDraft, setPrivacyDraft] = useState<SocialGroupPrivacy>('private');
   const [canPostDraft, setCanPostDraft] = useState<SocialGroupPermission>('members');
   const [canChatDraft, setCanChatDraft] = useState<SocialGroupPermission>('members');
   const [canInviteDraft, setCanInviteDraft] = useState<SocialGroupPermission>('mods');
+  const [moderationModeDraft, setModerationModeDraft] = useState<SocialGroupModerationMode>('normal');
 
   const fetchGroup = useCallback(async () => {
     if (!groupId) return;
@@ -147,6 +154,7 @@ export default function GroupDetailScreen() {
       .select(`
         id, name, description, privacy, avatar_url, cover_url,
         created_by, chat_room_id, can_post, can_chat, can_invite,
+        moderation_mode, pinned_post_id,
         created_at, updated_at
       `)
       .eq('id', groupId)
@@ -223,6 +231,7 @@ export default function GroupDetailScreen() {
     setCanPostDraft(groupData.can_post as SocialGroupPermission);
     setCanChatDraft(groupData.can_chat as SocialGroupPermission);
     setCanInviteDraft(groupData.can_invite as SocialGroupPermission);
+    setModerationModeDraft((groupData.moderation_mode ?? 'normal') as SocialGroupModerationMode);
     setMembers((memberData ?? []) as SocialGroupMember[]);
     setPendingInvites(((inviteData ?? []) as any[]).map((invite) => ({
       ...invite,
@@ -245,9 +254,15 @@ export default function GroupDetailScreen() {
   const myRole = useMemo(() => members.find(member => member.user_id === user?.id)?.role ?? null, [members, user?.id]);
   const canManage = myRole === 'owner' || myRole === 'admin';
   const canModerate = canManage || myRole === 'moderator';
+  const isReadOnly = group?.moderation_mode === 'read_only';
   const canInviteUsers = !!group && (group.can_invite === 'members' || canModerate);
-  const canPost = !!group && (group.can_post === 'members' || canModerate);
+  const canPost = !!group && (canModerate || (!isReadOnly && group.can_post === 'members'));
   const canChat = !!group && (group.can_chat === 'members' || canModerate);
+  const manageableMembers = useMemo(
+    () => members.filter(member => member.user_id !== user?.id),
+    [members, user?.id]
+  );
+  const moderationQueue = useMemo(() => posts.slice(0, 12), [posts]);
 
   const handleToggleLike = async (postId: string) => {
     if (!user?.id) return;
@@ -274,13 +289,40 @@ export default function GroupDetailScreen() {
   };
 
   const handleDeletePost = async (postId: string) => {
-    const { error } = await supabase.from('posts').delete().eq('id', postId).eq('user_id', user?.id ?? '');
-    if (error) {
-      Alert.alert('Error', 'Could not delete post.');
+    const target = posts.find(post => post.id === postId);
+    if (!target) return false;
+
+    setModeratingPostId(postId);
+    try {
+      if (target.user_id === user?.id) {
+        const { error } = await supabase
+          .from('posts')
+          .delete()
+          .eq('id', postId)
+          .eq('user_id', user?.id ?? '');
+
+        if (error) {
+          throw error;
+        }
+      } else if (groupId && canModerate) {
+        const ok = await moderatePost(groupId, postId, 'Removed from group moderation tools');
+        if (!ok) {
+          Alert.alert('Error', 'Could not remove that post.');
+          return false;
+        }
+      } else {
+        Alert.alert('Not allowed', 'You do not have permission to remove this post.');
+        return false;
+      }
+
+      setPosts(prev => prev.filter(post => post.id !== postId));
+      return true;
+    } catch (error: any) {
+      Alert.alert('Error', error?.message ?? 'Could not delete post.');
       return false;
+    } finally {
+      setModeratingPostId(current => (current === postId ? null : current));
     }
-    setPosts(prev => prev.filter(post => post.id !== postId));
-    return true;
   };
 
   const handlePost = async () => {
@@ -387,6 +429,7 @@ export default function GroupDetailScreen() {
       canPost: canPostDraft,
       canChat: canChatDraft,
       canInvite: canInviteDraft,
+      moderationMode: moderationModeDraft,
     });
     setSavingSettings(false);
     if (!ok) {
@@ -395,6 +438,58 @@ export default function GroupDetailScreen() {
     }
     await fetchGroup();
     Alert.alert('Saved', 'Community settings updated.');
+  };
+
+  const handleModeratePostPress = (post: GroupPost) => {
+    const actorLabel = post.user_id === user?.id ? 'Delete your post?' : 'Remove this post?';
+    const message = post.user_id === user?.id
+      ? 'This cannot be undone.'
+      : 'This will remove the post for everyone in the group.';
+
+    Alert.alert(actorLabel, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: post.user_id === user?.id ? 'Delete' : 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          await handleDeletePost(post.id);
+        },
+      },
+    ]);
+  };
+
+  const handleDeleteGroup = () => {
+    if (!groupId || !group || myRole !== 'owner' || deletingGroup) return;
+
+    if (deleteConfirmName.trim() !== group.name) {
+      Alert.alert('Confirmation needed', `Type ${group.name} exactly to delete this group.`);
+      return;
+    }
+
+    Alert.alert(
+      'Delete group?',
+      'This permanently removes the group, its posts, and the related chat room. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete group',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingGroup(true);
+            const ok = await deleteGroup(groupId, deleteConfirmName.trim());
+            setDeletingGroup(false);
+
+            if (!ok) {
+              Alert.alert('Error', 'Could not delete the group.');
+              return;
+            }
+
+            setDeleteConfirmName('');
+            router.replace('/(tabs)/feed' as any);
+          },
+        },
+      ]
+    );
   };
 
   if (loading) {
@@ -446,25 +541,39 @@ export default function GroupDetailScreen() {
             <Text style={styles.heroTitle}>{group.name}</Text>
             <Text style={styles.heroMeta}>
               {group.privacy === 'public' ? 'Public community' : group.privacy === 'invite_only' ? 'Invite only' : 'Private community'}
+              {group.moderation_mode === 'read_only' ? ' • Read only mode' : ''}
             </Text>
             {!!group.description && <Text style={styles.heroDescription}>{group.description}</Text>}
           </View>
         </View>
 
         <View style={styles.tabsRow}>
-          {[
-            { key: 'posts', label: 'Posts' },
-            { key: 'members', label: 'Members' },
-            { key: 'about', label: 'About' },
-          ].map(item => (
+          <TouchableOpacity
+            style={[styles.tabBtn, tab === 'posts' && styles.tabBtnActive]}
+            onPress={() => setTab('posts')}
+          >
+            <Text style={[styles.tabBtnText, tab === 'posts' && styles.tabBtnTextActive]}>Posts</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabBtn, tab === 'members' && styles.tabBtnActive]}
+            onPress={() => setTab('members')}
+          >
+            <Text style={[styles.tabBtnText, tab === 'members' && styles.tabBtnTextActive]}>Members</Text>
+          </TouchableOpacity>
+          {canModerate ? (
             <TouchableOpacity
-              key={item.key}
-              style={[styles.tabBtn, tab === item.key && styles.tabBtnActive]}
-              onPress={() => setTab(item.key as typeof tab)}
+              style={[styles.tabBtn, tab === 'moderation' && styles.tabBtnActive]}
+              onPress={() => setTab('moderation')}
             >
-              <Text style={[styles.tabBtnText, tab === item.key && styles.tabBtnTextActive]}>{item.label}</Text>
+              <Text style={[styles.tabBtnText, tab === 'moderation' && styles.tabBtnTextActive]}>Moderation</Text>
             </TouchableOpacity>
-          ))}
+          ) : null}
+          <TouchableOpacity
+            style={[styles.tabBtn, tab === 'about' && styles.tabBtnActive]}
+            onPress={() => setTab('about')}
+          >
+            <Text style={[styles.tabBtnText, tab === 'about' && styles.tabBtnTextActive]}>About</Text>
+          </TouchableOpacity>
         </View>
 
         {tab === 'posts' ? (
@@ -472,7 +581,11 @@ export default function GroupDetailScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Post to {group.name}</Text>
               <Text style={styles.cardSubtitle}>
-                {canPost ? 'This post will appear in the feed for group members.' : 'Only moderators can post in this group right now.'}
+                {canPost
+                  ? isReadOnly
+                    ? 'Read only mode is active for members. Moderator posts still appear in the feed.'
+                    : 'This post will appear in the feed for group members.'
+                  : 'Only moderators can post in this group right now.'}
               </Text>
               <TextInput
                 style={[styles.textArea, !canPost && { opacity: 0.55 }]}
@@ -505,6 +618,7 @@ export default function GroupDetailScreen() {
                   currentUserId={user?.id ?? undefined}
                   onLike={handleToggleLike}
                   onDelete={handleDeletePost}
+                  canManagePost={canModerate}
                 />
               </View>
             ))}
@@ -516,7 +630,7 @@ export default function GroupDetailScreen() {
             <View style={styles.membersHeader}>
               <View style={styles.membersHeaderTextWrap}>
                 <Text style={styles.cardTitle}>Members</Text>
-                <Text style={styles.cardSubtitle}>Owners and admins can change roles or remove members.</Text>
+                <Text style={styles.cardSubtitle}>Browse the roster, pending invites, and who runs this community.</Text>
               </View>
               {canInviteUsers ? (
                 <TouchableOpacity style={styles.secondaryBtn} onPress={() => setShowInviteModal(true)}>
@@ -564,10 +678,92 @@ export default function GroupDetailScreen() {
           </View>
         ) : null}
 
+        {tab === 'moderation' ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Moderation console</Text>
+            <Text style={styles.cardSubtitle}>Admins manage members. Moderators can quickly remove posts that break the rules.</Text>
+
+            <View style={styles.moderationBanner}>
+              <Ionicons name="shield-checkmark-outline" size={18} color="#ff9b68" />
+              <Text style={styles.moderationBannerText}>
+                {canManage
+                  ? 'Tap any member below to change roles or remove them from the group.'
+                  : 'You can remove posts here, but only owners and admins can change member roles.'}
+              </Text>
+            </View>
+
+            {canManage ? (
+              <View style={styles.moderationSection}>
+                <Text style={styles.sectionTitle}>Member actions</Text>
+                <Text style={styles.sectionHint}>Promote trusted members, demote roles, or remove them from the group.</Text>
+                {manageableMembers.length > 0 ? manageableMembers.map(member => (
+                  <TouchableOpacity
+                    key={member.user_id}
+                    style={styles.moderationRow}
+                    onPress={() => handleMemberPress(member)}
+                    activeOpacity={0.82}
+                  >
+                    <Avatar uri={member.user?.avatar_url} size={40} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.memberName}>{member.user?.username ?? member.user_id}</Text>
+                      <Text style={styles.memberMeta}>Current role: {member.role}</Text>
+                    </View>
+                    <View style={styles.manageBadge}>
+                      <Text style={styles.manageBadgeText}>Manage</Text>
+                    </View>
+                  </TouchableOpacity>
+                )) : (
+                  <Text style={styles.emptySearch}>No other members to manage yet.</Text>
+                )}
+              </View>
+            ) : null}
+
+            <View style={styles.moderationSection}>
+              <Text style={styles.sectionTitle}>Recent posts</Text>
+              <Text style={styles.sectionHint}>Use this queue to remove spam, abusive posts, or off-topic content.</Text>
+              {moderationQueue.length > 0 ? moderationQueue.map(post => {
+                const isBusy = moderatingPostId === post.id;
+                return (
+                  <View key={post.id} style={styles.modPostCard}>
+                    <View style={styles.modPostHeader}>
+                      <Avatar uri={post.users?.avatar_url} size={36} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.memberName}>{post.users?.username ?? 'Unknown pilot'}</Text>
+                        <Text style={styles.memberMeta}>Posted {timeAgo(post.created_at)} ago</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.modPostCaption} numberOfLines={3}>
+                      {post.caption?.trim() || 'Media post with no caption'}
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.destructiveBtn, isBusy && { opacity: 0.6 }]}
+                      disabled={isBusy}
+                      onPress={() => handleModeratePostPress(post)}
+                    >
+                      {isBusy ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <>
+                          <Ionicons name="trash-outline" size={16} color="#fff" />
+                          <Text style={styles.destructiveBtnText}>
+                            {post.user_id === user?.id ? 'Delete your post' : 'Remove post'}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              }) : (
+                <Text style={styles.emptySearch}>No posts need attention right now.</Text>
+              )}
+            </View>
+          </View>
+        ) : null}
+
         {tab === 'about' ? (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Community settings</Text>
-            <Text style={styles.cardSubtitle}>Moderators can tune who posts, chats, and invites members.</Text>
+            <Text style={styles.cardSubtitle}>Owners and admins can tune who posts, chats, invites, and whether the group is temporarily read only.</Text>
 
             <Text style={styles.label}>Description</Text>
             <TextInput
@@ -638,6 +834,23 @@ export default function GroupDetailScreen() {
               ))}
             </View>
 
+            <Text style={styles.label}>Posting mode</Text>
+            <View style={styles.choicesRow}>
+              {([
+                { key: 'normal', label: 'Normal' },
+                { key: 'read_only', label: 'Read only for members' },
+              ] as { key: SocialGroupModerationMode; label: string }[]).map(option => (
+                <TouchableOpacity
+                  key={option.key}
+                  disabled={!canManage}
+                  style={[styles.choicePill, moderationModeDraft === option.key && styles.choicePillActive, !canManage && { opacity: 0.55 }]}
+                  onPress={() => setModerationModeDraft(option.key)}
+                >
+                  <Text style={[styles.choiceText, moderationModeDraft === option.key && styles.choiceTextActive]}>{option.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {canManage ? (
               <TouchableOpacity
                 style={[styles.primaryBtn, savingSettings && { opacity: 0.55 }]}
@@ -646,6 +859,35 @@ export default function GroupDetailScreen() {
               >
                 {savingSettings ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.primaryBtnText}>Save settings</Text>}
               </TouchableOpacity>
+            ) : null}
+
+            {myRole === 'owner' ? (
+              <View style={styles.dangerCard}>
+                <Text style={styles.dangerTitle}>Danger zone</Text>
+                <Text style={styles.dangerText}>Type <Text style={styles.dangerHighlight}>{group.name}</Text> to permanently delete this group, all group posts, and the linked chat room.</Text>
+                <TextInput
+                  style={styles.dangerInput}
+                  value={deleteConfirmName}
+                  onChangeText={setDeleteConfirmName}
+                  autoCapitalize="none"
+                  placeholder={`Type ${group.name}`}
+                  placeholderTextColor="#666"
+                />
+                <TouchableOpacity
+                  style={[styles.destructiveBtn, (deletingGroup || deleteConfirmName.trim() !== group.name) && { opacity: 0.5 }]}
+                  disabled={deletingGroup || deleteConfirmName.trim() !== group.name}
+                  onPress={handleDeleteGroup}
+                >
+                  {deletingGroup ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="warning-outline" size={16} color="#fff" />
+                      <Text style={styles.destructiveBtnText}>Delete group permanently</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
             ) : null}
           </View>
         ) : null}
@@ -884,6 +1126,82 @@ const styles = StyleSheet.create({
   rolePillText: { fontSize: 10, fontWeight: '800' },
 
   choicesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  moderationBanner: {
+    marginTop: 14,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#3d2418',
+    backgroundColor: '#1b130f',
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+  },
+  moderationBannerText: { flex: 1, color: '#d7b29d', fontSize: 13, lineHeight: 18 },
+  moderationSection: { marginTop: 18 },
+  sectionTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  sectionHint: { color: '#7e7e7e', fontSize: 12, lineHeight: 18, marginTop: 4, marginBottom: 8 },
+  moderationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#202020',
+  },
+  manageBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#132033',
+    borderWidth: 1,
+    borderColor: '#29496b',
+  },
+  manageBadgeText: { color: '#9cc8ff', fontSize: 11, fontWeight: '800' },
+  modPostCard: {
+    marginTop: 10,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#151515',
+    borderWidth: 1,
+    borderColor: '#232323',
+  },
+  modPostHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  modPostCaption: { color: '#d8d8d8', fontSize: 13, lineHeight: 19, marginTop: 10 },
+  destructiveBtn: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#c24e39',
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  destructiveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  dangerCard: {
+    marginTop: 20,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#1a1010',
+    borderWidth: 1,
+    borderColor: '#5b2b2b',
+  },
+  dangerTitle: { color: '#ffb4a6', fontSize: 15, fontWeight: '700' },
+  dangerText: { color: '#d1a29c', fontSize: 13, lineHeight: 19, marginTop: 8 },
+  dangerHighlight: { color: '#fff', fontWeight: '800' },
+  dangerInput: {
+    marginTop: 12,
+    backgroundColor: '#130c0c',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#5b2b2b',
+    color: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+  },
   choicePill: {
     paddingHorizontal: 12,
     paddingVertical: 9,

@@ -4,6 +4,7 @@ import { supabase } from '../services/supabase';
 export type SocialGroupPrivacy = 'public' | 'private' | 'invite_only';
 export type SocialGroupPermission = 'members' | 'mods';
 export type SocialGroupRole = 'owner' | 'admin' | 'moderator' | 'member';
+export type SocialGroupModerationMode = 'normal' | 'read_only';
 
 export interface SocialGroup {
   id: string;
@@ -17,6 +18,8 @@ export interface SocialGroup {
   can_post: SocialGroupPermission;
   can_chat: SocialGroupPermission;
   can_invite: SocialGroupPermission;
+  moderation_mode?: SocialGroupModerationMode;
+  pinned_post_id?: string | null;
   created_at: string;
   updated_at: string;
   my_role?: SocialGroupRole | null;
@@ -54,6 +57,49 @@ export interface SocialGroupInvite {
   } | null;
 }
 
+export interface SocialGroupBan {
+  group_id: string;
+  user_id: string;
+  banned_by: string;
+  reason?: string | null;
+  created_at: string;
+  user?: {
+    id?: string | null;
+    username?: string | null;
+    avatar_url?: string | null;
+  } | null;
+  actor?: {
+    id?: string | null;
+    username?: string | null;
+    avatar_url?: string | null;
+  } | null;
+}
+
+export interface SocialGroupPostReport {
+  id: string;
+  group_id: string;
+  post_id: string;
+  reporter_id: string;
+  reason: string;
+  details?: string | null;
+  status: 'pending' | 'resolved' | 'dismissed';
+  resolved_at?: string | null;
+  resolved_by?: string | null;
+  resolution?: string | null;
+  created_at: string;
+}
+
+export interface SocialGroupModAction {
+  id: string;
+  group_id: string;
+  actor_id: string;
+  action_type: string;
+  target_user_id?: string | null;
+  target_post_id?: string | null;
+  metadata?: Record<string, any> | null;
+  created_at: string;
+}
+
 interface CreateSocialGroupParams {
   name: string;
   description?: string;
@@ -78,6 +124,8 @@ function normalizeGroup(raw: any, myRole?: SocialGroupRole | null, memberCount?:
     can_post: group.can_post,
     can_chat: group.can_chat,
     can_invite: group.can_invite,
+    moderation_mode: (group.moderation_mode ?? 'normal') as SocialGroupModerationMode,
+    pinned_post_id: group.pinned_post_id ?? null,
     created_at: group.created_at,
     updated_at: group.updated_at,
     my_role: myRole ?? null,
@@ -106,6 +154,7 @@ export function useSocialGroups(currentUserId?: string) {
         group:group_id (
           id, name, description, privacy, avatar_url, cover_url,
           created_by, chat_room_id, can_post, can_chat, can_invite,
+          moderation_mode, pinned_post_id,
           created_at, updated_at
         )
       `)
@@ -120,9 +169,7 @@ export function useSocialGroups(currentUserId?: string) {
     }
 
     const groupRows = (data ?? []) as any[];
-    const groupIds = groupRows
-      .map(row => row.group?.id)
-      .filter(Boolean) as string[];
+    const groupIds = groupRows.map(row => row.group?.id).filter(Boolean) as string[];
 
     const counts: Record<string, number> = {};
     if (groupIds.length > 0) {
@@ -158,6 +205,7 @@ export function useSocialGroups(currentUserId?: string) {
         group:group_id (
           id, name, description, privacy, avatar_url, cover_url,
           created_by, chat_room_id, can_post, can_chat, can_invite,
+          moderation_mode, pinned_post_id,
           created_at, updated_at
         ),
         inviter:invited_by ( id, username, avatar_url )
@@ -274,16 +322,52 @@ export function useSocialGroups(currentUserId?: string) {
     return true;
   }, []);
 
-  const removeMember = useCallback(async (
-    groupId: string,
-    userId: string,
-  ): Promise<boolean> => {
+  const removeMember = useCallback(async (groupId: string, userId: string): Promise<boolean> => {
     const { error } = await supabase.rpc('remove_social_group_member', {
       p_group_id: groupId,
       p_user_id: userId,
     });
     if (error) {
       console.warn('[useSocialGroups] removeMember error:', error.message);
+      return false;
+    }
+    await fetchGroups();
+    return true;
+  }, [fetchGroups]);
+
+  const banMember = useCallback(async (groupId: string, userId: string, reason?: string): Promise<boolean> => {
+    const { error } = await supabase.rpc('ban_social_group_member', {
+      p_group_id: groupId,
+      p_user_id: userId,
+      p_reason: reason?.trim() || null,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] banMember error:', error.message);
+      return false;
+    }
+    await Promise.all([fetchGroups(), fetchPendingInvites()]);
+    return true;
+  }, [fetchGroups, fetchPendingInvites]);
+
+  const unbanMember = useCallback(async (groupId: string, userId: string): Promise<boolean> => {
+    const { error } = await supabase.rpc('unban_social_group_member', {
+      p_group_id: groupId,
+      p_user_id: userId,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] unbanMember error:', error.message);
+      return false;
+    }
+    return true;
+  }, []);
+
+  const transferOwnership = useCallback(async (groupId: string, newOwnerId: string): Promise<boolean> => {
+    const { error } = await supabase.rpc('transfer_social_group_ownership', {
+      p_group_id: groupId,
+      p_new_owner_id: newOwnerId,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] transferOwnership error:', error.message);
       return false;
     }
     await fetchGroups();
@@ -298,6 +382,7 @@ export function useSocialGroups(currentUserId?: string) {
       canPost?: SocialGroupPermission;
       canChat?: SocialGroupPermission;
       canInvite?: SocialGroupPermission;
+      moderationMode?: SocialGroupModerationMode;
     }
   ): Promise<boolean> => {
     const { error } = await supabase.rpc('update_social_group_settings', {
@@ -307,6 +392,7 @@ export function useSocialGroups(currentUserId?: string) {
       p_can_post: updates.canPost ?? null,
       p_can_chat: updates.canChat ?? null,
       p_can_invite: updates.canInvite ?? null,
+      p_moderation_mode: updates.moderationMode ?? null,
     });
 
     if (error) {
@@ -317,6 +403,75 @@ export function useSocialGroups(currentUserId?: string) {
     await Promise.all([fetchGroups(), fetchPendingInvites()]);
     return true;
   }, [fetchGroups, fetchPendingInvites]);
+
+  const pinPost = useCallback(async (groupId: string, postId: string | null): Promise<boolean> => {
+    const { error } = await supabase.rpc('pin_social_group_post', {
+      p_group_id: groupId,
+      p_post_id: postId,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] pinPost error:', error.message);
+      return false;
+    }
+    await fetchGroups();
+    return true;
+  }, [fetchGroups]);
+
+  const moderatePost = useCallback(async (groupId: string, postId: string, reason?: string): Promise<boolean> => {
+    const { error } = await supabase.rpc('moderate_social_group_post', {
+      p_group_id: groupId,
+      p_post_id: postId,
+      p_reason: reason?.trim() || null,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] moderatePost error:', error.message);
+      return false;
+    }
+    return true;
+  }, []);
+
+  const reportPost = useCallback(async (postId: string, reason: string, details?: string): Promise<boolean> => {
+    const { error } = await supabase.rpc('report_social_group_post', {
+      p_post_id: postId,
+      p_reason: reason.trim(),
+      p_details: details?.trim() || null,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] reportPost error:', error.message);
+      return false;
+    }
+    return true;
+  }, []);
+
+  const resolvePostReport = useCallback(async (
+    reportId: string,
+    resolution: string,
+    deletePost = false,
+  ): Promise<boolean> => {
+    const { error } = await supabase.rpc('resolve_social_group_post_report', {
+      p_report_id: reportId,
+      p_resolution: resolution.trim(),
+      p_delete_post: deletePost,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] resolvePostReport error:', error.message);
+      return false;
+    }
+    return true;
+  }, []);
+
+  const deleteGroup = useCallback(async (groupId: string, confirmName: string): Promise<boolean> => {
+    const { error } = await supabase.rpc('delete_social_group', {
+      p_group_id: groupId,
+      p_confirm_name: confirmName,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] deleteGroup error:', error.message);
+      return false;
+    }
+    await fetchGroups();
+    return true;
+  }, [fetchGroups]);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -360,6 +515,14 @@ export function useSocialGroups(currentUserId?: string) {
     declineInvite,
     updateMemberRole,
     removeMember,
+    banMember,
+    unbanMember,
+    transferOwnership,
     updateGroupSettings,
+    pinPost,
+    moderatePost,
+    reportPost,
+    resolvePostReport,
+    deleteGroup,
   };
 }

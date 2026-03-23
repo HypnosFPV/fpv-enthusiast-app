@@ -1,5 +1,5 @@
 // src/hooks/useFeed.ts  — with personalised feed modes
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { decode } from 'base64-arraybuffer';
 import { rankPosts, InterestProfile } from './useFeedAlgorithm';
@@ -42,6 +42,8 @@ interface CreatePostParams {
   tags?: string[];
   mediaBase64?: string | null;
   thumbnailUrl?: string | null;
+  groupId?: string | null;
+  postScope?: 'public' | 'group';
 }
 
 interface CreateSocialPostParams {
@@ -49,6 +51,8 @@ interface CreateSocialPostParams {
   platform: string;
   caption?: string;
   tags?: string[];
+  groupId?: string | null;
+  postScope?: 'public' | 'group';
 }
 
 const PAGE_SIZE    = 10;
@@ -75,6 +79,8 @@ export function useFeed(
   const [page, setPage] = useState(0);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
   const [groupIds, setGroupIds] = useState<string[]>([]);
+  const followingIdsRef = useRef<string[]>([]);
+  const groupIdsRef = useRef<string[]>([]);
 
   function mergeIsLiked(rawPosts: any[], likedIds: string[]): FeedPost[] {
     return rawPosts.map(p => ({
@@ -96,7 +102,7 @@ export function useFeed(
     });
   }
 
-  const applyGroupVisibility = (query: any, visibleGroupIds: string[] = groupIds): any => {
+  const applyGroupVisibility = (query: any, visibleGroupIds: string[] = groupIdsRef.current): any => {
     if (visibleGroupIds.length > 0) {
       return query.or(`group_id.is.null,group_id.in.(${visibleGroupIds.join(',')})`);
     }
@@ -106,6 +112,7 @@ export function useFeed(
   // ── Fetch the list of users the current user follows ──────────────────
   const loadFollowingIds = useCallback(async (): Promise<string[]> => {
     if (!currentUserId) {
+      followingIdsRef.current = [];
       setFollowingIds([]);
       return [];
     }
@@ -114,12 +121,14 @@ export function useFeed(
       .select('following_id')
       .eq('follower_id', currentUserId);
     const ids = (data ?? []).map((r: any) => r.following_id);
+    followingIdsRef.current = ids;
     setFollowingIds(ids);
     return ids;
   }, [currentUserId]);
 
   const loadGroupIds = useCallback(async (): Promise<string[]> => {
     if (!currentUserId) {
+      groupIdsRef.current = [];
       setGroupIds([]);
       return [];
     }
@@ -128,6 +137,7 @@ export function useFeed(
       .select('group_id')
       .eq('user_id', currentUserId);
     const ids = (data ?? []).map((row: any) => row.group_id);
+    groupIdsRef.current = ids;
     setGroupIds(ids);
     return ids;
   }, [currentUserId]);
@@ -137,8 +147,8 @@ export function useFeed(
     pageIndex: number,
     overrides?: { groupIds?: string[]; followingIds?: string[] }
   ): Promise<FeedPost[]> => {
-    const visibleGroupIds = overrides?.groupIds ?? groupIds;
-    const visibleFollowingIds = overrides?.followingIds ?? followingIds;
+    const visibleGroupIds = overrides?.groupIds ?? groupIdsRef.current;
+    const visibleFollowingIds = overrides?.followingIds ?? followingIdsRef.current;
 
     // ── A. FOR YOU: fetch a larger pool and personalise-rank it ─────────
     if (feedMode === 'for_you' && currentUserId) {
@@ -196,8 +206,9 @@ export function useFeed(
         return uniqueById([...promotedGroups, ...ranked]).slice(0, PAGE_SIZE);
       }
 
-      // Return a PAGE_SIZE slice from the ranked pool
-      return ranked.slice(pageIndex === 0 ? 0 : pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE);
+      // Each page already fetches its own chronological pool window, so return
+      // the top PAGE_SIZE posts from the ranked subset for that window.
+      return ranked.slice(0, PAGE_SIZE);
     }
 
     // ── B. FOLLOWING: only posts from people the user follows ────────────
@@ -261,7 +272,7 @@ export function useFeed(
 
     const likedIds = (likes ?? []).map((l: any) => l.post_id);
     return mergeIsLiked(data, likedIds);
-  }, [currentUserId, feedMode, followingIds, groupIds, interestProfile]);
+  }, [currentUserId, feedMode, interestProfile]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -340,6 +351,8 @@ export function useFeed(
     tags,
     mediaBase64,
     thumbnailUrl,
+    groupId,
+    postScope = groupId ? 'group' : 'public',
   }: CreatePostParams) => {
     if (!currentUserId) return null;
 
@@ -435,6 +448,8 @@ export function useFeed(
         caption,
         tags:          tags?.length ? tags : null,
         thumbnail_url: finalThumbUrl,
+        group_id:      groupId ?? null,
+        post_scope:    groupId ? postScope : 'public',
       })
       .select(SELECT)
       .single();
@@ -450,6 +465,7 @@ export function useFeed(
       like_count:    data.likes_count    ?? 0,
       comment_count: data.comments_count ?? 0,
       users: Array.isArray(data.users) ? (data.users[0] ?? null) : (data.users ?? null),
+      group: Array.isArray(data.group) ? (data.group[0] ?? null) : (data.group ?? null),
       isLiked: false,
     };
     setPosts(prev => [newPost, ...prev]);
@@ -476,12 +492,22 @@ export function useFeed(
     platform,
     caption,
     tags,
+    groupId,
+    postScope = groupId ? 'group' : 'public',
   }: CreateSocialPostParams) => {
     if (!currentUserId) return null;
 
     const { data, error } = await supabase
       .from('posts')
-      .insert({ user_id: currentUserId, social_url: socialUrl, platform, caption, tags: tags?.length ? tags : null })
+      .insert({
+        user_id: currentUserId,
+        social_url: socialUrl,
+        platform,
+        caption,
+        tags: tags?.length ? tags : null,
+        group_id: groupId ?? null,
+        post_scope: groupId ? postScope : 'public',
+      })
       .select(SELECT)
       .single();
 
@@ -496,6 +522,7 @@ export function useFeed(
       like_count:    data.likes_count    ?? 0,
       comment_count: data.comments_count ?? 0,
       users: Array.isArray(data.users) ? (data.users[0] ?? null) : (data.users ?? null),
+      group: Array.isArray(data.group) ? (data.group[0] ?? null) : (data.group ?? null),
       isLiked: false,
     };
     setPosts(prev => [newPost, ...prev]);
@@ -521,28 +548,37 @@ export function useFeed(
 
   // Load following IDs once userId is known
   useEffect(() => {
-    void loadFollowingIds();
-    void loadGroupIds();
-  }, [loadFollowingIds, loadGroupIds]);
-
-  useEffect(() => {
     if (!currentUserId) return;
     const channel = supabase
       .channel(`feed_memberships_${currentUserId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'social_group_members', filter: `user_id=eq.${currentUserId}` },
-        () => { void loadGroupIds(); }
+        () => { void onRefresh(); }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [currentUserId, loadGroupIds]);
+  }, [currentUserId, onRefresh]);
 
   // Initial load / refresh when feedMode or userId changes
   useEffect(() => {
+    if (!currentUserId) {
+      setPosts([]);
+      setLoading(false);
+      setRefreshing(false);
+      setLoadingMore(false);
+      setHasMore(true);
+      setPage(0);
+      followingIdsRef.current = [];
+      groupIdsRef.current = [];
+      setFollowingIds([]);
+      setGroupIds([]);
+      return;
+    }
+
     setLoading(true);
     void onRefresh();
-  }, [feedMode, currentUserId, groupIds.join('|')]);
+  }, [feedMode, currentUserId, onRefresh]);
 
   return {
     posts,

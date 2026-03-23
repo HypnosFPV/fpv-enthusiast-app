@@ -662,6 +662,10 @@ export default function ChatTab() {
 
   const isRefreshing = roomsLoad || groupsRefreshing;
   const isLoading = roomsLoad || groupsLoad;
+  const inviteCount = filteredPendingInvites.length;
+  const communityCount = filteredGroups.length + adHocGroupChats.length;
+  const dmCount = dmRooms.length;
+  const marketplaceCount = marketplaceBundles.reduce((sum, bundle) => sum + bundle.rooms.length, 0);
 
   const renderMarketplace = () => {
     if (marketplaceBundles.length === 0) {
@@ -680,7 +684,7 @@ export default function ChatTab() {
         sellerName={bundle.sellerName}
         sellerAvatar={bundle.sellerAvatar}
         rooms={bundle.rooms}
-        expanded={!!expandedBundles[bundle.key]}
+        expanded={search.trim().length > 0 || !!expandedBundles[bundle.key]}
         onToggle={() => setExpandedBundles(prev => ({ ...prev, [bundle.key]: !prev[bundle.key] }))}
         onOpenRoom={openRoom}
       />
@@ -868,6 +872,27 @@ export default function ChatTab() {
         ) : null}
       </View>
 
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.inboxSummaryRow}>
+        <View style={styles.summaryChip}>
+          <Ionicons name="storefront-outline" size={14} color="#ff9b68" />
+          <Text style={styles.summaryChipText}>{marketplaceCount} marketplace</Text>
+        </View>
+        <View style={styles.summaryChip}>
+          <Ionicons name="paper-plane-outline" size={14} color="#7cc7ff" />
+          <Text style={styles.summaryChipText}>{dmCount} DMs</Text>
+        </View>
+        <View style={styles.summaryChip}>
+          <Ionicons name="people-outline" size={14} color="#c9b3ff" />
+          <Text style={styles.summaryChipText}>{communityCount} groups</Text>
+        </View>
+        {inviteCount > 0 ? (
+          <View style={[styles.summaryChip, styles.summaryChipInvite]}>
+            <Ionicons name="mail-unread-outline" size={14} color="#ffd17a" />
+            <Text style={styles.summaryChipText}>{inviteCount} invite{inviteCount === 1 ? '' : 's'}</Text>
+          </View>
+        ) : null}
+      </ScrollView>
+
       <View style={styles.tabsWrap}>
         {[
           { key: 'all', label: 'All' },
@@ -957,6 +982,21 @@ const styles = StyleSheet.create({
   },
   searchField: { flex: 1, color: '#fff', fontSize: 15 },
 
+
+  inboxSummaryRow: { paddingHorizontal: 16, paddingBottom: 10, gap: 8 },
+  summaryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#111111',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#232323',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  summaryChipInvite: { borderColor: '#5a4420', backgroundColor: '#24190b' },
+  summaryChipText: { color: '#d8d8d8', fontSize: 12, fontWeight: '700' },
   tabsWrap: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 8, gap: 8 },
   tabBtn: {
     paddingHorizontal: 14,

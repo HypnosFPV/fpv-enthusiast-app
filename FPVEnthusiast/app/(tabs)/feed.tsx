@@ -1,11 +1,11 @@
 // app/(tabs)/feed.tsx
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, Pressable,
   Modal, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView,
   RefreshControl, StatusBar, Image,
-  Animated, Easing, ScrollView, Platform, Keyboard,
+  Animated, Easing, ScrollView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -17,6 +17,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { useProfile } from '../../src/hooks/useProfile';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
 import { useMute } from '../../src/hooks/useMute';
+import { useSocialGroups } from '../../src/hooks/useSocialGroups';
 import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
 import { detectPlatform } from '../../src/utils/socialMedia';
 import { supabase } from '../../src/services/supabase';
@@ -25,7 +26,7 @@ import MentionTextInputComponent from '../../src/components/MentionTextInput';
 const MentionTextInput = MentionTextInputComponent as any;
 
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
-
+const FOCUS_REFRESH_DEBOUNCE_MS = 1200;
 
 // ── FPV Tag System ────────────────────────────────────────────────────────────
 const MAX_TAGS = 10;
@@ -104,9 +105,7 @@ export default function FeedScreen() {
   // ── Personalisation algorithm ────────────────────────────────────────────
   const {
     profile: interestProfile,
-    trackSignal,
     trackPostInteraction,
-    rankPosts: rankFeedPosts,
   } = useFeedAlgorithm(user?.id);
 
   const {
@@ -122,6 +121,11 @@ export default function FeedScreen() {
   const propsToast = usePropsToast();
   const { unreadCount } = useNotificationsContext();
   const { mutedIds } = useMute(user?.id);
+  const { groups } = useSocialGroups(user?.id);
+  const lastRefreshAtRef = useRef(0);
+  const hasInitialRefreshRef = useRef(false);
+  const visiblePostIdRef = useRef<string | null>(null);
+  const canLoadMoreOnMomentumRef = useRef(false);
 
   // ── Animated title ───────────────────────────────────────────────────────
   const animValue = useRef(new Animated.Value(0)).current;
@@ -138,16 +142,38 @@ export default function FeedScreen() {
     outputRange: ['#ff4500', '#ff8c00', '#ffcc00', '#ff6600', '#ff4500'],
   });
 
+  const refreshFeed = useCallback(async (force = false) => {
+    if (!user?.id) return;
+    const now = Date.now();
+    if (!force && now - lastRefreshAtRef.current < FOCUS_REFRESH_DEBOUNCE_MS) {
+      return;
+    }
+    lastRefreshAtRef.current = now;
+    await onRefresh();
+  }, [user?.id, onRefresh]);
+
   useEffect(() => {
-    if (user?.id) onRefresh();
+    if (!user?.id) {
+      hasInitialRefreshRef.current = false;
+      lastRefreshAtRef.current = 0;
+      return;
+    }
   }, [user?.id]);
 
   useFocusEffect(
     useCallback(() => {
-      if (user?.id) {
-        void onRefresh();
+      if (hasInitialRefreshRef.current) {
+        void refreshFeed(false);
+      } else {
+        hasInitialRefreshRef.current = true;
       }
-    }, [user?.id, onRefresh])
+      return () => {
+        Object.values(viewTimers.current).forEach(timer => {
+          clearTimeout(timer);
+        });
+        viewTimers.current = {};
+      };
+    }, [refreshFeed])
   );
 
   // ── Autoplay tracking ────────────────────────────────────────────────────
@@ -157,15 +183,26 @@ export default function FeedScreen() {
   const viewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
-    setVisiblePostId(
-      autoplayEnabled && viewableItems.length > 0
-        ? viewableItems[0].item.id
-        : null
-    );
-    // Track view signals — fire after 2s of dwell to avoid scroll-through noise
+    const nextVisibleId = autoplayEnabled && viewableItems.length > 0
+      ? (viewableItems[0]?.item?.id ?? null)
+      : null;
+
+    if (visiblePostIdRef.current !== nextVisibleId) {
+      visiblePostIdRef.current = nextVisibleId;
+      setVisiblePostId(nextVisibleId);
+    }
+
+    const activeIds = new Set<string>(viewableItems.map((entry: any) => entry?.item?.id).filter(Boolean));
+    Object.entries(viewTimers.current).forEach(([postId, timer]) => {
+      if (!activeIds.has(postId)) {
+        clearTimeout(timer);
+        delete viewTimers.current[postId];
+      }
+    });
+
     if (user?.id && viewableItems.length > 0) {
-      const item: FeedPost = viewableItems[0].item;
-      if (!viewTimers.current[item.id]) {
+      const item: FeedPost | undefined = viewableItems[0]?.item;
+      if (item?.id && !viewTimers.current[item.id]) {
         viewTimers.current[item.id] = setTimeout(() => {
           delete viewTimers.current[item.id];
           trackPostInteraction('view', item);
@@ -184,7 +221,6 @@ export default function FeedScreen() {
   const [acSelectedIdx, setAcSelectedIdx] = useState(-1);
   const tagInputRef  = useRef<TextInput>(null);
   const tagInputWrapRef = useRef<View>(null);
-  const [acDropdownY, setAcDropdownY] = useState(0);
   const [socialUrl, setSocialUrl] = useState('');
   const [mediaUri, setMediaUri] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
@@ -194,8 +230,29 @@ export default function FeedScreen() {
   const [selectedThumb, setSelectedThumb] = useState<string | null>(null);
   const [thumbsLoading, setThumbsLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [postDestination, setPostDestination] = useState<'public' | 'group'>('public');
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+
+  const postableGroups = useMemo(() => groups.filter(group => {
+    const role = group.my_role ?? 'member';
+    if (role === 'owner' || role === 'admin' || role === 'moderator') return true;
+    return group.moderation_mode !== 'read_only' && group.can_post === 'members';
+  }), [groups]);
+
+  const selectedGroup = useMemo(() => (
+    postableGroups.find(group => group.id === selectedGroupId) ?? null
+  ), [postableGroups, selectedGroupId]);
 
   const detectedPlatform = detectPlatform(socialUrl);
+
+  useEffect(() => {
+    if (postDestination === 'group' && !selectedGroupId) {
+      setSelectedGroupId(postableGroups[0]?.id ?? null);
+    }
+    if (postDestination === 'public' && selectedGroupId) {
+      setSelectedGroupId(null);
+    }
+  }, [postDestination, postableGroups, selectedGroupId]);
 
   const resetModal = () => {
     setCaption('');
@@ -211,6 +268,8 @@ export default function FeedScreen() {
     setVideoThumbTimes([]);
     setSelectedThumb(null);
     setThumbsLoading(false);
+    setPostDestination('public');
+    setSelectedGroupId(null);
   };
 
   const pickMedia = async () => {
@@ -282,14 +341,18 @@ export default function FeedScreen() {
       if (modalMode === 'social') {
         const trimmed = socialUrl.trim();
         if (!trimmed) { Alert.alert('Enter a URL'); return; }
+        if (postDestination === 'group' && !selectedGroupId) { Alert.alert('Choose a community'); return; }
         newPost = await createSocialPost({
           socialUrl: trimmed,
           platform: detectedPlatform ?? 'unknown',
           caption,
           tags: postTags.length ? postTags : undefined,
+          groupId: postDestination === 'group' ? selectedGroupId : null,
+          postScope: postDestination,
         });
       } else {
         if (!mediaUri) { Alert.alert('Pick a media file first'); return; }
+        if (postDestination === 'group' && !selectedGroupId) { Alert.alert('Choose a community'); return; }
         newPost = await createPost({
           mediaUrl: mediaUri,
           mediaType,
@@ -297,15 +360,12 @@ export default function FeedScreen() {
           tags: postTags.length ? postTags : undefined,
           mediaBase64,
           thumbnailUrl: mediaType === 'video' ? selectedThumb : null,
+          groupId: postDestination === 'group' ? selectedGroupId : null,
+          postScope: postDestination,
         });
-        // Award first-post props (dedup-safe via UNIQUE constraint)
-        if (newPost && user?.id) {
-          supabase.from('props_log').insert({
-            user_id: user.id, amount: 50,
-            reason: 'first_post', reference_id: user.id,
-          }).then(({ error }) => {
-            if (!error) propsToast.show('+50 Props! First post bonus 🎉');
-          });
+        if (newPost && (createPost as any).__lastAward) {
+          propsToast.show('+50 Props! First post bonus 🎉');
+          delete (createPost as any).__lastAward;
         }
       }
 
@@ -342,9 +402,19 @@ export default function FeedScreen() {
     return success;
   }, [deletePost]);
 
-  const visiblePosts = mutedIds.length > 0
-    ? posts.filter(p => !p.user_id || !mutedIds.includes(p.user_id))
-    : posts;
+  const visiblePosts = useMemo(() => (
+    mutedIds.length > 0
+      ? posts.filter(p => !p.user_id || !mutedIds.includes(p.user_id))
+      : posts
+  ), [mutedIds, posts]);
+
+  const handleEndReached = useCallback(() => {
+    if (!canLoadMoreOnMomentumRef.current || loadingMore || !hasMore) {
+      return;
+    }
+    canLoadMoreOnMomentumRef.current = false;
+    void loadMore();
+  }, [hasMore, loadMore, loadingMore]);
 
   const renderPost = useCallback(({ item }: { item: FeedPost }) => (
     <View>
@@ -468,11 +538,21 @@ export default function FeedScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ff4500" />
         }
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.6}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.35}
+        onMomentumScrollBegin={() => { canLoadMoreOnMomentumRef.current = true; }}
+        onScrollBeginDrag={() => { canLoadMoreOnMomentumRef.current = true; }}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={VIEWABILITY_CONFIG}
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews={Platform.OS === 'android'}
+        initialNumToRender={4}
+        maxToRenderPerBatch={4}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={16}
         contentContainerStyle={visiblePosts.length === 0 ? styles.emptyContainer : undefined}
         ListEmptyComponent={
           <View style={styles.emptyState}>
@@ -547,6 +627,69 @@ export default function FeedScreen() {
                 <Ionicons name="link-outline" size={16} color={modalMode === 'social' ? '#fff' : '#888'} />
                 <Text style={[styles.modeBtnText, modalMode === 'social' && styles.modeBtnTextActive]}>Social Link</Text>
               </TouchableOpacity>
+            </View>
+
+            <View style={styles.audienceCard}>
+              <View style={styles.audienceHeader}>
+                <Text style={styles.audienceLabel}>Post destination</Text>
+                <Text style={styles.audienceHint}>Choose whether this lands in the public feed or one of your communities.</Text>
+              </View>
+              <View style={styles.audienceToggle}>
+                <TouchableOpacity
+                  style={[styles.audienceBtn, postDestination === 'public' && styles.audienceBtnActive]}
+                  onPress={() => setPostDestination('public')}
+                >
+                  <Ionicons name="globe-outline" size={15} color={postDestination === 'public' ? '#fff' : '#888'} />
+                  <Text style={[styles.audienceBtnText, postDestination === 'public' && styles.audienceBtnTextActive]}>Public feed</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.audienceBtn, postDestination === 'group' && styles.audienceBtnActive, postableGroups.length === 0 && styles.audienceBtnDisabled]}
+                  onPress={() => postableGroups.length > 0 && setPostDestination('group')}
+                  disabled={postableGroups.length === 0}
+                >
+                  <Ionicons name="people-outline" size={15} color={postDestination === 'group' ? '#fff' : '#888'} />
+                  <Text style={[styles.audienceBtnText, postDestination === 'group' && styles.audienceBtnTextActive]}>Community</Text>
+                </TouchableOpacity>
+              </View>
+              {postDestination === 'group' ? (
+                postableGroups.length > 0 ? (
+                  <>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.groupChoiceRow}
+                    >
+                      {postableGroups.map(group => {
+                        const active = selectedGroupId === group.id;
+                        return (
+                          <TouchableOpacity
+                            key={group.id}
+                            style={[styles.groupChoiceChip, active && styles.groupChoiceChipActive]}
+                            onPress={() => setSelectedGroupId(group.id)}
+                            activeOpacity={0.82}
+                          >
+                            <Ionicons name={active ? 'checkmark-circle' : 'people-circle-outline'} size={15} color={active ? '#ffb089' : '#9a9a9a'} />
+                            <Text style={[styles.groupChoiceChipText, active && styles.groupChoiceChipTextActive]} numberOfLines={1}>
+                              {group.name}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                    {selectedGroup ? (
+                      <Text style={styles.groupAudienceMeta}>
+                        Members of {selectedGroup.name} will see this in the group feed and on the community page.
+                      </Text>
+                    ) : null}
+                  </>
+                ) : (
+                  <Text style={styles.groupAudienceMeta}>
+                    Join or create a community in Messages before posting to a group.
+                  </Text>
+                )
+              ) : (
+                <Text style={styles.groupAudienceMeta}>This post will be visible in the public feed.</Text>
+              )}
             </View>
 
             {modalMode === 'media' ? (
@@ -734,11 +877,6 @@ export default function FeedScreen() {
                 <View
                   ref={tagInputWrapRef}
                   style={styles.tagInputWrap}
-                  onLayout={() => {
-                    tagInputWrapRef.current?.measureInWindow((_x, y, _w, h) => {
-                      setAcDropdownY(y + h);
-                    });
-                  }}
                 >
                   <Ionicons name="search-outline" size={14} color="#555" style={styles.tagInputIcon} />
                   <TextInput
@@ -923,7 +1061,7 @@ export default function FeedScreen() {
 
             <TouchableOpacity
               style={[styles.postBtn, creating && styles.postBtnDisabled]}
-              onPressIn={handlePost}
+              onPress={handlePost}
               disabled={creating}
             >
               {creating
@@ -1161,6 +1299,54 @@ const styles = StyleSheet.create({
     backgroundColor: '#ff450015',
   },
   suggestionChipText: { color: '#666', fontSize: 11, fontWeight: '600' },
+
+
+  audienceCard: {
+    backgroundColor: '#151515',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#232323',
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  audienceHeader: { gap: 4 },
+  audienceLabel: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  audienceHint: { color: '#7d7d7d', fontSize: 12, lineHeight: 17 },
+  audienceToggle: { flexDirection: 'row', gap: 8 },
+  audienceBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#101010',
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  audienceBtnActive: { backgroundColor: '#2a170e', borderColor: '#834627' },
+  audienceBtnDisabled: { opacity: 0.45 },
+  audienceBtnText: { color: '#8c8c8c', fontSize: 13, fontWeight: '700' },
+  audienceBtnTextActive: { color: '#fff' },
+  groupChoiceRow: { gap: 8, paddingTop: 2, paddingBottom: 4 },
+  groupChoiceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: 220,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: '#101010',
+    borderWidth: 1,
+    borderColor: '#252525',
+  },
+  groupChoiceChipActive: { backgroundColor: '#2a170e', borderColor: '#834627' },
+  groupChoiceChipText: { color: '#b7b7b7', fontSize: 12, fontWeight: '700' },
+  groupChoiceChipTextActive: { color: '#fff' },
+  groupAudienceMeta: { color: '#8a8a8a', fontSize: 12, lineHeight: 18 },
 
   // ── Feed mode tabs ────────────────────────────────────────────────────────
   feedTabs: {

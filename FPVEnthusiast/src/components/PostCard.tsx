@@ -145,6 +145,7 @@ interface Props {
   onLike?: (postId: string, currentlyLiked: boolean) => void;
   onDelete?: (postId: string) => void | Promise<boolean | void>;
   onCaptionUpdate?: (postId: string, caption: string) => void;
+  canManagePost?: boolean;
   autoplay?: boolean;
 }
 
@@ -300,7 +301,7 @@ const nvStyles = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function PostCard(props: Props) {
-  const { post, currentUserId, onLike, onDelete, onCaptionUpdate } = props;
+  const { post, currentUserId, onLike, onDelete, onCaptionUpdate, canManagePost } = props;
 
   const webViewRef = useRef<WebView | null>(null);
   const commentInputRef = useRef<TextInput | null>(null);
@@ -440,6 +441,8 @@ export default function PostCard(props: Props) {
   }, [onLike, localLiked, post.id, runHeartBounce]);
 
   const isOwner = !!currentUserId && currentUserId === post.user_id;
+  const canOpenOwnerMenu = isOwner || !!canManagePost;
+  const deleteActionLabel = isOwner ? 'Delete Post' : 'Remove Post';
   const insets = useSafeAreaInsets();
 
   const commentsPanResponder = useRef(
@@ -1099,7 +1102,7 @@ export default function PostCard(props: Props) {
           <Text style={styles.username}>{post.users?.username || 'Unknown'}</Text>
           <Text style={styles.timestamp}>{timeAgo(post.created_at)}</Text>
         </View>
-        {isOwner ? (
+        {canOpenOwnerMenu ? (
           <TouchableOpacity onPress={function () { setShowOwnerMenu(true); }} style={styles.menuBtn}>
             <Ionicons name="ellipsis-horizontal" size={20} color="#666" />
           </TouchableOpacity>
@@ -1267,10 +1270,12 @@ export default function PostCard(props: Props) {
         <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={function () { if (!deleting) setShowOwnerMenu(false); }}>
           <View style={styles.menuSheet}>
             <View style={styles.dragHandle} />
-            <TouchableOpacity style={styles.menuItem} onPress={function () { setShowOwnerMenu(false); setEditCaptionText(post.caption || ''); setShowEditCaption(true); }}>
-              <Ionicons name="create-outline" size={20} color="#ccc" />
-              <Text style={styles.menuItemText}>Edit Caption</Text>
-            </TouchableOpacity>
+            {isOwner ? (
+              <TouchableOpacity style={styles.menuItem} onPress={function () { setShowOwnerMenu(false); setEditCaptionText(post.caption || ''); setShowEditCaption(true); }}>
+                <Ionicons name="create-outline" size={20} color="#ccc" />
+                <Text style={styles.menuItemText}>Edit Caption</Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
               style={[styles.menuItem, { borderBottomWidth: 0 }]}
               onPress={deleting ? undefined : handleDeletePost}
@@ -1281,7 +1286,7 @@ export default function PostCard(props: Props) {
                 : <Ionicons name="trash-outline" size={20} color="#e74c3c" />
               }
               <Text style={[styles.menuItemText, { color: '#e74c3c' }]}>
-                {deleting ? 'Deleting…' : 'Delete Post'}
+                {deleting ? 'Deleting…' : deleteActionLabel}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuCancel} onPress={function () { if (!deleting) setShowOwnerMenu(false); }}>
