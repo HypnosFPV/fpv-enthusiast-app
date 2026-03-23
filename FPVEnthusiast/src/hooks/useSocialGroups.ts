@@ -37,6 +37,23 @@ export interface SocialGroupMember {
   } | null;
 }
 
+export interface SocialGroupInvite {
+  id: string;
+  group_id: string;
+  invited_user_id: string;
+  invited_by: string;
+  role: Exclude<SocialGroupRole, 'owner'>;
+  status: 'pending' | 'accepted' | 'declined' | 'revoked';
+  created_at: string;
+  responded_at?: string | null;
+  group?: SocialGroup | null;
+  inviter?: {
+    id?: string | null;
+    username?: string | null;
+    avatar_url?: string | null;
+  } | null;
+}
+
 interface CreateSocialGroupParams {
   name: string;
   description?: string;
@@ -70,6 +87,7 @@ function normalizeGroup(raw: any, myRole?: SocialGroupRole | null, memberCount?:
 
 export function useSocialGroups(currentUserId?: string) {
   const [groups, setGroups] = useState<SocialGroup[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<SocialGroupInvite[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -127,11 +145,47 @@ export function useSocialGroups(currentUserId?: string) {
     setLoading(false);
   }, [currentUserId]);
 
+  const fetchPendingInvites = useCallback(async () => {
+    if (!currentUserId) {
+      setPendingInvites([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('social_group_invites')
+      .select(`
+        id, group_id, invited_user_id, invited_by, role, status, created_at, responded_at,
+        group:group_id (
+          id, name, description, privacy, avatar_url, cover_url,
+          created_by, chat_room_id, can_post, can_chat, can_invite,
+          created_at, updated_at
+        ),
+        inviter:invited_by ( id, username, avatar_url )
+      `)
+      .eq('invited_user_id', currentUserId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('[useSocialGroups] fetchPendingInvites error:', error.message);
+      setPendingInvites([]);
+      return;
+    }
+
+    setPendingInvites(
+      ((data ?? []) as any[]).map((invite) => ({
+        ...invite,
+        group: invite.group ? normalizeGroup(invite.group) : null,
+        inviter: Array.isArray(invite.inviter) ? (invite.inviter[0] ?? null) : (invite.inviter ?? null),
+      })) as SocialGroupInvite[]
+    );
+  }, [currentUserId]);
+
   const refreshGroups = useCallback(async () => {
     setRefreshing(true);
-    await fetchGroups();
+    await Promise.all([fetchGroups(), fetchPendingInvites()]);
     setRefreshing(false);
-  }, [fetchGroups]);
+  }, [fetchGroups, fetchPendingInvites]);
 
   const createGroup = useCallback(async ({
     name,
@@ -157,9 +211,9 @@ export function useSocialGroups(currentUserId?: string) {
       return null;
     }
 
-    await fetchGroups();
+    await Promise.all([fetchGroups(), fetchPendingInvites()]);
     return data as string;
-  }, [fetchGroups]);
+  }, [fetchGroups, fetchPendingInvites]);
 
   const addMember = useCallback(async (
     groupId: string,
@@ -175,9 +229,33 @@ export function useSocialGroups(currentUserId?: string) {
       console.warn('[useSocialGroups] addMember error:', error.message);
       return false;
     }
-    await fetchGroups();
+    await fetchPendingInvites();
     return true;
-  }, [fetchGroups]);
+  }, [fetchPendingInvites]);
+
+  const acceptInvite = useCallback(async (inviteId: string): Promise<boolean> => {
+    const { error } = await supabase.rpc('accept_social_group_invite', {
+      p_invite_id: inviteId,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] acceptInvite error:', error.message);
+      return false;
+    }
+    await Promise.all([fetchGroups(), fetchPendingInvites()]);
+    return true;
+  }, [fetchGroups, fetchPendingInvites]);
+
+  const declineInvite = useCallback(async (inviteId: string): Promise<boolean> => {
+    const { error } = await supabase.rpc('decline_social_group_invite', {
+      p_invite_id: inviteId,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] declineInvite error:', error.message);
+      return false;
+    }
+    await fetchPendingInvites();
+    return true;
+  }, [fetchPendingInvites]);
 
   const updateMemberRole = useCallback(async (
     groupId: string,
@@ -236,22 +314,50 @@ export function useSocialGroups(currentUserId?: string) {
       return false;
     }
 
-    await fetchGroups();
+    await Promise.all([fetchGroups(), fetchPendingInvites()]);
     return true;
-  }, [fetchGroups]);
+  }, [fetchGroups, fetchPendingInvites]);
 
   useEffect(() => {
-    fetchGroups();
-  }, [fetchGroups]);
+    if (!currentUserId) {
+      setGroups([]);
+      setPendingInvites([]);
+      return;
+    }
+    void Promise.all([fetchGroups(), fetchPendingInvites()]);
+  }, [currentUserId, fetchGroups, fetchPendingInvites]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const channel = supabase
+      .channel(`social_groups_user_${currentUserId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'social_group_members', filter: `user_id=eq.${currentUserId}` },
+        () => { void fetchGroups(); }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'social_group_invites', filter: `invited_user_id=eq.${currentUserId}` },
+        () => { void fetchPendingInvites(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUserId, fetchGroups, fetchPendingInvites]);
 
   return {
     groups,
+    pendingInvites,
     loading,
     refreshing,
     fetchGroups,
     refreshGroups,
     createGroup,
     addMember,
+    acceptInvite,
+    declineInvite,
     updateMemberRole,
     removeMember,
     updateGroupSettings,

@@ -1,5 +1,6 @@
 // app/(tabs)/feed.tsx
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, Pressable,
   Modal, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView,
@@ -140,6 +141,14 @@ export default function FeedScreen() {
   useEffect(() => {
     if (user?.id) onRefresh();
   }, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.id) {
+        void onRefresh();
+      }
+    }, [user?.id, onRefresh])
+  );
 
   // ── Autoplay tracking ────────────────────────────────────────────────────
   const [visiblePostId, setVisiblePostId] = useState<string | null>(null);

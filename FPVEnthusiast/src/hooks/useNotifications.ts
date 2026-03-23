@@ -9,7 +9,8 @@ export interface AppNotification {
   actor_id:    string | null;
   type:        'like' | 'comment' | 'follow' | 'mention' | 'reply'
              | 'challenge_voting_open' | 'challenge_voting_closing' | 'challenge_result'
-             | 'new_message' | 'new_offer' | 'offer_accepted' | 'offer_declined';
+             | 'new_message' | 'new_offer' | 'offer_accepted' | 'offer_declined'
+             | 'group_invite';
   post_id:     string | null;
   comment_id:  string | null;
   listing_id:  string | null;   // FK column (added by 20260314 migration)

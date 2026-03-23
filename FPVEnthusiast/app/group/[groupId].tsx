@@ -12,6 +12,9 @@ import {
   Modal,
   FlatList,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +28,18 @@ import {
   useSocialGroups,
 } from '../../src/hooks/useSocialGroups';
 import { supabase } from '../../src/services/supabase';
+
+interface PendingInvite {
+  id: string;
+  invited_user_id: string;
+  created_at: string;
+  role: string;
+  invited_user?: {
+    id?: string | null;
+    username?: string | null;
+    avatar_url?: string | null;
+  } | null;
+}
 
 interface GroupPost {
   id: string;
@@ -107,6 +122,7 @@ export default function GroupDetailScreen() {
 
   const [group, setGroup] = useState<SocialGroup | null>(null);
   const [members, setMembers] = useState<SocialGroupMember[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [posts, setPosts] = useState<GroupPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -140,6 +156,7 @@ export default function GroupDetailScreen() {
       console.warn('[group] fetchGroup error:', groupError?.message);
       setGroup(null);
       setMembers([]);
+      setPendingInvites([]);
       setPosts([]);
       setLoading(false);
       setRefreshing(false);
@@ -154,6 +171,16 @@ export default function GroupDetailScreen() {
       `)
       .eq('group_id', groupId)
       .order('joined_at', { ascending: true });
+
+    const { data: inviteData } = await supabase
+      .from('social_group_invites')
+      .select(`
+        id, invited_user_id, created_at, role,
+        invited_user:invited_user_id ( id, username, avatar_url )
+      `)
+      .eq('group_id', groupId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
 
     const { data: postData, error: postError } = await supabase
       .from('posts')
@@ -197,6 +224,10 @@ export default function GroupDetailScreen() {
     setCanChatDraft(groupData.can_chat as SocialGroupPermission);
     setCanInviteDraft(groupData.can_invite as SocialGroupPermission);
     setMembers((memberData ?? []) as SocialGroupMember[]);
+    setPendingInvites(((inviteData ?? []) as any[]).map((invite) => ({
+      ...invite,
+      invited_user: Array.isArray(invite.invited_user) ? (invite.invited_user[0] ?? null) : (invite.invited_user ?? null),
+    })) as PendingInvite[]);
     setPosts(mergePostLikes(postData ?? [], likedIds));
     setLoading(false);
     setRefreshing(false);
@@ -289,7 +320,10 @@ export default function GroupDetailScreen() {
       setMemberResults([]);
       return;
     }
-    const existingIds = new Set(members.map(member => member.user_id));
+    const existingIds = new Set([
+      ...members.map(member => member.user_id),
+      ...pendingInvites.map(invite => invite.invited_user_id),
+    ]);
     const { data } = await supabase
       .from('users')
       .select('id, username, avatar_url')
@@ -297,15 +331,16 @@ export default function GroupDetailScreen() {
       .neq('id', user?.id ?? '')
       .limit(15);
     setMemberResults(((data ?? []) as any[]).filter(item => !existingIds.has(item.id)));
-  }, [members, user?.id]);
+  }, [members, pendingInvites, user?.id]);
 
   const handleInvite = async (userId: string) => {
     if (!groupId) return;
     const ok = await addMember(groupId, userId, 'member');
     if (!ok) {
-      Alert.alert('Error', 'Could not add that member.');
+      Alert.alert('Error', 'Could not send that invite.');
       return;
     }
+    Alert.alert('Invite sent', 'They will appear in Members after they accept the invite.');
     setShowInviteModal(false);
     setMemberSearch('');
     setMemberResults([]);
@@ -479,7 +514,7 @@ export default function GroupDetailScreen() {
         {tab === 'members' ? (
           <View style={styles.card}>
             <View style={styles.membersHeader}>
-              <View>
+              <View style={styles.membersHeaderTextWrap}>
                 <Text style={styles.cardTitle}>Members</Text>
                 <Text style={styles.cardSubtitle}>Owners and admins can change roles or remove members.</Text>
               </View>
@@ -490,6 +525,24 @@ export default function GroupDetailScreen() {
                 </TouchableOpacity>
               ) : null}
             </View>
+
+            {pendingInvites.length > 0 ? (
+              <View style={styles.pendingInvitesWrap}>
+                <Text style={styles.pendingInvitesTitle}>Pending invites</Text>
+                {pendingInvites.map(invite => (
+                  <View key={invite.id} style={styles.pendingInviteRow}>
+                    <Avatar uri={invite.invited_user?.avatar_url} size={38} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.memberName}>{invite.invited_user?.username ?? invite.invited_user_id}</Text>
+                      <Text style={styles.pendingInviteMeta}>Awaiting response • sent {timeAgo(invite.created_at)} ago</Text>
+                    </View>
+                    <View style={styles.pendingInvitePill}>
+                      <Text style={styles.pendingInvitePillText}>{invite.role.toUpperCase()}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null}
 
             {members.map(member => (
               <TouchableOpacity
@@ -599,7 +652,11 @@ export default function GroupDetailScreen() {
       </ScrollView>
 
       <Modal visible={showInviteModal} animationType="slide" transparent onRequestClose={() => setShowInviteModal(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowInviteModal(false)} />
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Invite members</Text>
@@ -621,6 +678,7 @@ export default function GroupDetailScreen() {
               data={memberResults}
               keyExtractor={item => item.id}
               keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.modalListContent}
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.memberRow} onPress={() => handleInvite(item.id)}>
                   <Avatar uri={item.avatar_url} size={42} />
@@ -631,11 +689,11 @@ export default function GroupDetailScreen() {
               ListEmptyComponent={
                 memberSearch.trim().length >= 2
                   ? <Text style={styles.emptySearch}>No matching users</Text>
-                  : <Text style={styles.emptySearch}>Search for a pilot to add</Text>
+                  : <Text style={styles.emptySearch}>Search for a pilot to invite</Text>
               }
             />
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -750,6 +808,8 @@ const styles = StyleSheet.create({
   secondaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexShrink: 1,
     gap: 6,
     backgroundColor: '#1b130f',
     borderWidth: 1,
@@ -760,7 +820,51 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: { color: '#ff9b68', fontSize: 12, fontWeight: '700' },
 
-  membersHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 },
+  membersHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 6,
+  },
+  membersHeaderTextWrap: { flex: 1, minWidth: 0 },
+  pendingInvitesWrap: {
+    marginTop: 10,
+    marginBottom: 6,
+    borderRadius: 14,
+    backgroundColor: '#151515',
+    borderWidth: 1,
+    borderColor: '#232323',
+    overflow: 'hidden',
+  },
+  pendingInvitesTitle: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  pendingInviteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#202020',
+  },
+  pendingInviteMeta: { color: '#7c7c7c', fontSize: 12, marginTop: 2 },
+  pendingInvitePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#5b3c24',
+    backgroundColor: '#2a170e',
+  },
+  pendingInvitePillText: { color: '#ff9b68', fontSize: 10, fontWeight: '800' },
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -797,12 +901,13 @@ const styles = StyleSheet.create({
   emptySubtitle: { color: '#6f6f6f', fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 8 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalBackdrop: { flex: 1 },
   modalSheet: {
     backgroundColor: '#111',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     paddingBottom: 24,
-    maxHeight: '78%',
+    maxHeight: '82%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -826,5 +931,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
   },
+  modalListContent: { paddingBottom: 28 },
   emptySearch: { color: '#666', textAlign: 'center', padding: 20 },
 });

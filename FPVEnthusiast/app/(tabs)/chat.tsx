@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { ChatRoom, useChat } from '../../src/hooks/useChat';
 import {
+  SocialGroupInvite,
   SocialGroupPermission,
   SocialGroupPrivacy,
   useSocialGroups,
@@ -117,6 +118,52 @@ function ConversationRow({
         </View>
       </View>
     </TouchableOpacity>
+  );
+}
+
+function PendingInviteCard({
+  invite,
+  onAccept,
+  onDecline,
+}: {
+  invite: SocialGroupInvite;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <View style={styles.inviteCard}>
+      <View style={styles.inviteTopRow}>
+        <Avatar uri={invite.group?.avatar_url ?? invite.inviter?.avatar_url ?? null} icon="people" />
+        <View style={{ flex: 1 }}>
+          <View style={styles.inviteTitleRow}>
+            <Text style={styles.rowTitle} numberOfLines={1}>{invite.group?.name ?? 'Community invite'}</Text>
+            <View style={styles.inviteBadge}>
+              <Text style={styles.inviteBadgeText}>INVITE</Text>
+            </View>
+          </View>
+          <Text style={styles.rowSubtitle} numberOfLines={2}>
+            {invite.inviter?.username
+              ? `@${invite.inviter.username} invited you to join ${invite.group?.name ?? 'this community'}.`
+              : 'You have a pending community invite.'}
+          </Text>
+          <Text style={styles.inviteMeta} numberOfLines={1}>
+            {invite.group?.privacy === 'public' ? 'Public' : invite.group?.privacy === 'invite_only' ? 'Invite only' : 'Private'}
+            {' • '}
+            received {timeAgo(invite.created_at)} ago
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.inviteActions}>
+        <TouchableOpacity style={styles.inviteDeclineBtn} onPress={onDecline} activeOpacity={0.8}>
+          <Text style={styles.inviteDeclineText}>Decline</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.inviteAcceptBtn} onPress={onAccept} activeOpacity={0.8}>
+          <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+          <Text style={styles.inviteAcceptText}>Accept</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -492,10 +539,13 @@ export default function ChatTab() {
   } = useChat(user?.id);
   const {
     groups,
+    pendingInvites,
     loading: groupsLoad,
     refreshing: groupsRefreshing,
     refreshGroups,
     createGroup,
+    acceptInvite,
+    declineInvite,
   } = useSocialGroups(user?.id);
 
   const [tab, setTab] = useState<'all' | 'marketplace' | 'dm' | 'groups'>('all');
@@ -551,6 +601,15 @@ export default function ChatTab() {
     });
   }, [groups, search]);
 
+  const filteredPendingInvites = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return pendingInvites;
+    return pendingInvites.filter(invite => {
+      const hay = `${invite.group?.name ?? ''} ${invite.group?.description ?? ''} ${invite.inviter?.username ?? ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [pendingInvites, search]);
+
   const dmRooms = useMemo(
     () => filteredRooms.filter(room => room.type === 'dm'),
     [filteredRooms]
@@ -583,6 +642,22 @@ export default function ChatTab() {
 
   const onRefresh = async () => {
     await Promise.all([fetchRooms(), refreshGroups()]);
+  };
+
+  const handleAcceptInvite = async (invite: SocialGroupInvite) => {
+    const ok = await acceptInvite(invite.id);
+    if (!ok) {
+      Alert.alert('Error', 'Could not accept the invite.');
+      return;
+    }
+    openGroup(invite.group_id);
+  };
+
+  const handleDeclineInvite = async (invite: SocialGroupInvite) => {
+    const ok = await declineInvite(invite.id);
+    if (!ok) {
+      Alert.alert('Error', 'Could not decline the invite.');
+    }
   };
 
   const isRefreshing = roomsLoad || groupsRefreshing;
@@ -638,7 +713,7 @@ export default function ChatTab() {
   };
 
   const renderGroups = () => {
-    if (filteredGroups.length === 0 && adHocGroupChats.length === 0) {
+    if (filteredPendingInvites.length === 0 && filteredGroups.length === 0 && adHocGroupChats.length === 0) {
       return (
         <View style={styles.emptyState}>
           <Ionicons name="people-outline" size={48} color="#2f2f2f" />
@@ -650,6 +725,16 @@ export default function ChatTab() {
 
     return (
       <>
+        {filteredPendingInvites.length > 0 ? <SectionHeader title="Invites" subtitle="Accept or decline before you join a community" /> : null}
+        {filteredPendingInvites.map(invite => (
+          <PendingInviteCard
+            key={invite.id}
+            invite={invite}
+            onAccept={() => handleAcceptInvite(invite)}
+            onDecline={() => handleDeclineInvite(invite)}
+          />
+        ))}
+
         {filteredGroups.length > 0 ? <SectionHeader title="Communities" subtitle="Posts, moderation, and a linked group chat" /> : null}
         {filteredGroups.map(group => (
           <ConversationRow
@@ -682,7 +767,7 @@ export default function ChatTab() {
   };
 
   const renderAll = () => {
-    const hasAnything = marketplaceBundles.length || dmRooms.length || filteredGroups.length || adHocGroupChats.length;
+    const hasAnything = marketplaceBundles.length || dmRooms.length || filteredPendingInvites.length || filteredGroups.length || adHocGroupChats.length;
 
     if (!hasAnything) {
       return (
@@ -713,7 +798,15 @@ export default function ChatTab() {
           />
         ))}
 
-        {(filteredGroups.length > 0 || adHocGroupChats.length > 0) ? <SectionHeader title="Groups" subtitle="Communities first, then classic group chats" /> : null}
+        {(filteredPendingInvites.length > 0 || filteredGroups.length > 0 || adHocGroupChats.length > 0) ? <SectionHeader title="Groups" subtitle="Invites first, then communities and classic group chats" /> : null}
+        {filteredPendingInvites.slice(0, 2).map(invite => (
+          <PendingInviteCard
+            key={invite.id}
+            invite={invite}
+            onAccept={() => handleAcceptInvite(invite)}
+            onDecline={() => handleDeclineInvite(invite)}
+          />
+        ))}
         {filteredGroups.slice(0, 4).map(group => (
           <ConversationRow
             key={group.id}
@@ -894,6 +987,46 @@ const styles = StyleSheet.create({
     borderColor: '#1d1d1d',
     marginBottom: 10,
   },
+  inviteCard: {
+    backgroundColor: '#111',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#2c2140',
+    padding: 14,
+    marginBottom: 10,
+  },
+  inviteTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  inviteTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  inviteBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: '#241633',
+    borderWidth: 1,
+    borderColor: '#4e3a73',
+  },
+  inviteBadgeText: { color: '#c4b5fd', fontSize: 10, fontWeight: '800' },
+  inviteMeta: { color: '#7e7e7e', fontSize: 12, marginTop: 6 },
+  inviteActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 14 },
+  inviteDeclineBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    backgroundColor: '#151515',
+  },
+  inviteDeclineText: { color: '#b3b3b3', fontSize: 13, fontWeight: '700' },
+  inviteAcceptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#7c3aed',
+  },
+  inviteAcceptText: { color: '#fff', fontSize: 13, fontWeight: '800' },
   rowMeta: { flex: 1 },
   rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   rowBottom: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },

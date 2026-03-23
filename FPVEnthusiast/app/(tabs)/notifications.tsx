@@ -64,9 +64,7 @@ function groupNotifications(notifs: AppNotification[]): GroupedNotif[] {
       key = 'follow__all';
     } else if (n.type === 'reply') {
       key = `reply__${n.comment_id ?? n.post_id ?? 'x'}`;
-    } else if ((n.entity_id ?? n.listing_id) && (n.type === 'new_offer' || n.type === 'offer_accepted' || n.type === 'offer_declined' || n.type === 'new_message')) {
-      // Marketplace notifications group per entity (listing)
-      // Use entity_id (new column) with fallback to listing_id (old FK column)
+    } else if ((n.entity_id ?? n.listing_id) && (n.type === 'new_offer' || n.type === 'offer_accepted' || n.type === 'offer_declined' || n.type === 'new_message' || n.type === 'group_invite')) {
       const eid = n.entity_id ?? n.listing_id;
       key = `${n.type}__${eid}`;
     } else {
@@ -122,9 +120,14 @@ const ACTION_VERB: Record<AppNotification['type'], string> = {
   follow:                  'started following you',
   mention:                 'mentioned you',
   reply:                   'replied to your comment',
+  group_invite:            'invited you to join a community',
   challenge_voting_open:   '',
   challenge_voting_closing:'',
   challenge_result:        '',
+  new_message:             '',
+  new_offer:               '',
+  offer_accepted:          '',
+  offer_declined:          '',
 };
 
 function buildLabel(actors: GroupedNotif['actors'], type: AppNotification['type']): {
@@ -208,6 +211,7 @@ const TYPE_META: Record<string, { icon: string; color: string }> = {
   new_offer:               { icon: 'pricetag',         color: '#f59e0b' },
   offer_accepted:          { icon: 'checkmark-circle', color: '#22c55e' },
   offer_declined:          { icon: 'close-circle',     color: '#ef4444' },
+  group_invite:            { icon: 'people-circle',    color: '#a78bfa' },
 };
 
 // ─── Avatar Stack ─────────────────────────────────────────────────────────────
@@ -543,6 +547,11 @@ export default function NotificationsScreen() {
         // (best-effort; no listing ID stored in old rows)
         router.push('/(tabs)/marketplace');
       }
+      return;
+    }
+
+    if (g.type === 'group_invite') {
+      router.push('/(tabs)/chat');
       return;
     }
 

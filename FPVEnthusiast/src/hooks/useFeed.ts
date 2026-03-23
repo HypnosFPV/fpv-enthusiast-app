@@ -87,34 +87,58 @@ export function useFeed(
     })) as FeedPost[];
   }
 
-  const applyGroupVisibility = <T,>(query: any): any => {
-    if (groupIds.length > 0) {
-      return query.or(`group_id.is.null,group_id.in.(${groupIds.join(',')})`);
+  function uniqueById<T extends { id: string }>(items: T[]): T[] {
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }
+
+  const applyGroupVisibility = (query: any, visibleGroupIds: string[] = groupIds): any => {
+    if (visibleGroupIds.length > 0) {
+      return query.or(`group_id.is.null,group_id.in.(${visibleGroupIds.join(',')})`);
     }
     return query.is('group_id', null);
   };
 
   // ── Fetch the list of users the current user follows ──────────────────
-  const loadFollowingIds = useCallback(async () => {
-    if (!currentUserId) { setFollowingIds([]); return; }
+  const loadFollowingIds = useCallback(async (): Promise<string[]> => {
+    if (!currentUserId) {
+      setFollowingIds([]);
+      return [];
+    }
     const { data } = await supabase
       .from('follows')
       .select('following_id')
       .eq('follower_id', currentUserId);
-    setFollowingIds((data ?? []).map((r: any) => r.following_id));
+    const ids = (data ?? []).map((r: any) => r.following_id);
+    setFollowingIds(ids);
+    return ids;
   }, [currentUserId]);
 
-  const loadGroupIds = useCallback(async () => {
-    if (!currentUserId) { setGroupIds([]); return; }
+  const loadGroupIds = useCallback(async (): Promise<string[]> => {
+    if (!currentUserId) {
+      setGroupIds([]);
+      return [];
+    }
     const { data } = await supabase
       .from('social_group_members')
       .select('group_id')
       .eq('user_id', currentUserId);
-    setGroupIds((data ?? []).map((row: any) => row.group_id));
+    const ids = (data ?? []).map((row: any) => row.group_id);
+    setGroupIds(ids);
+    return ids;
   }, [currentUserId]);
 
   // ── Core fetch ────────────────────────────────────────────────────────
-  const fetchPosts = useCallback(async (pageIndex: number): Promise<FeedPost[]> => {
+  const fetchPosts = useCallback(async (
+    pageIndex: number,
+    overrides?: { groupIds?: string[]; followingIds?: string[] }
+  ): Promise<FeedPost[]> => {
+    const visibleGroupIds = overrides?.groupIds ?? groupIds;
+    const visibleFollowingIds = overrides?.followingIds ?? followingIds;
 
     // ── A. FOR YOU: fetch a larger pool and personalise-rank it ─────────
     if (feedMode === 'for_you' && currentUserId) {
@@ -126,26 +150,51 @@ export function useFeed(
           .from('posts')
           .select(SELECT)
           .order('created_at', { ascending: false })
-          .range(from, to)
+          .range(from, to),
+        visibleGroupIds,
       );
 
       const { data, error } = await feedQuery;
 
       if (error) { console.error('[useFeed] for_you error:', error.message); return []; }
-      if (!data?.length) return [];
+      if (!data?.length && visibleGroupIds.length === 0) return [];
+
+      let pool = [...(data ?? [])] as any[];
+      if (pageIndex === 0 && visibleGroupIds.length > 0) {
+        const { data: groupPosts, error: groupPostsError } = await supabase
+          .from('posts')
+          .select(SELECT)
+          .in('group_id', visibleGroupIds)
+          .order('created_at', { ascending: false })
+          .limit(12);
+        if (groupPostsError) {
+          console.warn('[useFeed] group boost fetch error:', groupPostsError.message);
+        } else if (groupPosts?.length) {
+          pool = uniqueById([...(groupPosts as any[]), ...pool]);
+        }
+      }
+      if (!pool.length) return [];
 
       const { data: likes } = await supabase
         .from('likes')
         .select('post_id')
         .eq('user_id', currentUserId)
-        .in('post_id', data.map((p: any) => p.id));
+        .in('post_id', pool.map((p: any) => p.id));
 
       const likedIds = (likes ?? []).map((l: any) => l.post_id);
-      const merged   = mergeIsLiked(data, likedIds);
+      const merged   = mergeIsLiked(pool, likedIds);
 
       // Rank if we have a profile, else fall back to chronological
       const profile = interestProfile ?? { tagWeights: {}, authorAffinity: {}, topTags: [], topAuthors: [], lastUpdated: 0 };
       const ranked  = rankPosts(merged, profile);
+
+      if (pageIndex === 0) {
+        const promotedGroups = merged
+          .filter(post => !!post.group_id)
+          .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())
+          .slice(0, 2);
+        return uniqueById([...promotedGroups, ...ranked]).slice(0, PAGE_SIZE);
+      }
 
       // Return a PAGE_SIZE slice from the ranked pool
       return ranked.slice(pageIndex === 0 ? 0 : pageIndex * PAGE_SIZE, (pageIndex + 1) * PAGE_SIZE);
@@ -153,7 +202,7 @@ export function useFeed(
 
     // ── B. FOLLOWING: only posts from people the user follows ────────────
     if (feedMode === 'following' && currentUserId) {
-      const ids = followingIds.length > 0 ? followingIds : [];
+      const ids = visibleFollowingIds.length > 0 ? visibleFollowingIds : [];
       if (!ids.length) return [];
 
       const from = pageIndex * PAGE_SIZE;
@@ -165,7 +214,8 @@ export function useFeed(
           .select(SELECT)
           .in('user_id', ids)
           .order('created_at', { ascending: false })
-          .range(from, to)
+          .range(from, to),
+        visibleGroupIds,
       );
 
       const { data, error } = await feedQuery;
@@ -192,7 +242,8 @@ export function useFeed(
         .from('posts')
         .select(SELECT)
         .order('created_at', { ascending: false })
-        .range(from, to)
+        .range(from, to),
+      visibleGroupIds,
     );
 
     const { data, error } = await feedQuery;
@@ -216,12 +267,13 @@ export function useFeed(
     setRefreshing(true);
     setPage(0);
     setHasMore(true);
-    const fresh = await fetchPosts(0);
+    const [nextFollowingIds, nextGroupIds] = await Promise.all([loadFollowingIds(), loadGroupIds()]);
+    const fresh = await fetchPosts(0, { followingIds: nextFollowingIds, groupIds: nextGroupIds });
     setPosts(fresh);
     setHasMore(fresh.length === PAGE_SIZE);
     setLoading(false);
     setRefreshing(false);
-  }, [fetchPosts]);
+  }, [fetchPosts, loadFollowingIds, loadGroupIds]);
 
   const loadMore = useCallback(async () => {
     // Guard: skip if initial load, pull-to-refresh, already fetching more, or no pages left
@@ -469,14 +521,27 @@ export function useFeed(
 
   // Load following IDs once userId is known
   useEffect(() => {
-    loadFollowingIds();
-    loadGroupIds();
+    void loadFollowingIds();
+    void loadGroupIds();
   }, [loadFollowingIds, loadGroupIds]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const channel = supabase
+      .channel(`feed_memberships_${currentUserId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'social_group_members', filter: `user_id=eq.${currentUserId}` },
+        () => { void loadGroupIds(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUserId, loadGroupIds]);
 
   // Initial load / refresh when feedMode or userId changes
   useEffect(() => {
     setLoading(true);
-    onRefresh();
+    void onRefresh();
   }, [feedMode, currentUserId, groupIds.join('|')]);
 
   return {
