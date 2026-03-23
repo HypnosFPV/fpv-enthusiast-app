@@ -252,8 +252,7 @@ CREATE POLICY social_group_invites_update ON public.social_group_invites FOR UPD
 -- Restrictive visibility for private group posts in member feed.
 DROP POLICY IF EXISTS posts_group_visibility_gate ON public.posts;
 CREATE POLICY posts_group_visibility_gate
-  AS RESTRICTIVE
-  ON public.posts FOR SELECT TO authenticated
+  ON public.posts AS RESTRICTIVE FOR SELECT TO authenticated
   USING (
     group_id IS NULL
     OR public.is_social_group_member(group_id)
@@ -262,8 +261,7 @@ CREATE POLICY posts_group_visibility_gate
 -- Restrictive insert gate for group posting permissions.
 DROP POLICY IF EXISTS posts_group_insert_gate ON public.posts;
 CREATE POLICY posts_group_insert_gate
-  AS RESTRICTIVE
-  ON public.posts FOR INSERT TO authenticated
+  ON public.posts AS RESTRICTIVE FOR INSERT TO authenticated
   WITH CHECK (
     group_id IS NULL
     OR public.can_post_to_social_group(group_id)
@@ -272,8 +270,7 @@ CREATE POLICY posts_group_insert_gate
 -- Restrictive chat permission gate for moderated group chats.
 DROP POLICY IF EXISTS cm_group_chat_permissions ON public.chat_messages;
 CREATE POLICY cm_group_chat_permissions
-  AS RESTRICTIVE
-  ON public.chat_messages FOR INSERT TO authenticated
+  ON public.chat_messages AS RESTRICTIVE FOR INSERT TO authenticated
   WITH CHECK (
     NOT EXISTS (
       SELECT 1
