@@ -18,13 +18,15 @@ export interface ChatRoom {
   name:            string | null;
   avatar_url:      string | null;
   listing_id:      string | null;
+  social_group_id?: string | null;
   last_message:    string | null;
   last_message_at: string | null;
   updated_at:      string;
   created_by:      string | null;
   members?:        ChatMember[];
   unread_count?:   number;
-  listing?:        { title: string; price: number; image_url: string | null } | null;
+  listing?:        { title: string; price: number; image_url?: string | null } | null;
+  social_group?:   { id: string; name: string; privacy?: string | null; can_chat?: string | null } | null;
 }
 
 export interface ChatMessage {
@@ -58,13 +60,14 @@ export function useChat(currentUserId?: string) {
     const res1 = await supabase
       .from('chat_rooms')
       .select(`
-        id, type, name, avatar_url, listing_id,
+        id, type, name, avatar_url, listing_id, social_group_id,
         last_message, last_message_at, updated_at, created_by,
         members:chat_room_members (
           user_id, role, last_read_at,
           user:user_id ( username, avatar_url )
         ),
-        listing:listing_id ( title, price )
+        listing:listing_id ( title, price ),
+        social_group:social_group_id ( id, name, privacy, can_chat )
       `)
       .order('updated_at', { ascending: false });
 
@@ -87,8 +90,9 @@ export function useChat(currentUserId?: string) {
         const res2 = await supabase
           .from('chat_rooms')
           .select(`
-            id, type, name, avatar_url, listing_id,
-            last_message, last_message_at, updated_at, created_by
+            id, type, name, avatar_url, listing_id, social_group_id,
+            last_message, last_message_at, updated_at, created_by,
+            social_group:social_group_id ( id, name, privacy, can_chat )
           `)
           .in('id', roomIds)
           .order('updated_at', { ascending: false });

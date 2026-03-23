@@ -114,6 +114,7 @@ export default function ChatRoomScreen() {
 
   const [draft, setDraft] = useState('');
   const [room,  setRoom]  = useState<ChatRoom | null>(null);
+  const [myGroupRole, setMyGroupRole] = useState<'owner' | 'admin' | 'moderator' | 'member' | null>(null);
   const listRef = useRef<FlatList>(null);
   // Track whether user has scrolled up (don't snap to bottom if reading history)
   const isNearBottom = useRef(true);
@@ -124,17 +125,33 @@ export default function ChatRoomScreen() {
     supabase
       .from('chat_rooms')
       .select(`
-        id, type, name, avatar_url, listing_id,
+        id, type, name, avatar_url, listing_id, social_group_id,
         members:chat_room_members (
           user_id, role, last_read_at,
           user:user_id ( username, avatar_url )
         ),
-        listing:listing_id ( title, price )
+        listing:listing_id ( title, price ),
+        social_group:social_group_id ( id, name, can_chat )
       `)
       .eq('id', roomId)
       .single()
-      .then(({ data }) => { if (data) setRoom(data as ChatRoom); });
-  }, [roomId]);
+      .then(async ({ data }) => {
+        if (!data) return;
+        const typedRoom = data as ChatRoom;
+        setRoom(typedRoom);
+        if (typedRoom.social_group_id && user?.id) {
+          const { data: memberData } = await supabase
+            .from('social_group_members')
+            .select('role')
+            .eq('group_id', typedRoom.social_group_id)
+            .eq('user_id', user.id)
+            .single();
+          setMyGroupRole((memberData?.role as any) ?? null);
+        } else {
+          setMyGroupRole(null);
+        }
+      });
+  }, [roomId, user?.id]);
 
   // Mark read when screen mounts
   useEffect(() => {
@@ -156,9 +173,11 @@ export default function ChatRoomScreen() {
     return () => clearTimeout(t);
   }, [lastMsgId]);
 
+  const canSend = !room?.social_group_id || room.social_group?.can_chat === 'members' || ['owner', 'admin', 'moderator'].includes(myGroupRole ?? '');
+
   const handleSend = useCallback(async () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || !canSend) return;
     setDraft('');
     const result = await sendMessage(text, 'text');
     if (!result.ok) {
@@ -168,7 +187,7 @@ export default function ChatRoomScreen() {
     }
     // Scrolling is handled entirely by the lastMsgId useEffect above —
     // no manual scrollToEnd calls needed here.
-  }, [draft, sendMessage]);
+  }, [draft, sendMessage, canSend]);
 
   // ── Header info ────────────────────────────────────────────────────────────
   const getRoomTitle = (): string => {
@@ -187,6 +206,9 @@ export default function ChatRoomScreen() {
     if (!room) return null;
     if (room.type === 'group') {
       const count = room.members?.length ?? 0;
+      if (room.social_group?.name) {
+        return `${count} members • ${canSend ? 'chat open' : 'mods only chat'}`;
+      }
       return `${count} members`;
     }
     if (room.type === 'marketplace') {
@@ -254,6 +276,14 @@ export default function ChatRoomScreen() {
         </View>
 
         {/* Members button for group chats */}
+        {room?.type === 'group' && room?.social_group_id && (
+          <TouchableOpacity
+            style={styles.headerAction}
+            onPress={() => router.push(`/group/${room.social_group_id}` as any)}
+          >
+            <Ionicons name="information-circle-outline" size={22} color="#aaa" />
+          </TouchableOpacity>
+        )}
         {room?.type === 'group' && (
           <TouchableOpacity
             style={styles.headerAction}
@@ -313,19 +343,20 @@ export default function ChatRoomScreen() {
       {/* ── Input bar ─────────────────────────────────────────────────────── */}
       <View style={styles.inputBar}>
         <TextInput
-          style={styles.input}
+          style={[styles.input, !canSend && { opacity: 0.6 }]}
           value={draft}
           onChangeText={setDraft}
-          placeholder="Message…"
+          placeholder={canSend ? 'Message…' : 'Only moderators can chat in this group'}
           placeholderTextColor="#555"
+          editable={canSend}
           multiline
           maxLength={2000}
           returnKeyType="default"
         />
         <TouchableOpacity
-          style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
+          style={[styles.sendBtn, (!draft.trim() || sending || !canSend) && styles.sendBtnDisabled]}
           onPress={handleSend}
-          disabled={!draft.trim() || sending}
+          disabled={!draft.trim() || sending || !canSend}
         >
           {sending
             ? <ActivityIndicator size="small" color="#fff" />

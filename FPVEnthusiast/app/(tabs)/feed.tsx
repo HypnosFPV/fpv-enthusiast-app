@@ -339,6 +339,31 @@ export default function FeedScreen() {
 
   const renderPost = useCallback(({ item }: { item: FeedPost }) => (
     <View>
+      {item.group?.id && item.group?.name ? (
+        <TouchableOpacity
+          onPress={() => router.push(`/group/${item.group?.id}` as any)}
+          activeOpacity={0.82}
+          style={{
+            marginHorizontal: 12,
+            marginTop: 8,
+            marginBottom: 6,
+            alignSelf: 'flex-start',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            backgroundColor: '#162233',
+            borderRadius: 999,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+          }}
+        >
+          <Ionicons name="people-outline" size={12} color="#9cc8ff" />
+          <Text style={{ color: '#9cc8ff', fontSize: 12, fontWeight: '700' }}>
+            Group • {item.group.name}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
+
       {/* ── "Why this post?" chip — only in For You mode ── */}
       {feedMode === 'for_you' && item.tags && item.tags.length > 0 && (
         <View style={styles.whyChipRow}>
@@ -360,7 +385,7 @@ export default function FeedScreen() {
         onDelete={handleDelete}
       />
     </View>
-  ), [visiblePostId, autoplayEnabled, user?.id, handleLike, handleDelete, feedMode, interestProfile]);
+  ), [visiblePostId, autoplayEnabled, user?.id, handleLike, handleDelete, feedMode, interestProfile, router]);
 
   if (loading && posts.length === 0) {
     return (

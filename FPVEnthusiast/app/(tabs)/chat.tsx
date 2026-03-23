@@ -1,189 +1,207 @@
-// app/(tabs)/chat.tsx
-// FPV Chat — DMs, group chats, marketplace threads
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity,
-  TextInput, ActivityIndicator, Image, Modal, Alert,
-  KeyboardAvoidingView, Platform, Pressable, ScrollView,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Image,
+  Modal,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  RefreshControl,
+  FlatList,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
-import { useChat, ChatRoom } from '../../src/hooks/useChat';
+import { ChatRoom, useChat } from '../../src/hooks/useChat';
+import {
+  SocialGroupPermission,
+  SocialGroupPrivacy,
+  useSocialGroups,
+} from '../../src/hooks/useSocialGroups';
 import { supabase } from '../../src/services/supabase';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function timeAgo(iso: string | null): string {
   if (!iso) return '';
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
-  if (m < 1)  return 'now';
+  if (m < 1) return 'now';
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
-  if (d < 7)  return `${d}d`;
+  if (d < 7) return `${d}d`;
   return `${Math.floor(d / 7)}w`;
 }
 
 function getRoomDisplayName(room: ChatRoom, myId: string): string {
+  if (room.social_group?.name) return room.social_group.name;
   if (room.type === 'group') return room.name ?? 'Group Chat';
-  if (room.type === 'marketplace') {
-    const other = room.members?.find(m => m.user_id !== myId);
-    return other?.user?.username ?? 'Marketplace Chat';
-  }
-  // DM — show other person's username
   const other = room.members?.find(m => m.user_id !== myId);
-  return other?.user?.username ?? 'Direct Message';
+  return other?.user?.username ?? (room.type === 'marketplace' ? 'Marketplace Chat' : 'Direct Message');
 }
 
 function getRoomAvatar(room: ChatRoom, myId: string): string | null {
   if (room.avatar_url) return room.avatar_url;
-  if (room.type === 'group') return null;
   const other = room.members?.find(m => m.user_id !== myId);
   return other?.user?.avatar_url ?? null;
 }
 
-// ─── New Group Modal ──────────────────────────────────────────────────────────
-
-function NewGroupModal({
-  visible, onClose, currentUserId, onCreate,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  currentUserId: string;
-  onCreate: (name: string, memberIds: string[]) => Promise<void>;
-}) {
-  const [groupName, setGroupName] = useState('');
-  const [search,    setSearch]    = useState('');
-  const [results,   setResults]   = useState<{id:string;username:string;avatar_url:string|null}[]>([]);
-  const [selected,  setSelected]  = useState<{id:string;username:string}[]>([]);
-  const [saving,    setSaving]    = useState(false);
-
-  useEffect(() => {
-    if (!visible) { setGroupName(''); setSearch(''); setResults([]); setSelected([]); }
-  }, [visible]);
-
-  const searchUsers = useCallback(async (q: string) => {
-    setSearch(q);
-    if (q.trim().length < 2) { setResults([]); return; }
-    const { data } = await supabase
-      .from('users')
-      .select('id, username, avatar_url')
-      .ilike('username', `%${q.trim()}%`)
-      .neq('id', currentUserId)
-      .limit(10);
-    setResults((data ?? []) as typeof results);
-  }, [currentUserId]);
-
-  const toggle = (u: {id:string;username:string}) => {
-    setSelected(prev =>
-      prev.some(s => s.id === u.id)
-        ? prev.filter(s => s.id !== u.id)
-        : [...prev, u]
-    );
-  };
-
-  const handleCreate = async () => {
-    if (!groupName.trim() || selected.length === 0) return;
-    setSaving(true);
-    await onCreate(groupName.trim(), selected.map(s => s.id));
-    setSaving(false);
-    onClose();
-  };
-
+function Avatar({ uri, icon, size = 48 }: { uri?: string | null; icon: keyof typeof Ionicons.glyphMap; size?: number }) {
+  if (uri) {
+    return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} />;
+  }
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.modalOverlay}
-      >
-        <View style={styles.modalSheet}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>New Group</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={22} color="#aaa" />
-            </TouchableOpacity>
-          </View>
-
-          <TextInput
-            style={styles.groupNameInput}
-            placeholder="Group name…"
-            placeholderTextColor="#888"
-            selectionColor="#ff4500"
-            value={groupName}
-            onChangeText={setGroupName}
-          />
-
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search users to add…"
-            placeholderTextColor="#888"
-            selectionColor="#ff4500"
-            value={search}
-            onChangeText={searchUsers}
-          />
-
-          {selected.length > 0 && (
-            <View style={styles.selectedChips}>
-              {selected.map(u => (
-                <TouchableOpacity
-                  key={u.id}
-                  style={styles.chip}
-                  onPress={() => toggle(u)}
-                >
-                  <Text style={styles.chipTxt}>{u.username}</Text>
-                  <Ionicons name="close-circle" size={14} color="#fff" />
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          <FlatList
-            data={results}
-            keyExtractor={u => u.id}
-            style={{ maxHeight: 200 }}
-            renderItem={({ item }) => {
-              const isSelected = selected.some(s => s.id === item.id);
-              return (
-                <TouchableOpacity
-                  style={[styles.userRow, isSelected && styles.userRowSelected]}
-                  onPress={() => toggle(item)}
-                >
-                  {item.avatar_url
-                    ? <Image source={{ uri: item.avatar_url }} style={styles.userAvatar} />
-                    : <View style={[styles.userAvatar, styles.avatarFallback]}>
-                        <Ionicons name="person" size={16} color="#aaa" />
-                      </View>
-                  }
-                  <Text style={styles.userRowName}>{item.username}</Text>
-                  {isSelected && <Ionicons name="checkmark-circle" size={18} color="#ff4500" />}
-                </TouchableOpacity>
-              );
-            }}
-          />
-
-          <TouchableOpacity
-            style={[styles.createBtn, (saving || !groupName.trim() || selected.length === 0) && { opacity: 0.4 }]}
-            onPress={handleCreate}
-            disabled={saving || !groupName.trim() || selected.length === 0}
-          >
-            {saving
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={styles.createBtnTxt}>Create Group ({selected.length} members)</Text>
-            }
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    <View style={[styles.avatarFallback, { width: size, height: size, borderRadius: size / 2 }]}>
+      <Ionicons name={icon} size={Math.round(size * 0.45)} color="#8a8a8a" />
+    </View>
   );
 }
 
-// ─── New DM Search ────────────────────────────────────────────────────────────
+function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {!!subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
+    </View>
+  );
+}
+
+function ConversationRow({
+  title,
+  subtitle,
+  time,
+  unreadCount,
+  avatarUri,
+  icon,
+  badge,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  time?: string;
+  unreadCount?: number;
+  avatarUri?: string | null;
+  icon: keyof typeof Ionicons.glyphMap;
+  badge?: string;
+  onPress: () => void;
+}) {
+  const hasUnread = (unreadCount ?? 0) > 0;
+
+  return (
+    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.78}>
+      <Avatar uri={avatarUri} icon={icon} />
+      <View style={styles.rowMeta}>
+        <View style={styles.rowTop}>
+          <Text style={[styles.rowTitle, hasUnread && styles.rowTitleUnread]} numberOfLines={1}>
+            {title}
+          </Text>
+          {!!time && <Text style={styles.rowTime}>{time}</Text>}
+        </View>
+        <View style={styles.rowBottom}>
+          <Text style={[styles.rowSubtitle, hasUnread && styles.rowSubtitleUnread]} numberOfLines={1}>
+            {subtitle}
+          </Text>
+          {badge ? <View style={styles.badge}><Text style={styles.badgeText}>{badge}</Text></View> : null}
+          {hasUnread ? (
+            <View style={styles.unreadPill}>
+              <Text style={styles.unreadPillText}>{unreadCount}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function MarketplaceBundleCard({
+  sellerName,
+  sellerAvatar,
+  rooms,
+  expanded,
+  onToggle,
+  onOpenRoom,
+}: {
+  sellerName: string;
+  sellerAvatar?: string | null;
+  rooms: ChatRoom[];
+  expanded: boolean;
+  onToggle: () => void;
+  onOpenRoom: (roomId: string) => void;
+}) {
+  const latestRoom = rooms[0];
+  const unreadCount = rooms.reduce((sum, room) => sum + (room.unread_count ?? 0), 0);
+  const subtitle = latestRoom.listing?.title
+    ? `${rooms.length} listing${rooms.length === 1 ? '' : 's'} • latest: ${latestRoom.listing.title}`
+    : `${rooms.length} marketplace thread${rooms.length === 1 ? '' : 's'}`;
+
+  return (
+    <View style={styles.bundleCard}>
+      <TouchableOpacity style={styles.bundleHeader} onPress={onToggle} activeOpacity={0.78}>
+        <View style={styles.bundleHeaderLeft}>
+          <View style={styles.bundleAvatarWrap}>
+            <Avatar uri={sellerAvatar} icon="storefront-outline" />
+            <View style={styles.marketBadge}>
+              <Ionicons name="storefront" size={10} color="#fff" />
+            </View>
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={styles.bundleTitleRow}>
+              <Text style={styles.bundleTitle} numberOfLines={1}>{sellerName}</Text>
+              {unreadCount > 0 ? (
+                <View style={styles.unreadPill}>
+                  <Text style={styles.unreadPillText}>{unreadCount}</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={styles.bundleSubtitle} numberOfLines={1}>{subtitle}</Text>
+          </View>
+        </View>
+        <View style={styles.bundleHeaderRight}>
+          <Text style={styles.bundleTime}>{timeAgo(latestRoom.last_message_at)}</Text>
+          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={18} color="#9b9b9b" />
+        </View>
+      </TouchableOpacity>
+
+      {expanded ? (
+        <View style={styles.bundleChildren}>
+          {rooms.map(room => (
+            <TouchableOpacity
+              key={room.id}
+              style={styles.bundleChildRow}
+              onPress={() => onOpenRoom(room.id)}
+              activeOpacity={0.78}
+            >
+              <View style={styles.bundleThreadIcon}>
+                <Ionicons name="pricetag-outline" size={14} color="#ff8b4d" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bundleChildTitle} numberOfLines={1}>
+                  {room.listing?.title ?? 'Marketplace thread'}
+                </Text>
+                <Text style={styles.bundleChildSubtitle} numberOfLines={1}>
+                  {room.last_message ?? 'Open thread'}
+                </Text>
+              </View>
+              <Text style={styles.bundleChildTime}>{timeAgo(room.last_message_at)}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 function NewDMModal({
-  visible, onClose, currentUserId,
+  visible,
+  onClose,
+  currentUserId,
   onSelect,
 }: {
   visible: boolean;
@@ -191,15 +209,23 @@ function NewDMModal({
   currentUserId: string;
   onSelect: (userId: string) => Promise<void>;
 }) {
-  const [search,  setSearch]  = useState('');
-  const [results, setResults] = useState<{id:string;username:string;avatar_url:string|null}[]>([]);
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<{ id: string; username: string; avatar_url: string | null }[]>([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { if (!visible) { setSearch(''); setResults([]); } }, [visible]);
+  useEffect(() => {
+    if (!visible) {
+      setSearch('');
+      setResults([]);
+    }
+  }, [visible]);
 
   const searchUsers = useCallback(async (q: string) => {
     setSearch(q);
-    if (q.trim().length < 2) { setResults([]); return; }
+    if (q.trim().length < 2) {
+      setResults([]);
+      return;
+    }
     setLoading(true);
     const { data } = await supabase
       .from('users')
@@ -209,55 +235,46 @@ function NewDMModal({
       .limit(15);
     setResults((data ?? []) as typeof results);
     setLoading(false);
-  }, [currentUserId]);
+  }, [currentUserId, results]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
         <View style={[styles.modalSheet, { maxHeight: '80%' }]}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>New Message</Text>
-            <TouchableOpacity onPress={onClose}>
-              <Ionicons name="close" size={22} color="#aaa" />
-            </TouchableOpacity>
+            <Text style={styles.modalTitle}>New message</Text>
+            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color="#aaa" /></TouchableOpacity>
           </View>
           <TextInput
-            style={styles.searchInput}
-            placeholder="Search users…"
-            placeholderTextColor="#888"
+            style={styles.input}
+            placeholder="Search pilots…"
+            placeholderTextColor="#777"
             value={search}
             onChangeText={searchUsers}
             autoFocus
-            selectionColor="#ff4500"
           />
-          {loading && <ActivityIndicator color="#ff4500" style={{ marginTop: 12 }} />}
+          {loading ? <ActivityIndicator color="#ff6a2f" style={{ marginTop: 12 }} /> : null}
           <FlatList
             data={results}
-            keyExtractor={u => u.id}
-            style={styles.dmResultsList}
+            keyExtractor={item => item.id}
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={styles.userRow}
-                onPress={async () => { onClose(); await onSelect(item.id); }}
+                onPress={async () => {
+                  onClose();
+                  await onSelect(item.id);
+                }}
               >
-                {item.avatar_url
-                  ? <Image source={{ uri: item.avatar_url }} style={styles.userAvatar} />
-                  : <View style={[styles.userAvatar, styles.avatarFallback]}>
-                      <Ionicons name="person" size={18} color="#aaa" />
-                    </View>
-                }
-                <Text style={styles.userRowName}>{item.username}</Text>
+                <Avatar uri={item.avatar_url} icon="person" size={40} />
+                <Text style={styles.userName}>{item.username}</Text>
                 <Ionicons name="chevron-forward" size={16} color="#666" />
               </TouchableOpacity>
             )}
             ListEmptyComponent={
               search.trim().length >= 2 && !loading
-                ? <Text style={styles.noResults}>No users found</Text>
+                ? <Text style={styles.emptySearch}>No pilots found</Text>
                 : null
             }
           />
@@ -267,222 +284,790 @@ function NewDMModal({
   );
 }
 
-// ─── Room Row ────────────────────────────────────────────────────────────────
-
-function RoomRow({
-  room, myId, onPress,
+function ChoicePill({
+  label,
+  active,
+  onPress,
 }: {
-  room: ChatRoom; myId: string; onPress: () => void;
+  label: string;
+  active: boolean;
+  onPress: () => void;
 }) {
-  const displayName = getRoomDisplayName(room, myId);
-  const avatarUri   = getRoomAvatar(room, myId);
-  const isGroup     = room.type === 'group';
-  const isMkt       = room.type === 'marketplace';
-  const hasUnread   = (room.unread_count ?? 0) > 0;
-
   return (
-    <TouchableOpacity style={styles.roomRow} onPress={onPress} activeOpacity={0.75}>
-      {/* Avatar */}
-      <View style={styles.avatarWrap}>
-        {avatarUri
-          ? <Image source={{ uri: avatarUri }} style={styles.roomAvatar} />
-          : <View style={[styles.roomAvatar, styles.avatarFallback]}>
-              <Ionicons
-                name={isGroup ? 'people' : isMkt ? 'storefront-outline' : 'person'}
-                size={22}
-                color="#666"
-              />
-            </View>
-        }
-        {isMkt && (
-          <View style={styles.mktBadge}>
-            <Ionicons name="storefront" size={9} color="#fff" />
-          </View>
-        )}
-      </View>
-
-      {/* Text */}
-      <View style={styles.roomMeta}>
-        <View style={styles.roomMetaRow}>
-          <Text style={[styles.roomName, hasUnread && styles.roomNameUnread]} numberOfLines={1}>
-            {displayName}
-          </Text>
-          <Text style={styles.roomTime}>{timeAgo(room.last_message_at)}</Text>
-        </View>
-        <View style={styles.roomMetaRow}>
-          <Text style={[styles.roomPreview, hasUnread && styles.roomPreviewUnread]} numberOfLines={1}>
-            {isMkt && room.listing
-              ? `📦 ${(room.listing as any).title ?? 'Listing'}`
-              : (room.last_message ?? 'No messages yet')}
-          </Text>
-          {hasUnread && <View style={styles.unreadDot} />}
-        </View>
-      </View>
+    <TouchableOpacity style={[styles.choicePill, active && styles.choicePillActive]} onPress={onPress}>
+      <Text style={[styles.choicePillText, active && styles.choicePillTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
+function NewCommunityModal({
+  visible,
+  onClose,
+  currentUserId,
+  onCreate,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  currentUserId: string;
+  onCreate: (payload: {
+    name: string;
+    description: string;
+    privacy: SocialGroupPrivacy;
+    memberIds: string[];
+    canPost: SocialGroupPermission;
+    canChat: SocialGroupPermission;
+    canInvite: SocialGroupPermission;
+  }) => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [privacy, setPrivacy] = useState<SocialGroupPrivacy>('private');
+  const [canPost, setCanPost] = useState<SocialGroupPermission>('members');
+  const [canChat, setCanChat] = useState<SocialGroupPermission>('members');
+  const [canInvite, setCanInvite] = useState<SocialGroupPermission>('mods');
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<{ id: string; username: string; avatar_url: string | null }[]>([]);
+  const [selected, setSelected] = useState<{ id: string; username: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setName('');
+      setDescription('');
+      setPrivacy('private');
+      setCanPost('members');
+      setCanChat('members');
+      setCanInvite('mods');
+      setSearch('');
+      setResults([]);
+      setSelected([]);
+      setSaving(false);
+    }
+  }, [visible]);
+
+  const searchUsers = useCallback(async (q: string) => {
+    setSearch(q);
+    if (q.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    const { data } = await supabase
+      .from('users')
+      .select('id, username, avatar_url')
+      .ilike('username', `%${q.trim()}%`)
+      .neq('id', currentUserId)
+      .limit(12);
+    setResults((data ?? []) as typeof results);
+  }, [currentUserId, results]);
+
+  const toggleSelected = (user: { id: string; username: string }) => {
+    setSelected(prev => prev.some(item => item.id === user.id)
+      ? prev.filter(item => item.id !== user.id)
+      : [...prev, user]);
+  };
+
+  const handleCreate = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    await onCreate({
+      name: name.trim(),
+      description: description.trim(),
+      privacy,
+      memberIds: selected.map(item => item.id),
+      canPost,
+      canChat,
+      canInvite,
+    });
+    setSaving(false);
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
+        <ScrollView style={styles.modalSheet} contentContainerStyle={{ paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Create community</Text>
+            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color="#aaa" /></TouchableOpacity>
+          </View>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Community name"
+            placeholderTextColor="#777"
+            value={name}
+            onChangeText={setName}
+          />
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="What is this group for?"
+            placeholderTextColor="#777"
+            multiline
+            value={description}
+            onChangeText={setDescription}
+          />
+
+          <SectionHeader title="Privacy" subtitle="Who can discover and open the community" />
+          <View style={styles.choiceRow}>
+            <ChoicePill label="Public" active={privacy === 'public'} onPress={() => setPrivacy('public')} />
+            <ChoicePill label="Private" active={privacy === 'private'} onPress={() => setPrivacy('private')} />
+            <ChoicePill label="Invite only" active={privacy === 'invite_only'} onPress={() => setPrivacy('invite_only')} />
+          </View>
+
+          <SectionHeader title="Permissions" subtitle="Moderation defaults for posts, chat, and invites" />
+          <Text style={styles.permissionLabel}>Who can post?</Text>
+          <View style={styles.choiceRow}>
+            <ChoicePill label="Members" active={canPost === 'members'} onPress={() => setCanPost('members')} />
+            <ChoicePill label="Mods only" active={canPost === 'mods'} onPress={() => setCanPost('mods')} />
+          </View>
+          <Text style={styles.permissionLabel}>Who can chat?</Text>
+          <View style={styles.choiceRow}>
+            <ChoicePill label="Members" active={canChat === 'members'} onPress={() => setCanChat('members')} />
+            <ChoicePill label="Mods only" active={canChat === 'mods'} onPress={() => setCanChat('mods')} />
+          </View>
+          <Text style={styles.permissionLabel}>Who can invite?</Text>
+          <View style={styles.choiceRow}>
+            <ChoicePill label="Members" active={canInvite === 'members'} onPress={() => setCanInvite('members')} />
+            <ChoicePill label="Mods only" active={canInvite === 'mods'} onPress={() => setCanInvite('mods')} />
+          </View>
+
+          <SectionHeader title="Invite people" subtitle="Add initial members now or invite them later" />
+          <TextInput
+            style={styles.input}
+            placeholder="Search usernames"
+            placeholderTextColor="#777"
+            value={search}
+            onChangeText={searchUsers}
+          />
+
+          {selected.length > 0 ? (
+            <View style={styles.selectedWrap}>
+              {selected.map(item => (
+                <TouchableOpacity key={item.id} style={styles.selectedChip} onPress={() => toggleSelected(item)}>
+                  <Text style={styles.selectedChipText}>{item.username}</Text>
+                  <Ionicons name="close-circle" size={14} color="#fff" />
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+
+          {results.map(item => {
+            const picked = selected.some(user => user.id === item.id);
+            return (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.userRow, picked && styles.userRowSelected]}
+                onPress={() => toggleSelected(item)}
+              >
+                <Avatar uri={item.avatar_url} icon="person" size={40} />
+                <Text style={styles.userName}>{item.username}</Text>
+                <Ionicons name={picked ? 'checkmark-circle' : 'add-circle-outline'} size={18} color="#ff6a2f" />
+              </TouchableOpacity>
+            );
+          })}
+
+          <TouchableOpacity
+            style={[styles.primaryBtn, (!name.trim() || saving) && { opacity: 0.45 }]}
+            disabled={!name.trim() || saving}
+            onPress={handleCreate}
+          >
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={styles.primaryBtnText}>Create community</Text>}
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
 
 export default function ChatTab() {
   const router = useRouter();
   const { user } = useAuth();
   const {
-    rooms, roomsLoad, fetchRooms,
-    getOrCreateDM, createGroup,
+    rooms,
+    roomsLoad,
+    fetchRooms,
+    getOrCreateDM,
   } = useChat(user?.id);
+  const {
+    groups,
+    loading: groupsLoad,
+    refreshing: groupsRefreshing,
+    refreshGroups,
+    createGroup,
+  } = useSocialGroups(user?.id);
 
-  const [showNewDM,    setShowNewDM]    = useState(false);
-  const [showNewGroup, setShowNewGroup] = useState(false);
-  const [search,       setSearch]       = useState('');
+  const [tab, setTab] = useState<'all' | 'marketplace' | 'dm' | 'groups'>('all');
+  const [search, setSearch] = useState('');
+  const [showNewDM, setShowNewDM] = useState(false);
+  const [showNewCommunity, setShowNewCommunity] = useState(false);
+  const [expandedBundles, setExpandedBundles] = useState<Record<string, boolean>>({});
 
-  const filtered = search.trim()
-    ? rooms.filter(r => {
-        const name = getRoomDisplayName(r, user?.id ?? '');
-        return name.toLowerCase().includes(search.toLowerCase());
-      })
-    : rooms;
-
-  const openRoom = (roomId: string) => {
-    router.push(`/chat/${roomId}` as any);
-  };
+  const openRoom = (roomId: string) => router.push(`/chat/${roomId}` as any);
+  const openGroup = (groupId: string) => router.push(`/group/${groupId}` as any);
 
   const handleNewDM = async (otherUserId: string) => {
     const roomId = await getOrCreateDM(otherUserId);
     if (roomId) openRoom(roomId);
-    else Alert.alert('Error', 'Could not open chat');
+    else Alert.alert('Error', 'Could not open direct message');
   };
 
-  const handleNewGroup = async (name: string, memberIds: string[]) => {
-    const roomId = await createGroup(name, memberIds);
-    if (roomId) openRoom(roomId);
-    else Alert.alert('Error', 'Could not create group');
+  const handleCreateCommunity = async (payload: {
+    name: string;
+    description: string;
+    privacy: SocialGroupPrivacy;
+    memberIds: string[];
+    canPost: SocialGroupPermission;
+    canChat: SocialGroupPermission;
+    canInvite: SocialGroupPermission;
+  }) => {
+    const groupId = await createGroup(payload);
+    if (!groupId) {
+      Alert.alert('Error', 'Could not create community');
+      return;
+    }
+    setShowNewCommunity(false);
+    openGroup(groupId);
+  };
+
+  const filteredRooms = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rooms;
+    return rooms.filter(room => {
+      const display = getRoomDisplayName(room, user?.id ?? '').toLowerCase();
+      const listingTitle = room.listing?.title?.toLowerCase() ?? '';
+      const preview = (room.last_message ?? '').toLowerCase();
+      return display.includes(q) || listingTitle.includes(q) || preview.includes(q);
+    });
+  }, [rooms, search, user?.id]);
+
+  const filteredGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return groups;
+    return groups.filter(group => {
+      const hay = `${group.name} ${group.description ?? ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [groups, search]);
+
+  const dmRooms = useMemo(
+    () => filteredRooms.filter(room => room.type === 'dm'),
+    [filteredRooms]
+  );
+
+  const adHocGroupChats = useMemo(
+    () => filteredRooms.filter(room => room.type === 'group' && !room.social_group_id),
+    [filteredRooms]
+  );
+
+  const marketplaceBundles = useMemo(() => {
+    const bundles = new Map<string, { sellerName: string; sellerAvatar: string | null; rooms: ChatRoom[] }>();
+    const marketplaceRooms = filteredRooms.filter(room => room.type === 'marketplace');
+
+    for (const room of marketplaceRooms) {
+      const other = room.members?.find(member => member.user_id !== user?.id);
+      const sellerName = other?.user?.username ?? 'Marketplace Seller';
+      const sellerAvatar = other?.user?.avatar_url ?? null;
+      const key = other?.user_id ?? sellerName;
+      if (!bundles.has(key)) {
+        bundles.set(key, { sellerName, sellerAvatar, rooms: [] });
+      }
+      bundles.get(key)!.rooms.push(room);
+    }
+
+    return Array.from(bundles.entries())
+      .map(([key, value]) => ({ key, ...value, rooms: value.rooms.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')) }))
+      .sort((a, b) => (b.rooms[0]?.updated_at || '').localeCompare(a.rooms[0]?.updated_at || ''));
+  }, [filteredRooms, user?.id]);
+
+  const onRefresh = async () => {
+    await Promise.all([fetchRooms(), refreshGroups()]);
+  };
+
+  const isRefreshing = roomsLoad || groupsRefreshing;
+  const isLoading = roomsLoad || groupsLoad;
+
+  const renderMarketplace = () => {
+    if (marketplaceBundles.length === 0) {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="storefront-outline" size={48} color="#2f2f2f" />
+          <Text style={styles.emptyTitle}>No marketplace threads yet</Text>
+          <Text style={styles.emptySubtitle}>Chats from the same seller will collapse together here.</Text>
+        </View>
+      );
+    }
+
+    return marketplaceBundles.map(bundle => (
+      <MarketplaceBundleCard
+        key={bundle.key}
+        sellerName={bundle.sellerName}
+        sellerAvatar={bundle.sellerAvatar}
+        rooms={bundle.rooms}
+        expanded={!!expandedBundles[bundle.key]}
+        onToggle={() => setExpandedBundles(prev => ({ ...prev, [bundle.key]: !prev[bundle.key] }))}
+        onOpenRoom={openRoom}
+      />
+    ));
+  };
+
+  const renderDMs = () => {
+    if (dmRooms.length === 0) {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="paper-plane-outline" size={48} color="#2f2f2f" />
+          <Text style={styles.emptyTitle}>No direct messages yet</Text>
+          <Text style={styles.emptySubtitle}>Tap the compose button to message another pilot.</Text>
+        </View>
+      );
+    }
+
+    return dmRooms.map(room => (
+      <ConversationRow
+        key={room.id}
+        title={getRoomDisplayName(room, user?.id ?? '')}
+        subtitle={room.last_message ?? 'Start the conversation'}
+        time={timeAgo(room.last_message_at)}
+        unreadCount={room.unread_count}
+        avatarUri={getRoomAvatar(room, user?.id ?? '')}
+        icon="person"
+        onPress={() => openRoom(room.id)}
+      />
+    ));
+  };
+
+  const renderGroups = () => {
+    if (filteredGroups.length === 0 && adHocGroupChats.length === 0) {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="people-outline" size={48} color="#2f2f2f" />
+          <Text style={styles.emptyTitle}>No communities yet</Text>
+          <Text style={styles.emptySubtitle}>Create a moderated team space with posts, members, and group chat.</Text>
+        </View>
+      );
+    }
+
+    return (
+      <>
+        {filteredGroups.length > 0 ? <SectionHeader title="Communities" subtitle="Posts, moderation, and a linked group chat" /> : null}
+        {filteredGroups.map(group => (
+          <ConversationRow
+            key={group.id}
+            title={group.name}
+            subtitle={group.description || `${group.member_count ?? 1} members • ${group.privacy.replace('_', ' ')}`}
+            time={timeAgo(group.updated_at)}
+            avatarUri={group.avatar_url}
+            icon="people"
+            badge={(group.my_role ?? 'member').toUpperCase()}
+            onPress={() => openGroup(group.id)}
+          />
+        ))}
+
+        {adHocGroupChats.length > 0 ? <SectionHeader title="Group chats" subtitle="Standalone group threads without a community feed" /> : null}
+        {adHocGroupChats.map(room => (
+          <ConversationRow
+            key={room.id}
+            title={room.name ?? 'Group Chat'}
+            subtitle={room.last_message ?? 'Open group chat'}
+            time={timeAgo(room.last_message_at)}
+            unreadCount={room.unread_count}
+            avatarUri={room.avatar_url}
+            icon="people"
+            onPress={() => openRoom(room.id)}
+          />
+        ))}
+      </>
+    );
+  };
+
+  const renderAll = () => {
+    const hasAnything = marketplaceBundles.length || dmRooms.length || filteredGroups.length || adHocGroupChats.length;
+
+    if (!hasAnything) {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="chatbubbles-outline" size={54} color="#2f2f2f" />
+          <Text style={styles.emptyTitle}>Your inbox is clean</Text>
+          <Text style={styles.emptySubtitle}>Marketplace chats now group by seller, and communities live in their own section.</Text>
+        </View>
+      );
+    }
+
+    return (
+      <>
+        {marketplaceBundles.length > 0 ? <SectionHeader title="Marketplace" subtitle="Collapsed by seller to keep your inbox tidy" /> : null}
+        {renderMarketplace()}
+
+        {dmRooms.length > 0 ? <SectionHeader title="Direct messages" subtitle="1:1 pilot conversations" /> : null}
+        {dmRooms.slice(0, 6).map(room => (
+          <ConversationRow
+            key={room.id}
+            title={getRoomDisplayName(room, user?.id ?? '')}
+            subtitle={room.last_message ?? 'Start the conversation'}
+            time={timeAgo(room.last_message_at)}
+            unreadCount={room.unread_count}
+            avatarUri={getRoomAvatar(room, user?.id ?? '')}
+            icon="person"
+            onPress={() => openRoom(room.id)}
+          />
+        ))}
+
+        {(filteredGroups.length > 0 || adHocGroupChats.length > 0) ? <SectionHeader title="Groups" subtitle="Communities first, then classic group chats" /> : null}
+        {filteredGroups.slice(0, 4).map(group => (
+          <ConversationRow
+            key={group.id}
+            title={group.name}
+            subtitle={group.description || `${group.member_count ?? 1} members`}
+            time={timeAgo(group.updated_at)}
+            avatarUri={group.avatar_url}
+            icon="people"
+            badge={(group.my_role ?? 'member').toUpperCase()}
+            onPress={() => openGroup(group.id)}
+          />
+        ))}
+        {adHocGroupChats.slice(0, 3).map(room => (
+          <ConversationRow
+            key={room.id}
+            title={room.name ?? 'Group Chat'}
+            subtitle={room.last_message ?? 'Open group chat'}
+            time={timeAgo(room.last_message_at)}
+            unreadCount={room.unread_count}
+            avatarUri={room.avatar_url}
+            icon="people"
+            onPress={() => openRoom(room.id)}
+          />
+        ))}
+      </>
+    );
   };
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Messages</Text>
+        <View>
+          <Text style={styles.headerTitle}>Messages</Text>
+          <Text style={styles.headerSubtitle}>Cleaner inbox, grouped marketplace threads, and real communities.</Text>
+        </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => setShowNewGroup(true)}>
-            <Ionicons name="people-outline" size={22} color="#ff4500" />
+          <TouchableOpacity style={styles.headerBtn} onPress={() => setShowNewCommunity(true)}>
+            <Ionicons name="people-outline" size={22} color="#ff6a2f" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerBtn} onPress={() => setShowNewDM(true)}>
-            <Ionicons name="create-outline" size={22} color="#ff4500" />
+            <Ionicons name="create-outline" size={22} color="#ff6a2f" />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Search */}
       <View style={styles.searchBar}>
         <Ionicons name="search" size={16} color="#666" />
         <TextInput
           style={styles.searchField}
-          placeholder="Search conversations…"
-          placeholderTextColor="#555"
+          placeholder="Search chats or communities…"
+          placeholderTextColor="#666"
           value={search}
           onChangeText={setSearch}
         />
-        {search.length > 0 && (
+        {search ? (
           <TouchableOpacity onPress={() => setSearch('')}>
             <Ionicons name="close-circle" size={16} color="#666" />
           </TouchableOpacity>
-        )}
+        ) : null}
       </View>
 
-      {/* Room list */}
-      {roomsLoad && rooms.length === 0
-        ? <ActivityIndicator color="#ff4500" style={{ marginTop: 40 }} />
-        : (
-          <FlatList
-            data={filtered}
-            keyExtractor={r => r.id}
-            renderItem={({ item }) => (
-              <RoomRow
-                room={item}
-                myId={user?.id ?? ''}
-                onPress={() => openRoom(item.id)}
-              />
-            )}
-            refreshing={roomsLoad}
-            onRefresh={fetchRooms}
-            ListEmptyComponent={
-              <View style={styles.empty}>
-                <Ionicons name="chatbubbles-outline" size={48} color="#333" />
-                <Text style={styles.emptyTitle}>No conversations yet</Text>
-                <Text style={styles.emptySub}>
-                  Tap the ✏️ icon to start a DM or the 👥 icon for a group chat
-                </Text>
-              </View>
-            }
-          />
-        )
-      }
+      <View style={styles.tabsWrap}>
+        {[
+          { key: 'all', label: 'All' },
+          { key: 'marketplace', label: 'Marketplace' },
+          { key: 'dm', label: 'DMs' },
+          { key: 'groups', label: 'Groups' },
+        ].map(item => (
+          <TouchableOpacity
+            key={item.key}
+            style={[styles.tabBtn, tab === item.key && styles.tabBtnActive]}
+            onPress={() => setTab(item.key as typeof tab)}
+          >
+            <Text style={[styles.tabBtnText, tab === item.key && styles.tabBtnTextActive]}>{item.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
-      {/* Modals */}
+      {isLoading && rooms.length === 0 && groups.length === 0 ? (
+        <ActivityIndicator color="#ff6a2f" style={{ marginTop: 40 }} />
+      ) : (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#ff6a2f" />}
+        >
+          {tab === 'all' && renderAll()}
+          {tab === 'marketplace' && renderMarketplace()}
+          {tab === 'dm' && renderDMs()}
+          {tab === 'groups' && renderGroups()}
+        </ScrollView>
+      )}
+
       <NewDMModal
         visible={showNewDM}
         onClose={() => setShowNewDM(false)}
         currentUserId={user?.id ?? ''}
         onSelect={handleNewDM}
       />
-      <NewGroupModal
-        visible={showNewGroup}
-        onClose={() => setShowNewGroup(false)}
+
+      <NewCommunityModal
+        visible={showNewCommunity}
+        onClose={() => setShowNewCommunity(false)}
         currentUserId={user?.id ?? ''}
-        onCreate={handleNewGroup}
+        onCreate={handleCreateCommunity}
       />
     </View>
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: '#0a0a0a' },
-  header:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 56, paddingBottom: 12 },
-  headerTitle:    { fontSize: 28, fontWeight: '700', color: '#fff' },
-  headerActions:  { flexDirection: 'row', gap: 8 },
-  headerBtn:      { padding: 8 },
+  container: { flex: 1, backgroundColor: '#0a0a0a' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 56,
+    paddingBottom: 14,
+    gap: 12,
+  },
+  headerTitle: { fontSize: 28, fontWeight: '700', color: '#fff' },
+  headerSubtitle: { color: '#7b7b7b', fontSize: 13, lineHeight: 18, marginTop: 4, maxWidth: 260 },
+  headerActions: { flexDirection: 'row', gap: 8 },
+  headerBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#171717',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#232323',
+  },
 
-  searchBar:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1a1a1a', borderRadius: 12, marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 12, paddingVertical: 9, gap: 8 },
-  searchField:    { flex: 1, color: '#fff', fontSize: 15 },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#151515',
+    borderRadius: 14,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  searchField: { flex: 1, color: '#fff', fontSize: 15 },
 
-  roomRow:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#1a1a1a' },
-  avatarWrap:     { position: 'relative', marginRight: 12 },
-  roomAvatar:     { width: 50, height: 50, borderRadius: 25 },
-  avatarFallback: { backgroundColor: '#1e1e1e', justifyContent: 'center', alignItems: 'center' },
-  mktBadge:       { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#ff4500', borderRadius: 8, width: 16, height: 16, justifyContent: 'center', alignItems: 'center' },
-  roomMeta:       { flex: 1 },
-  roomMetaRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
-  roomName:       { fontSize: 15, fontWeight: '600', color: '#e5e5e5', flex: 1, marginRight: 8 },
-  roomNameUnread: { color: '#fff', fontWeight: '700' },
-  roomTime:       { fontSize: 12, color: '#666' },
-  roomPreview:    { fontSize: 13, color: '#666', flex: 1, marginRight: 8 },
-  roomPreviewUnread: { color: '#aaa' },
-  unreadDot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ff4500' },
+  tabsWrap: { flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 8, gap: 8 },
+  tabBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: '#131313',
+    borderWidth: 1,
+    borderColor: '#242424',
+  },
+  tabBtnActive: { backgroundColor: '#26150c', borderColor: '#7a3d22' },
+  tabBtnText: { color: '#a3a3a3', fontSize: 13, fontWeight: '600' },
+  tabBtnTextActive: { color: '#ff9b68' },
 
-  empty:          { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32 },
-  emptyTitle:     { color: '#fff', fontSize: 18, fontWeight: '700', marginTop: 16, marginBottom: 8 },
-  emptySub:       { color: '#666', fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 32 },
+  sectionHeader: { marginTop: 14, marginBottom: 10 },
+  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  sectionSubtitle: { color: '#707070', fontSize: 12, marginTop: 2 },
 
-  // Modal
-  modalOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalSheet:     { backgroundColor: '#111', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 32 },
-  modalHeader:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#222' },
-  modalTitle:     { color: '#fff', fontSize: 17, fontWeight: '700' },
-  groupNameInput: { backgroundColor: '#2a2a2a', color: '#fff', borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 12, fontSize: 15, borderWidth: 1, borderColor: '#3a3a3a' },
-  searchInput:    { backgroundColor: '#2a2a2a', color: '#fff', borderRadius: 10, padding: 12, marginHorizontal: 16, marginTop: 8, fontSize: 15, borderWidth: 1, borderColor: '#3a3a3a' },
-  dmResultsList:  { backgroundColor: '#111', maxHeight: 280 },
-  noResults:      { color: '#666', textAlign: 'center', padding: 20, fontSize: 14 },
-  selectedChips:  { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 16, marginTop: 8 },
-  chip:           { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ff4500', borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, gap: 4 },
-  chipTxt:        { color: '#fff', fontSize: 13, fontWeight: '600' },
-  userRow:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2a2a2a', backgroundColor: '#111' },
-  userRowSelected:{ backgroundColor: '#1a1a1a' },
-  userAvatar:     { width: 38, height: 38, borderRadius: 19 },
-  userRowName:    { flex: 1, color: '#f0f0f0', fontSize: 15, fontWeight: '500' },
-  createBtn:      { backgroundColor: '#ff4500', margin: 16, borderRadius: 12, padding: 14, alignItems: 'center' },
-  createBtnTxt:   { color: '#fff', fontSize: 16, fontWeight: '700' },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: '#111',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1d1d1d',
+    marginBottom: 10,
+  },
+  rowMeta: { flex: 1 },
+  rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  rowBottom: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  rowTitle: { flex: 1, color: '#ececec', fontSize: 15, fontWeight: '600' },
+  rowTitleUnread: { color: '#fff', fontWeight: '700' },
+  rowSubtitle: { flex: 1, color: '#7e7e7e', fontSize: 13 },
+  rowSubtitleUnread: { color: '#b7b7b7' },
+  rowTime: { color: '#646464', fontSize: 12 },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: '#1d2938',
+  },
+  badgeText: { color: '#9cc8ff', fontSize: 10, fontWeight: '700' },
+  unreadPill: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#ff6a2f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  unreadPillText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+
+  avatarFallback: { backgroundColor: '#1d1d1d', justifyContent: 'center', alignItems: 'center' },
+
+  bundleCard: {
+    backgroundColor: '#111',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1d1d1d',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  bundleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  bundleHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  bundleHeaderRight: { alignItems: 'flex-end', gap: 6 },
+  bundleTime: { color: '#686868', fontSize: 12 },
+  bundleAvatarWrap: { position: 'relative' },
+  marketBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ff6a2f',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bundleTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bundleTitle: { flex: 1, color: '#fff', fontSize: 15, fontWeight: '700' },
+  bundleSubtitle: { color: '#8b8b8b', fontSize: 13, marginTop: 4 },
+  bundleChildren: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#232323',
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  bundleChildRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1d1d1d',
+  },
+  bundleThreadIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#1d120d',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bundleChildTitle: { color: '#ececec', fontSize: 14, fontWeight: '600' },
+  bundleChildSubtitle: { color: '#777', fontSize: 12, marginTop: 2 },
+  bundleChildTime: { color: '#626262', fontSize: 11 },
+
+  emptyState: {
+    paddingTop: 70,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  emptyTitle: { color: '#f1f1f1', fontSize: 18, fontWeight: '700', marginTop: 14 },
+  emptySubtitle: { color: '#6f6f6f', fontSize: 14, textAlign: 'center', lineHeight: 20, marginTop: 8 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' },
+  modalSheet: {
+    backgroundColor: '#101010',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    maxHeight: '88%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#212121',
+  },
+  modalTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
+
+  input: {
+    backgroundColor: '#171717',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#242424',
+    color: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    fontSize: 15,
+  },
+  textArea: { minHeight: 90, textAlignVertical: 'top' },
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16 },
+  choicePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#151515',
+    borderWidth: 1,
+    borderColor: '#272727',
+  },
+  choicePillActive: { backgroundColor: '#29160e', borderColor: '#8a4729' },
+  choicePillText: { color: '#a0a0a0', fontSize: 12, fontWeight: '600' },
+  choicePillTextActive: { color: '#ff9b68' },
+  permissionLabel: { color: '#cfcfcf', fontSize: 13, fontWeight: '600', paddingHorizontal: 16, marginTop: 10, marginBottom: 6 },
+
+  selectedWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, marginTop: 12 },
+  selectedChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ff6a2f',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  selectedChipText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  userRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1f1f1f',
+  },
+  userRowSelected: { backgroundColor: '#17120f' },
+  userName: { flex: 1, color: '#f1f1f1', fontSize: 15, fontWeight: '500' },
+  emptySearch: { color: '#666', textAlign: 'center', padding: 20 },
+
+  primaryBtn: {
+    marginHorizontal: 16,
+    marginTop: 18,
+    backgroundColor: '#ff6a2f',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

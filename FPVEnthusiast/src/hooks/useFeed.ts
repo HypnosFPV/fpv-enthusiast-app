@@ -16,6 +16,8 @@ export interface FeedPost {
   social_url?: string | null;
   platform?: string | null;
   created_at?: string | null;
+  group_id?: string | null;
+  post_scope?: 'public' | 'group' | null;
   like_count: number;
   comment_count: number;
   isLiked: boolean;
@@ -26,6 +28,10 @@ export interface FeedPost {
     id?: string | null;
     username?: string | null;
     avatar_url?: string | null;
+  } | null;
+  group?: {
+    id?: string | null;
+    name?: string | null;
   } | null;
 }
 
@@ -51,7 +57,9 @@ const POOL_SIZE    = 60;   // For You: fetch this many, then rank & trim
 const SELECT = `
   id, user_id, media_url, media_type, thumbnail_url, caption, tags,
   social_url, platform, created_at, likes_count, comments_count,
-  users:user_id (id, username, avatar_url)
+  group_id, post_scope,
+  users:user_id (id, username, avatar_url),
+  group:group_id ( id, name )
 `;
 
 export function useFeed(
@@ -66,6 +74,7 @@ export function useFeed(
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [groupIds, setGroupIds] = useState<string[]>([]);
 
   function mergeIsLiked(rawPosts: any[], likedIds: string[]): FeedPost[] {
     return rawPosts.map(p => ({
@@ -73,9 +82,17 @@ export function useFeed(
       like_count:    p.likes_count    ?? 0,
       comment_count: p.comments_count ?? 0,
       users: Array.isArray(p.users) ? (p.users[0] ?? null) : (p.users ?? null),
+      group: Array.isArray(p.group) ? (p.group[0] ?? null) : (p.group ?? null),
       isLiked: likedIds.includes(p.id),
     })) as FeedPost[];
   }
+
+  const applyGroupVisibility = <T,>(query: any): any => {
+    if (groupIds.length > 0) {
+      return query.or(`group_id.is.null,group_id.in.(${groupIds.join(',')})`);
+    }
+    return query.is('group_id', null);
+  };
 
   // ── Fetch the list of users the current user follows ──────────────────
   const loadFollowingIds = useCallback(async () => {
@@ -87,6 +104,15 @@ export function useFeed(
     setFollowingIds((data ?? []).map((r: any) => r.following_id));
   }, [currentUserId]);
 
+  const loadGroupIds = useCallback(async () => {
+    if (!currentUserId) { setGroupIds([]); return; }
+    const { data } = await supabase
+      .from('social_group_members')
+      .select('group_id')
+      .eq('user_id', currentUserId);
+    setGroupIds((data ?? []).map((row: any) => row.group_id));
+  }, [currentUserId]);
+
   // ── Core fetch ────────────────────────────────────────────────────────
   const fetchPosts = useCallback(async (pageIndex: number): Promise<FeedPost[]> => {
 
@@ -95,11 +121,15 @@ export function useFeed(
       const from = pageIndex * POOL_SIZE;
       const to   = from + POOL_SIZE - 1;
 
-      const { data, error } = await supabase
-        .from('posts')
-        .select(SELECT)
-        .order('created_at', { ascending: false })
-        .range(from, to);
+      const feedQuery = applyGroupVisibility(
+        supabase
+          .from('posts')
+          .select(SELECT)
+          .order('created_at', { ascending: false })
+          .range(from, to)
+      );
+
+      const { data, error } = await feedQuery;
 
       if (error) { console.error('[useFeed] for_you error:', error.message); return []; }
       if (!data?.length) return [];
@@ -129,12 +159,16 @@ export function useFeed(
       const from = pageIndex * PAGE_SIZE;
       const to   = from + PAGE_SIZE - 1;
 
-      const { data, error } = await supabase
-        .from('posts')
-        .select(SELECT)
-        .in('user_id', ids)
-        .order('created_at', { ascending: false })
-        .range(from, to);
+      const feedQuery = applyGroupVisibility(
+        supabase
+          .from('posts')
+          .select(SELECT)
+          .in('user_id', ids)
+          .order('created_at', { ascending: false })
+          .range(from, to)
+      );
+
+      const { data, error } = await feedQuery;
 
       if (error) { console.error('[useFeed] following error:', error.message); return []; }
       if (!data?.length) return [];
@@ -153,11 +187,15 @@ export function useFeed(
     const from = pageIndex * PAGE_SIZE;
     const to   = from + PAGE_SIZE - 1;
 
-    const { data, error } = await supabase
-      .from('posts')
-      .select(SELECT)
-      .order('created_at', { ascending: false })
-      .range(from, to);
+    const feedQuery = applyGroupVisibility(
+      supabase
+        .from('posts')
+        .select(SELECT)
+        .order('created_at', { ascending: false })
+        .range(from, to)
+    );
+
+    const { data, error } = await feedQuery;
 
     if (error) { console.error('[useFeed] fetchPosts error:', error.message); return []; }
     if (!data) return [];
@@ -172,7 +210,7 @@ export function useFeed(
 
     const likedIds = (likes ?? []).map((l: any) => l.post_id);
     return mergeIsLiked(data, likedIds);
-  }, [currentUserId, feedMode, followingIds, interestProfile]);
+  }, [currentUserId, feedMode, followingIds, groupIds, interestProfile]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -432,13 +470,14 @@ export function useFeed(
   // Load following IDs once userId is known
   useEffect(() => {
     loadFollowingIds();
-  }, [loadFollowingIds]);
+    loadGroupIds();
+  }, [loadFollowingIds, loadGroupIds]);
 
   // Initial load / refresh when feedMode or userId changes
   useEffect(() => {
     setLoading(true);
     onRefresh();
-  }, [feedMode, currentUserId]);
+  }, [feedMode, currentUserId, groupIds.join('|')]);
 
   return {
     posts,
