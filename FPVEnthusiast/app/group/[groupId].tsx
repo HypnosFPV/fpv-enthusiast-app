@@ -148,6 +148,8 @@ export default function GroupDetailScreen() {
   const [joinRequests, setJoinRequests] = useState<PendingJoinRequest[]>([]);
   const [posts, setPosts] = useState<GroupPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingPosts, setLoadingPosts] = useState(true);
+  const [loadingMemberMeta, setLoadingMemberMeta] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'posts' | 'members' | 'moderation' | 'about'>('posts');
   const [composerMode, setComposerMode] = useState<'text' | 'media' | 'social'>('text');
@@ -176,15 +178,28 @@ export default function GroupDetailScreen() {
   const fetchGroup = useCallback(async () => {
     if (!groupId) return;
 
-    const { data: groupData, error: groupError } = await supabase
-      .from('social_groups')
-      .select(`
-        id, name, description, privacy, avatar_url, cover_url,
-        created_by, chat_room_id, can_post, can_chat, can_invite,
-        created_at, updated_at
-      `)
-      .eq('id', groupId)
-      .single();
+    setLoadingPosts(true);
+    setLoadingMemberMeta(true);
+
+    const [{ data: groupData, error: groupError }, { data: memberData, error: memberError }] = await Promise.all([
+      supabase
+        .from('social_groups')
+        .select(`
+          id, name, description, privacy, avatar_url, cover_url,
+          created_by, chat_room_id, can_post, can_chat, can_invite,
+          moderation_mode, pinned_post_id, created_at, updated_at
+        `)
+        .eq('id', groupId)
+        .single(),
+      supabase
+        .from('social_group_members')
+        .select(`
+          group_id, user_id, role, invited_by, joined_at, last_seen_at,
+          user:user_id ( id, username, avatar_url )
+        `)
+        .eq('group_id', groupId)
+        .order('joined_at', { ascending: true }),
+    ]);
 
     if (groupError || !groupData) {
       console.warn('[group] fetchGroup error:', groupError?.message);
@@ -194,40 +209,69 @@ export default function GroupDetailScreen() {
       setJoinRequests([]);
       setPosts([]);
       setLoading(false);
+      setLoadingPosts(false);
+      setLoadingMemberMeta(false);
       setRefreshing(false);
       return;
     }
 
-    const { data: memberData } = await supabase
-      .from('social_group_members')
-      .select(`
-        group_id, user_id, role, invited_by, joined_at, last_seen_at,
-        user:user_id ( id, username, avatar_url )
-      `)
-      .eq('group_id', groupId)
-      .order('joined_at', { ascending: true });
+    if (memberError) {
+      console.warn('[group] fetchMembers error:', memberError.message);
+    }
 
-    const { data: inviteData } = await supabase
-      .from('social_group_invites')
-      .select(`
-        id, invited_user_id, created_at, role,
-        invited_user:invited_user_id ( id, username, avatar_url )
-      `)
-      .eq('group_id', groupId)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
+    const normalizedMembers = (memberData ?? []) as SocialGroupMember[];
+    const myRole = normalizedMembers.find(member => member.user_id === user?.id)?.role ?? null;
+    const normalizedGroup: SocialGroup = {
+      ...(groupData as SocialGroup),
+      my_role: myRole as any,
+      member_count: normalizedMembers.length,
+    };
 
-    const { data: postData, error: postError } = await supabase
-      .from('posts')
-      .select(`
-        id, user_id, media_url, media_type, thumbnail_url, caption,
-        social_url, platform, created_at, likes_count, comments_count,
-        group:group_id ( id, name ),
-        users:user_id ( id, username, avatar_url )
-      `)
-      .eq('group_id', groupId)
-      .order('created_at', { ascending: false })
-      .limit(50);
+    setGroup(normalizedGroup);
+    setDescriptionDraft(groupData.description ?? '');
+    setPrivacyDraft(groupData.privacy as SocialGroupPrivacy);
+    setCanPostDraft(groupData.can_post as SocialGroupPermission);
+    setCanChatDraft(groupData.can_chat as SocialGroupPermission);
+    setCanInviteDraft(groupData.can_invite as SocialGroupPermission);
+    setModerationModeDraft((groupData.moderation_mode ?? 'normal') as SocialGroupModerationMode);
+    setMembers(normalizedMembers);
+    setLoading(false);
+
+    const canReviewJoinRequests = !!myRole && ((groupData.can_invite as SocialGroupPermission) === 'members' || ['owner', 'admin', 'moderator'].includes(myRole));
+
+    const [{ data: inviteData }, { data: postData, error: postError }, requestResult] = await Promise.all([
+      supabase
+        .from('social_group_invites')
+        .select(`
+          id, invited_user_id, created_at, role,
+          invited_user:invited_user_id ( id, username, avatar_url )
+        `)
+        .eq('group_id', groupId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('posts')
+        .select(`
+          id, user_id, media_url, media_type, thumbnail_url, caption,
+          social_url, platform, created_at, likes_count, comments_count,
+          group:group_id ( id, name ),
+          users:user_id ( id, username, avatar_url )
+        `)
+        .eq('group_id', groupId)
+        .order('created_at', { ascending: false })
+        .limit(50),
+      canReviewJoinRequests
+        ? supabase
+            .from('social_group_join_requests')
+            .select(`
+              id, user_id, created_at, status,
+              user:user_id ( id, username, avatar_url )
+            `)
+            .eq('group_id', groupId)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
 
     if (postError) {
       console.warn('[group] fetchPosts error:', postError.message);
@@ -244,48 +288,19 @@ export default function GroupDetailScreen() {
       likedIds = (likes ?? []).map((row: any) => row.post_id);
     }
 
-    const myRole = ((memberData ?? []) as SocialGroupMember[]).find(member => member.user_id === user?.id)?.role ?? null;
-    const canReviewJoinRequests = !!myRole && ((groupData.can_invite as SocialGroupPermission) === 'members' || ['owner', 'admin', 'moderator'].includes(myRole));
+    const joinRequestData = ((requestResult?.data ?? []) as any[]).map((request) => ({
+      ...request,
+      user: Array.isArray(request.user) ? (request.user[0] ?? null) : (request.user ?? null),
+    })) as PendingJoinRequest[];
 
-    let joinRequestData: PendingJoinRequest[] = [];
-    if (canReviewJoinRequests) {
-      const { data: requestRows } = await supabase
-        .from('social_group_join_requests')
-        .select(`
-          id, user_id, created_at, status,
-          user:user_id ( id, username, avatar_url )
-        `)
-        .eq('group_id', groupId)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
-
-      joinRequestData = ((requestRows ?? []) as any[]).map((request) => ({
-        ...request,
-        user: Array.isArray(request.user) ? (request.user[0] ?? null) : (request.user ?? null),
-      })) as PendingJoinRequest[];
-    }
-
-    const normalizedGroup: SocialGroup = {
-      ...(groupData as SocialGroup),
-      my_role: myRole as any,
-      member_count: (memberData ?? []).length,
-    };
-
-    setGroup(normalizedGroup);
-    setDescriptionDraft(groupData.description ?? '');
-    setPrivacyDraft(groupData.privacy as SocialGroupPrivacy);
-    setCanPostDraft(groupData.can_post as SocialGroupPermission);
-    setCanChatDraft(groupData.can_chat as SocialGroupPermission);
-    setCanInviteDraft(groupData.can_invite as SocialGroupPermission);
-    setModerationModeDraft((groupData.moderation_mode ?? 'normal') as SocialGroupModerationMode);
-    setMembers((memberData ?? []) as SocialGroupMember[]);
     setPendingInvites(((inviteData ?? []) as any[]).map((invite) => ({
       ...invite,
       invited_user: Array.isArray(invite.invited_user) ? (invite.invited_user[0] ?? null) : (invite.invited_user ?? null),
     })) as PendingInvite[]);
     setJoinRequests(joinRequestData);
     setPosts(mergePostLikes(postData ?? [], likedIds));
-    setLoading(false);
+    setLoadingPosts(false);
+    setLoadingMemberMeta(false);
     setRefreshing(false);
   }, [groupId, user?.id]);
 
@@ -962,7 +977,12 @@ export default function GroupDetailScreen() {
               </TouchableOpacity>
             </View>
 
-            {posts.length === 0 ? (
+            {loadingPosts ? (
+              <View style={styles.emptyCard}>
+                <ActivityIndicator color="#ff6a2f" size="small" />
+                <Text style={styles.emptyTitle}>Loading posts…</Text>
+              </View>
+            ) : posts.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Ionicons name="albums-outline" size={42} color="#333" />
                 <Text style={styles.emptyTitle}>No group posts yet</Text>
@@ -996,6 +1016,13 @@ export default function GroupDetailScreen() {
                 </TouchableOpacity>
               ) : null}
             </View>
+
+            {loadingMemberMeta ? (
+              <View style={styles.inlineLoadingWrap}>
+                <ActivityIndicator color="#ff6a2f" size="small" />
+                <Text style={styles.inlineLoadingText}>Refreshing invites and join requests…</Text>
+              </View>
+            ) : null}
 
             {pendingInvites.length > 0 ? (
               <View style={styles.pendingInvitesWrap}>
@@ -1695,6 +1722,8 @@ const styles = StyleSheet.create({
   avatarFallback: { backgroundColor: '#1b1b1b', alignItems: 'center', justifyContent: 'center' },
   emptyTitle: { color: '#f1f1f1', fontSize: 18, fontWeight: '700', marginTop: 12 },
   emptySubtitle: { color: '#6f6f6f', fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 8 },
+  inlineLoadingWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
+  inlineLoadingText: { color: '#8c8c97', fontSize: 13 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
   modalBackdrop: { flex: 1 },

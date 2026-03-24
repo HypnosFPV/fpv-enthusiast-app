@@ -17,6 +17,13 @@ import PostCard from '../../src/components/PostCard';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CELL = SCREEN_W / 3;
+const PROFILE_LIST_PROPS = {
+  removeClippedSubviews: true,
+  initialNumToRender: 12,
+  maxToRenderPerBatch: 12,
+  windowSize: 7,
+  updateCellsBatchingPeriod: 50,
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -136,7 +143,8 @@ export default function UserProfileScreen() {
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loadingPosts, setLoadingPosts] = useState(true);
   const [activeTab, setActiveTab] = useState<'grid' | 'feed'>('grid');
   const [selectedPost, setSelectedPost] = useState<PostData | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -152,7 +160,8 @@ export default function UserProfileScreen() {
   useEffect(() => {
     if (!username) return;
     const fetchData = async () => {
-      setLoading(true);
+      setLoadingProfile(true);
+      setLoadingPosts(true);
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('users')
@@ -162,23 +171,30 @@ export default function UserProfileScreen() {
 
         if (profileError || !profileData) {
           console.error('[Profile] fetch error:', profileError);
+          setProfile(null);
+          setPosts([]);
           return;
         }
+
         setProfile(profileData as Profile);
+        setLoadingProfile(false);
 
         const { data: postsData, error: postsError } = await supabase
           .from('posts')
           .select('id, user_id, caption, media_url, media_type, platform, created_at, likes_count, comments_count')
           .eq('user_id', profileData.id)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(60);
 
         if (postsError) {
           console.error('[Profile] posts fetch error:', postsError);
+          setPosts([]);
         } else {
           setPosts((postsData ?? []) as Post[]);
         }
       } finally {
-        setLoading(false);
+        setLoadingProfile(false);
+        setLoadingPosts(false);
       }
     };
     fetchData();
@@ -192,8 +208,6 @@ export default function UserProfileScreen() {
       // Read from raw Post.media_url — NOT from toPostData output
       // (toPostData moves it to social_url, which doesn't exist on Post)
       const isIG = isInstagramUrl(item.media_url);
-
-      console.log(`[Grid] id=${item.id} media_url=${item.media_url} isIG=${isIG} ytId=${ytId} thumb=${thumb}`);
 
       const handlePress = () => {
         if (!profile) return;
@@ -270,7 +284,7 @@ export default function UserProfileScreen() {
   );
 
   // ── Loading / not found states ─────────────────────────────────────────────
-  if (loading) {
+  if (loadingProfile) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#ff4500" />
@@ -350,20 +364,33 @@ export default function UserProfileScreen() {
         </View>
 
         {/* Content */}
-        {activeTab === 'grid' ? (
+        {loadingPosts ? (
+          <View style={styles.postsLoadingWrap}>
+            <ActivityIndicator size="small" color="#ff4500" />
+            <Text style={styles.postsLoadingText}>Loading posts…</Text>
+          </View>
+        ) : activeTab === 'grid' ? (
           <FlatList
+            key="profile-grid-3"
             data={posts}
             keyExtractor={(p) => p.id}
             numColumns={3}
             renderItem={renderGridCell}
             scrollEnabled={false}
+            getItemLayout={(_, index) => {
+              const row = Math.floor(index / 3);
+              return { length: CELL, offset: CELL * row, index };
+            }}
+            {...PROFILE_LIST_PROPS}
           />
         ) : (
           <FlatList
+            key="profile-feed-list"
             data={posts}
             keyExtractor={(p) => p.id}
             renderItem={renderFeedItem}
             scrollEnabled={false}
+            {...PROFILE_LIST_PROPS}
           />
         )}
       </ScrollView>
@@ -455,6 +482,8 @@ const styles = StyleSheet.create({
   igBadge: { backgroundColor: '#C13584', right: undefined, left: 5 },
   videoBadge: { backgroundColor: 'rgba(0,0,0,0.65)' },
 
+  postsLoadingWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 28, gap: 10 },
+  postsLoadingText: { color: '#9a9a9a', fontSize: 13 },
   modalContainer: { flex: 1, backgroundColor: '#0a0a0a' },
   modalClose: { padding: 12, alignSelf: 'flex-end' },
 });
