@@ -17,7 +17,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { useProfile } from '../../src/hooks/useProfile';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
 import { useMute } from '../../src/hooks/useMute';
-import { useSocialGroups } from '../../src/hooks/useSocialGroups';
+import { useSocialGroups, SocialGroup } from '../../src/hooks/useSocialGroups';
 import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
 import { detectPlatform } from '../../src/utils/socialMedia';
 import { supabase } from '../../src/services/supabase';
@@ -121,7 +121,7 @@ export default function FeedScreen() {
   const propsToast = usePropsToast();
   const { unreadCount } = useNotificationsContext();
   const { mutedIds } = useMute(user?.id);
-  const { groups } = useSocialGroups(user?.id);
+  const { groups, discoverableGroups, pendingInvites, pendingJoinRequests, requestToJoinGroup } = useSocialGroups(user?.id);
   const lastRefreshAtRef = useRef(0);
   const hasInitialRefreshRef = useRef(false);
   const visiblePostIdRef = useRef<string | null>(null);
@@ -232,6 +232,7 @@ export default function FeedScreen() {
   const [creating, setCreating] = useState(false);
   const [postDestination, setPostDestination] = useState<'public' | 'group'>('public');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [actingGroupId, setActingGroupId] = useState<string | null>(null);
 
   const postableGroups = useMemo(() => groups.filter(group => {
     const role = group.my_role ?? 'member';
@@ -244,6 +245,202 @@ export default function FeedScreen() {
   ), [postableGroups, selectedGroupId]);
 
   const detectedPlatform = detectPlatform(socialUrl);
+
+  const pendingInviteGroupIds = useMemo(() => new Set(pendingInvites.map(invite => invite.group_id)), [pendingInvites]);
+  const pendingRequestGroupIds = useMemo(() => new Set(pendingJoinRequests.map(request => request.group_id)), [pendingJoinRequests]);
+  const highlightedGroups = useMemo(() => discoverableGroups.slice(0, 4), [discoverableGroups]);
+
+  const getCommunityAction = useCallback((group: SocialGroup) => {
+    if (groups.some(item => item.id === group.id)) {
+      return { label: 'Open', disabled: false, tone: 'joined' as const };
+    }
+    if (pendingInviteGroupIds.has(group.id)) {
+      return { label: 'Invited', disabled: true, tone: 'pending' as const };
+    }
+    if (pendingRequestGroupIds.has(group.id)) {
+      return { label: 'Requested', disabled: true, tone: 'pending' as const };
+    }
+    if (group.privacy === 'public') {
+      return { label: 'Join', disabled: false, tone: 'primary' as const };
+    }
+    return { label: 'Request', disabled: false, tone: 'secondary' as const };
+  }, [groups, pendingInviteGroupIds, pendingRequestGroupIds]);
+
+  const handleCommunityAction = useCallback(async (group: SocialGroup) => {
+    if (groups.some(item => item.id === group.id)) {
+      router.push(`/group/${group.id}` as any);
+      return;
+    }
+
+    if (pendingInviteGroupIds.has(group.id)) {
+      Alert.alert('Invite waiting', 'You already have an invite for this community. Open Messages to accept it.');
+      return;
+    }
+
+    if (pendingRequestGroupIds.has(group.id)) {
+      Alert.alert('Request pending', 'Your join request is already waiting for review.');
+      return;
+    }
+
+    setActingGroupId(group.id);
+    const status = await requestToJoinGroup(group.id);
+    setActingGroupId(null);
+
+    if (!status) {
+      Alert.alert('Error', 'Could not process that community action. Please try again.');
+      return;
+    }
+
+    if (status === 'joined' || status === 'already_member') {
+      router.push(`/group/${group.id}` as any);
+      return;
+    }
+
+    if (status === 'pending_invite') {
+      Alert.alert('Invite waiting', 'You already have an invite for this community. Open Messages to accept it.');
+      return;
+    }
+
+    if (status === 'pending_request' || status === 'requested') {
+      Alert.alert('Request sent', 'Your join request has been sent to the community team.');
+    }
+  }, [groups, pendingInviteGroupIds, pendingRequestGroupIds, requestToJoinGroup, router]);
+
+  const hasCommunityHeader = groups.length > 0 || highlightedGroups.length > 0 || pendingInvites.length > 0;
+  const feedHeader = useMemo(() => {
+    if (!hasCommunityHeader) return null;
+
+    return (
+      <View style={styles.feedHeaderWrap}>
+        <View style={styles.communitiesCard}>
+          <View style={styles.communitiesHeader}>
+            <View style={styles.communitiesHeaderTextWrap}>
+              <Text style={styles.communitiesTitle}>Communities</Text>
+              <Text style={styles.communitiesSubtitle}>
+                Jump into your groups faster, discover public communities, and stop hiding the feature behind Messages.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.communitiesSearchBtn}
+              activeOpacity={0.82}
+              onPress={() => router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
+            >
+              <Ionicons name="search-outline" size={15} color="#9cc8ff" />
+              <Text style={styles.communitiesSearchBtnText}>Browse</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.communitiesQuickRow}>
+            <TouchableOpacity
+              style={styles.communityQuickBtn}
+              activeOpacity={0.82}
+              onPress={() => router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
+            >
+              <Ionicons name="people-outline" size={16} color="#ffb088" />
+              <Text style={styles.communityQuickBtnText}>Find groups</Text>
+            </TouchableOpacity>
+            {pendingInvites.length > 0 ? (
+              <TouchableOpacity
+                style={styles.communityQuickBtn}
+                activeOpacity={0.82}
+                onPress={() => router.push('/(tabs)/chat')}
+              >
+                <Ionicons name="mail-open-outline" size={16} color="#ffb088" />
+                <Text style={styles.communityQuickBtnText}>Invites ({pendingInvites.length})</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          {groups.length > 0 ? (
+            <>
+              <View style={styles.communitySectionHeader}>
+                <Text style={styles.communitySectionTitle}>My groups</Text>
+                <Text style={styles.communitySectionMeta}>{groups.length}</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.groupRail}
+              >
+                {groups.slice(0, 8).map(group => (
+                  <TouchableOpacity
+                    key={group.id}
+                    style={styles.groupRailCard}
+                    activeOpacity={0.84}
+                    onPress={() => router.push(`/group/${group.id}` as any)}
+                  >
+                    <View style={styles.groupRailAvatar}>
+                      <Ionicons name="people-outline" size={18} color="#ff9b68" />
+                    </View>
+                    <Text style={styles.groupRailName} numberOfLines={1}>{group.name}</Text>
+                    <Text style={styles.groupRailMeta} numberOfLines={1}>
+                      {(group.member_count ?? 0)} members • {group.privacy === 'invite_only' ? 'invite only' : group.privacy}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          ) : null}
+
+          {highlightedGroups.length > 0 ? (
+            <>
+              <View style={styles.communitySectionHeader}>
+                <Text style={styles.communitySectionTitle}>Discover</Text>
+                <Text style={styles.communitySectionMeta}>{discoverableGroups.length}</Text>
+              </View>
+              <View style={styles.communityList}>
+                {highlightedGroups.map(group => {
+                  const action = getCommunityAction(group);
+                  return (
+                    <View key={group.id} style={styles.communityRow}>
+                      <TouchableOpacity
+                        style={styles.communityRowBody}
+                        activeOpacity={0.82}
+                        onPress={() => router.push(`/group/${group.id}` as any)}
+                      >
+                        <View style={styles.communityRowAvatar}>
+                          <Ionicons name="people-outline" size={16} color="#9cc8ff" />
+                        </View>
+                        <View style={styles.communityRowInfo}>
+                          <Text style={styles.communityRowName} numberOfLines={1}>{group.name}</Text>
+                          <Text style={styles.communityRowMeta} numberOfLines={2}>
+                            {(group.member_count ?? 0)} members • {group.description?.trim() || 'FPV community'}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.communityActionBtn,
+                          action.tone === 'joined' && styles.communityActionBtnJoined,
+                          action.tone === 'secondary' && styles.communityActionBtnSecondary,
+                          action.tone === 'pending' && styles.communityActionBtnPending,
+                          (action.disabled || actingGroupId === group.id) && { opacity: 0.65 },
+                        ]}
+                        activeOpacity={0.82}
+                        disabled={action.disabled || actingGroupId === group.id}
+                        onPress={() => void handleCommunityAction(group)}
+                      >
+                        {actingGroupId === group.id ? (
+                          <ActivityIndicator size="small" color={action.tone === 'primary' ? '#fff' : '#d8d8e5'} />
+                        ) : (
+                          <Text style={[
+                            styles.communityActionBtnText,
+                            action.tone !== 'primary' && styles.communityActionBtnTextMuted,
+                          ]}>
+                            {action.label}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+            </>
+          ) : null}
+        </View>
+      </View>
+    );
+  }, [actingGroupId, discoverableGroups.length, getCommunityAction, groups, handleCommunityAction, hasCommunityHeader, highlightedGroups, pendingInvites.length, router]);
 
   useEffect(() => {
     if (postDestination === 'group' && !selectedGroupId) {
@@ -418,31 +615,6 @@ export default function FeedScreen() {
 
   const renderPost = useCallback(({ item }: { item: FeedPost }) => (
     <View>
-      {item.group?.id && item.group?.name ? (
-        <TouchableOpacity
-          onPress={() => router.push(`/group/${item.group?.id}` as any)}
-          activeOpacity={0.82}
-          style={{
-            marginHorizontal: 12,
-            marginTop: 8,
-            marginBottom: 6,
-            alignSelf: 'flex-start',
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-            backgroundColor: '#162233',
-            borderRadius: 999,
-            paddingHorizontal: 10,
-            paddingVertical: 6,
-          }}
-        >
-          <Ionicons name="people-outline" size={12} color="#9cc8ff" />
-          <Text style={{ color: '#9cc8ff', fontSize: 12, fontWeight: '700' }}>
-            Group • {item.group.name}
-          </Text>
-        </TouchableOpacity>
-      ) : null}
-
       {/* ── "Why this post?" chip — only in For You mode ── */}
       {feedMode === 'for_you' && item.tags && item.tags.length > 0 && (
         <View style={styles.whyChipRow}>
@@ -464,7 +636,7 @@ export default function FeedScreen() {
         onDelete={handleDelete}
       />
     </View>
-  ), [visiblePostId, autoplayEnabled, user?.id, handleLike, handleDelete, feedMode, interestProfile, router]);
+  ), [visiblePostId, autoplayEnabled, user?.id, handleLike, handleDelete, feedMode, interestProfile]);
 
   if (loading && posts.length === 0) {
     return (
@@ -488,6 +660,17 @@ export default function FeedScreen() {
         <View style={styles.topBarIcons}>
           <TouchableOpacity style={styles.topBarIcon} onPress={() => router.push('/(tabs)/search')}>
             <Ionicons name="search-outline" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.topBarIcon}
+            onPress={() => router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
+          >
+            <Ionicons name="people-outline" size={24} color="#fff" />
+            {pendingInvites.length > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{pendingInvites.length > 9 ? '9+' : pendingInvites.length}</Text>
+              </View>
+            )}
           </TouchableOpacity>
           <TouchableOpacity style={styles.topBarIcon} onPress={() => router.push('/(tabs)/notifications')}>
             <Ionicons name="notifications-outline" size={24} color="#fff" />
@@ -553,7 +736,8 @@ export default function FeedScreen() {
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         scrollEventThrottle={16}
-        contentContainerStyle={visiblePosts.length === 0 ? styles.emptyContainer : undefined}
+        contentContainerStyle={visiblePosts.length === 0 && !hasCommunityHeader ? styles.emptyContainer : undefined}
+        ListHeaderComponent={feedHeader}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name="videocam-outline" size={64} color="#333" />
@@ -1349,6 +1533,121 @@ const styles = StyleSheet.create({
   groupAudienceMeta: { color: '#8a8a8a', fontSize: 12, lineHeight: 18 },
 
   // ── Feed mode tabs ────────────────────────────────────────────────────────
+
+  feedHeaderWrap: {
+    paddingTop: 10,
+    paddingBottom: 2,
+  },
+  communitiesCard: {
+    marginHorizontal: 12,
+    marginBottom: 10,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: '#101218',
+    borderWidth: 1,
+    borderColor: '#1f2630',
+    gap: 12,
+  },
+  communitiesHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  communitiesHeaderTextWrap: { flex: 1 },
+  communitiesTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  communitiesSubtitle: { color: '#7d8696', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  communitiesSearchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#132033',
+    borderWidth: 1,
+    borderColor: '#29496b',
+  },
+  communitiesSearchBtnText: { color: '#9cc8ff', fontSize: 12, fontWeight: '700' },
+  communitiesQuickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  communityQuickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#1b130f',
+    borderWidth: 1,
+    borderColor: '#3d2418',
+  },
+  communityQuickBtnText: { color: '#ffb088', fontSize: 12, fontWeight: '700' },
+  communitySectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  communitySectionTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  communitySectionMeta: { color: '#6f7b8b', fontSize: 12, fontWeight: '700' },
+  groupRail: { gap: 10, paddingVertical: 2 },
+  groupRailCard: {
+    width: 168,
+    borderRadius: 16,
+    padding: 12,
+    backgroundColor: '#151922',
+    borderWidth: 1,
+    borderColor: '#222a37',
+    gap: 8,
+  },
+  groupRailAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2a170e',
+    borderWidth: 1,
+    borderColor: '#5b3c24',
+  },
+  groupRailName: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  groupRailMeta: { color: '#778090', fontSize: 12, lineHeight: 17 },
+  communityList: { gap: 10 },
+  communityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 2,
+  },
+  communityRowBody: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 0 },
+  communityRowAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#132033',
+    borderWidth: 1,
+    borderColor: '#29496b',
+  },
+  communityRowInfo: { flex: 1, minWidth: 0 },
+  communityRowName: { color: '#f6f7fb', fontSize: 14, fontWeight: '700' },
+  communityRowMeta: { color: '#748093', fontSize: 12, lineHeight: 17, marginTop: 2 },
+  communityActionBtn: {
+    minWidth: 82,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#ff6a2f',
+  },
+  communityActionBtnJoined: { backgroundColor: '#152335', borderWidth: 1, borderColor: '#284669' },
+  communityActionBtnSecondary: { backgroundColor: '#17171f', borderWidth: 1, borderColor: '#303047' },
+  communityActionBtnPending: { backgroundColor: '#1e1e25', borderWidth: 1, borderColor: '#35353f' },
+  communityActionBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  communityActionBtnTextMuted: { color: '#d8d8e5' },
+
   feedTabs: {
     flexDirection: 'row',
     backgroundColor: '#0a0a0a',

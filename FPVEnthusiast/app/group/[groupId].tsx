@@ -46,6 +46,18 @@ interface PendingInvite {
   } | null;
 }
 
+interface PendingJoinRequest {
+  id: string;
+  user_id: string;
+  created_at: string;
+  status: 'pending' | 'approved' | 'declined' | 'cancelled';
+  user?: {
+    id?: string | null;
+    username?: string | null;
+    avatar_url?: string | null;
+  } | null;
+}
+
 interface GroupPost {
   id: string;
   user_id?: string | null;
@@ -125,6 +137,7 @@ export default function GroupDetailScreen() {
     moderatePost,
     updateGroupSettings,
     deleteGroup,
+    respondToJoinRequest,
   } = useSocialGroups(user?.id);
 
   const scrollRef = useRef<ScrollView | null>(null);
@@ -132,6 +145,7 @@ export default function GroupDetailScreen() {
   const [group, setGroup] = useState<SocialGroup | null>(null);
   const [members, setMembers] = useState<SocialGroupMember[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [joinRequests, setJoinRequests] = useState<PendingJoinRequest[]>([]);
   const [posts, setPosts] = useState<GroupPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -149,6 +163,7 @@ export default function GroupDetailScreen() {
   const [memberResults, setMemberResults] = useState<{ id: string; username: string; avatar_url: string | null }[]>([]);
   const [savingSettings, setSavingSettings] = useState(false);
   const [moderatingPostId, setModeratingPostId] = useState<string | null>(null);
+  const [respondingJoinRequestId, setRespondingJoinRequestId] = useState<string | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [deletingGroup, setDeletingGroup] = useState(false);
   const [descriptionDraft, setDescriptionDraft] = useState('');
@@ -176,6 +191,7 @@ export default function GroupDetailScreen() {
       setGroup(null);
       setMembers([]);
       setPendingInvites([]);
+      setJoinRequests([]);
       setPosts([]);
       setLoading(false);
       setRefreshing(false);
@@ -229,6 +245,25 @@ export default function GroupDetailScreen() {
     }
 
     const myRole = ((memberData ?? []) as SocialGroupMember[]).find(member => member.user_id === user?.id)?.role ?? null;
+    const canReviewJoinRequests = !!myRole && ((groupData.can_invite as SocialGroupPermission) === 'members' || ['owner', 'admin', 'moderator'].includes(myRole));
+
+    let joinRequestData: PendingJoinRequest[] = [];
+    if (canReviewJoinRequests) {
+      const { data: requestRows } = await supabase
+        .from('social_group_join_requests')
+        .select(`
+          id, user_id, created_at, status,
+          user:user_id ( id, username, avatar_url )
+        `)
+        .eq('group_id', groupId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      joinRequestData = ((requestRows ?? []) as any[]).map((request) => ({
+        ...request,
+        user: Array.isArray(request.user) ? (request.user[0] ?? null) : (request.user ?? null),
+      })) as PendingJoinRequest[];
+    }
 
     const normalizedGroup: SocialGroup = {
       ...(groupData as SocialGroup),
@@ -248,6 +283,7 @@ export default function GroupDetailScreen() {
       ...invite,
       invited_user: Array.isArray(invite.invited_user) ? (invite.invited_user[0] ?? null) : (invite.invited_user ?? null),
     })) as PendingInvite[]);
+    setJoinRequests(joinRequestData);
     setPosts(mergePostLikes(postData ?? [], likedIds));
     setLoading(false);
     setRefreshing(false);
@@ -273,6 +309,7 @@ export default function GroupDetailScreen() {
     () => members.filter(member => member.user_id !== user?.id),
     [members, user?.id]
   );
+  const pendingMemberActionsCount = pendingInvites.length + joinRequests.length;
   const moderationQueue = useMemo(() => posts.slice(0, 12), [posts]);
 
   const handleToggleLike = async (postId: string) => {
@@ -744,6 +781,22 @@ export default function GroupDetailScreen() {
               {group.moderation_mode === 'read_only' ? ' • Read only mode' : ''}
             </Text>
             {!!group.description && <Text style={styles.heroDescription}>{group.description}</Text>}
+            <View style={styles.heroStatsRow}>
+              <View style={styles.heroStatChip}>
+                <Ionicons name="people-outline" size={14} color="#9cc8ff" />
+                <Text style={styles.heroStatText}>{members.length} members</Text>
+              </View>
+              <View style={styles.heroStatChip}>
+                <Ionicons name="albums-outline" size={14} color="#9cc8ff" />
+                <Text style={styles.heroStatText}>{posts.length} posts</Text>
+              </View>
+              <View style={styles.heroStatChip}>
+                <Ionicons name="create-outline" size={14} color="#ffb088" />
+                <Text style={styles.heroStatText}>
+                  {group.can_post === 'members' && !isReadOnly ? 'Members can post' : isReadOnly ? 'Read only' : 'Moderators post'}
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -758,7 +811,14 @@ export default function GroupDetailScreen() {
             style={[styles.tabBtn, tab === 'members' && styles.tabBtnActive]}
             onPress={() => setTab('members')}
           >
-            <Text style={[styles.tabBtnText, tab === 'members' && styles.tabBtnTextActive]}>Members</Text>
+            <View style={styles.tabBtnLabelRow}>
+              <Text style={[styles.tabBtnText, tab === 'members' && styles.tabBtnTextActive]}>Members</Text>
+              {canModerate && pendingMemberActionsCount > 0 ? (
+                <View style={styles.tabBtnBadge}>
+                  <Text style={styles.tabBtnBadgeText}>{pendingMemberActionsCount}</Text>
+                </View>
+              ) : null}
+            </View>
           </TouchableOpacity>
           {canModerate ? (
             <TouchableOpacity
@@ -927,7 +987,7 @@ export default function GroupDetailScreen() {
             <View style={styles.membersHeader}>
               <View style={styles.membersHeaderTextWrap}>
                 <Text style={styles.cardTitle}>Members</Text>
-                <Text style={styles.cardSubtitle}>Browse the roster, pending invites, and who runs this community.</Text>
+                <Text style={styles.cardSubtitle}>Browse the roster, pending invites, join requests, and who runs this community.</Text>
               </View>
               {canInviteUsers ? (
                 <TouchableOpacity style={styles.secondaryBtn} onPress={() => setShowInviteModal(true)}>
@@ -952,6 +1012,42 @@ export default function GroupDetailScreen() {
                     </View>
                   </View>
                 ))}
+              </View>
+            ) : null}
+
+            {joinRequests.length > 0 ? (
+              <View style={styles.pendingInvitesWrap}>
+                <Text style={styles.pendingInvitesTitle}>Join requests</Text>
+                {joinRequests.map(request => {
+                  const approving = respondingJoinRequestId === `${request.id}:approve`;
+                  const declining = respondingJoinRequestId === `${request.id}:decline`;
+                  const busy = approving || declining;
+                  return (
+                    <View key={request.id} style={styles.pendingInviteRow}>
+                      <Avatar uri={request.user?.avatar_url} size={38} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.memberName}>{request.user?.username ?? request.user_id}</Text>
+                        <Text style={styles.pendingInviteMeta}>Requested access {timeAgo(request.created_at)} ago</Text>
+                      </View>
+                      <View style={styles.joinRequestActions}>
+                        <TouchableOpacity
+                          style={[styles.joinRequestBtn, styles.joinRequestBtnGhost, busy && { opacity: 0.55 }]}
+                          disabled={busy}
+                          onPress={() => handleRespondToJoinRequest(request.id, 'decline')}
+                        >
+                          {declining ? <ActivityIndicator size="small" color="#a8a8a8" /> : <Text style={[styles.joinRequestBtnText, styles.joinRequestBtnGhostText]}>Decline</Text>}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.joinRequestBtn, busy && { opacity: 0.55 }]}
+                          disabled={busy}
+                          onPress={() => handleRespondToJoinRequest(request.id, 'approve')}
+                        >
+                          {approving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.joinRequestBtnText}>Approve</Text>}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             ) : null}
 
@@ -1326,6 +1422,17 @@ const styles = StyleSheet.create({
   },
   cardTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
   cardSubtitle: { color: '#7e7e7e', fontSize: 13, lineHeight: 18, marginTop: 4 },
+  tabBtnLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tabBtnBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ff6a2f',
+  },
+  tabBtnBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   label: { color: '#d8d8d8', fontSize: 13, fontWeight: '700', marginTop: 14, marginBottom: 6 },
   textArea: {
     minHeight: 100,
@@ -1408,6 +1515,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#2a170e',
   },
   pendingInvitePillText: { color: '#ff9b68', fontSize: 10, fontWeight: '800' },
+  joinRequestActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  joinRequestBtn: {
+    minWidth: 74,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ff6a2f',
+  },
+  joinRequestBtnGhost: {
+    backgroundColor: '#161616',
+    borderWidth: 1,
+    borderColor: '#2c2c2c',
+  },
+  joinRequestBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  joinRequestBtnGhostText: { color: '#b5b5b5' },
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1425,6 +1549,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   rolePillText: { fontSize: 10, fontWeight: '800' },
+  heroStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  heroStatChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#151a22',
+    borderWidth: 1,
+    borderColor: '#242b37',
+  },
+  heroStatText: { color: '#cfd6e3', fontSize: 12, fontWeight: '600' },
 
   composerModeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14, marginBottom: 12 },
   composerModeChip: {

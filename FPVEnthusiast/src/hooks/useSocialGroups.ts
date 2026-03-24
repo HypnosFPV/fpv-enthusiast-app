@@ -57,6 +57,27 @@ export interface SocialGroupInvite {
   } | null;
 }
 
+export interface SocialGroupJoinRequest {
+  id: string;
+  group_id: string;
+  user_id: string;
+  status: 'pending' | 'approved' | 'declined' | 'cancelled';
+  created_at: string;
+  responded_at?: string | null;
+  responded_by?: string | null;
+  group?: SocialGroup | null;
+  user?: {
+    id?: string | null;
+    username?: string | null;
+    avatar_url?: string | null;
+  } | null;
+}
+
+export interface SocialGroupSearchResult extends SocialGroup {
+  has_pending_invite?: boolean;
+  has_pending_request?: boolean;
+}
+
 export interface SocialGroupBan {
   group_id: string;
   user_id: string;
@@ -137,6 +158,7 @@ export function useSocialGroups(currentUserId?: string) {
   const [groups, setGroups] = useState<SocialGroup[]>([]);
   const [discoverableGroups, setDiscoverableGroups] = useState<SocialGroup[]>([]);
   const [pendingInvites, setPendingInvites] = useState<SocialGroupInvite[]>([]);
+  const [pendingJoinRequests, setPendingJoinRequests] = useState<SocialGroupJoinRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -187,7 +209,7 @@ export function useSocialGroups(currentUserId?: string) {
     setGroups(
       groupRows
         .filter(row => row.group?.id)
-        .map(row => normalizeGroup(row.group, row.role as SocialGroupRole, counts[row.group.id] ?? 1))
+        .map(row => normalizeGroup(row.group, row.role as SocialGroupRole, counts[row.group.id] ?? 0))
     );
     setLoading(false);
   }, [currentUserId]);
@@ -228,13 +250,49 @@ export function useSocialGroups(currentUserId?: string) {
     );
   }, [currentUserId]);
 
+  const fetchPendingJoinRequests = useCallback(async () => {
+    if (!currentUserId) {
+      setPendingJoinRequests([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('social_group_join_requests')
+      .select(`
+        id, group_id, user_id, status, created_at, responded_at, responded_by,
+        group:group_id (
+          id, name, description, privacy, avatar_url, cover_url,
+          created_by, chat_room_id, can_post, can_chat, can_invite,
+          created_at, updated_at
+        ),
+        user:user_id ( id, username, avatar_url )
+      `)
+      .eq('user_id', currentUserId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('[useSocialGroups] fetchPendingJoinRequests error:', error.message);
+      setPendingJoinRequests([]);
+      return;
+    }
+
+    setPendingJoinRequests(
+      ((data ?? []) as any[]).map((request) => ({
+        ...request,
+        group: request.group ? normalizeGroup(request.group) : null,
+        user: Array.isArray(request.user) ? (request.user[0] ?? null) : (request.user ?? null),
+      })) as SocialGroupJoinRequest[]
+    );
+  }, [currentUserId]);
+
   const fetchDiscoverableGroups = useCallback(async () => {
     if (!currentUserId) {
       setDiscoverableGroups([]);
       return;
     }
 
-    const [{ data: memberRows, error: memberError }, { data: inviteRows, error: inviteError }, { data, error }] = await Promise.all([
+    const [{ data: memberRows, error: memberError }, { data: inviteRows, error: inviteError }, { data: requestRows, error: requestError }, { data, error }] = await Promise.all([
       supabase
         .from('social_group_members')
         .select('group_id')
@@ -243,6 +301,11 @@ export function useSocialGroups(currentUserId?: string) {
         .from('social_group_invites')
         .select('group_id')
         .eq('invited_user_id', currentUserId)
+        .eq('status', 'pending'),
+      supabase
+        .from('social_group_join_requests')
+        .select('group_id')
+        .eq('user_id', currentUserId)
         .eq('status', 'pending'),
       supabase
         .from('social_groups')
@@ -262,6 +325,9 @@ export function useSocialGroups(currentUserId?: string) {
     if (inviteError) {
       console.warn('[useSocialGroups] fetchDiscoverableGroups inviteRows error:', inviteError.message);
     }
+    if (requestError) {
+      console.warn('[useSocialGroups] fetchDiscoverableGroups requestRows error:', requestError.message);
+    }
     if (error) {
       console.warn('[useSocialGroups] fetchDiscoverableGroups error:', error.message);
       setDiscoverableGroups([]);
@@ -271,6 +337,7 @@ export function useSocialGroups(currentUserId?: string) {
     const hiddenGroupIds = new Set<string>([
       ...((memberRows ?? []) as any[]).map(row => row.group_id as string),
       ...((inviteRows ?? []) as any[]).map(row => row.group_id as string),
+      ...((requestRows ?? []) as any[]).map(row => row.group_id as string),
     ]);
 
     const publicRows = ((data ?? []) as any[]).filter(row => row?.id && !hiddenGroupIds.has(row.id));
@@ -289,14 +356,14 @@ export function useSocialGroups(currentUserId?: string) {
       }
     }
 
-    setDiscoverableGroups(publicRows.map(row => normalizeGroup(row, null, counts[row.id] ?? 1)));
+    setDiscoverableGroups(publicRows.map(row => normalizeGroup(row, null, counts[row.id] ?? 0)));
   }, [currentUserId]);
 
   const refreshGroups = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchDiscoverableGroups()]);
+    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchPendingJoinRequests(), fetchDiscoverableGroups()]);
     setRefreshing(false);
-  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites]);
+  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites, fetchPendingJoinRequests]);
 
   const createGroup = useCallback(async ({
     name,
@@ -322,9 +389,9 @@ export function useSocialGroups(currentUserId?: string) {
       return null;
     }
 
-    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchDiscoverableGroups()]);
+    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchPendingJoinRequests(), fetchDiscoverableGroups()]);
     return data as string;
-  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites]);
+  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites, fetchPendingJoinRequests]);
 
   const addMember = useCallback(async (
     groupId: string,
@@ -340,9 +407,9 @@ export function useSocialGroups(currentUserId?: string) {
       console.warn('[useSocialGroups] addMember error:', error.message);
       return false;
     }
-    await fetchPendingInvites();
+    await Promise.all([fetchPendingInvites(), fetchPendingJoinRequests()]);
     return true;
-  }, [fetchPendingInvites]);
+  }, [fetchPendingInvites, fetchPendingJoinRequests]);
 
   const acceptInvite = useCallback(async (inviteId: string): Promise<boolean> => {
     const { error } = await supabase.rpc('accept_social_group_invite', {
@@ -352,9 +419,9 @@ export function useSocialGroups(currentUserId?: string) {
       console.warn('[useSocialGroups] acceptInvite error:', error.message);
       return false;
     }
-    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchDiscoverableGroups()]);
+    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchPendingJoinRequests(), fetchDiscoverableGroups()]);
     return true;
-  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites]);
+  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites, fetchPendingJoinRequests]);
 
   const declineInvite = useCallback(async (inviteId: string): Promise<boolean> => {
     const { error } = await supabase.rpc('decline_social_group_invite', {
@@ -367,6 +434,68 @@ export function useSocialGroups(currentUserId?: string) {
     await fetchPendingInvites();
     return true;
   }, [fetchPendingInvites]);
+
+  const requestToJoinGroup = useCallback(async (groupId: string): Promise<'joined' | 'requested' | 'already_member' | 'pending_invite' | 'pending_request' | null> => {
+    const { data, error } = await supabase.rpc('request_to_join_social_group', {
+      p_group_id: groupId,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] requestToJoinGroup error:', error.message);
+      return null;
+    }
+    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchPendingJoinRequests(), fetchDiscoverableGroups()]);
+    return (data as any) ?? null;
+  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites, fetchPendingJoinRequests]);
+
+  const respondToJoinRequest = useCallback(async (requestId: string, action: 'approve' | 'decline'): Promise<boolean> => {
+    const { error } = await supabase.rpc('respond_to_social_group_join_request', {
+      p_request_id: requestId,
+      p_action: action,
+    });
+    if (error) {
+      console.warn('[useSocialGroups] respondToJoinRequest error:', error.message);
+      return false;
+    }
+    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchPendingJoinRequests(), fetchDiscoverableGroups()]);
+    return true;
+  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites, fetchPendingJoinRequests]);
+
+  const searchGroups = useCallback(async (query: string): Promise<SocialGroupSearchResult[]> => {
+    const q = query.trim();
+    if (!currentUserId || !q) return [];
+
+    const { data, error } = await supabase.rpc('search_social_groups', {
+      p_query: q,
+      p_limit: 30,
+    });
+
+    if (error) {
+      console.warn('[useSocialGroups] searchGroups error:', error.message);
+      return [];
+    }
+
+    return ((data ?? []) as any[]).map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description ?? null,
+      privacy: row.privacy,
+      avatar_url: row.avatar_url ?? null,
+      cover_url: row.cover_url ?? null,
+      created_by: row.created_by,
+      chat_room_id: row.chat_room_id ?? null,
+      can_post: row.can_post,
+      can_chat: row.can_chat,
+      can_invite: row.can_invite,
+      moderation_mode: (row.moderation_mode ?? 'normal') as SocialGroupModerationMode,
+      pinned_post_id: row.pinned_post_id ?? null,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      my_role: (row.my_role ?? null) as SocialGroupRole | null,
+      member_count: Number(row.member_count ?? 0),
+      has_pending_invite: !!row.has_pending_invite,
+      has_pending_request: !!row.has_pending_request,
+    }));
+  }, [currentUserId]);
 
   const updateMemberRole = useCallback(async (
     groupId: string,
@@ -408,9 +537,9 @@ export function useSocialGroups(currentUserId?: string) {
       console.warn('[useSocialGroups] banMember error:', error.message);
       return false;
     }
-    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchDiscoverableGroups()]);
+    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchPendingJoinRequests(), fetchDiscoverableGroups()]);
     return true;
-  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites]);
+  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites, fetchPendingJoinRequests]);
 
   const unbanMember = useCallback(async (groupId: string, userId: string): Promise<boolean> => {
     const { error } = await supabase.rpc('unban_social_group_member', {
@@ -463,9 +592,9 @@ export function useSocialGroups(currentUserId?: string) {
       return false;
     }
 
-    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchDiscoverableGroups()]);
+    await Promise.all([fetchGroups(), fetchPendingInvites(), fetchPendingJoinRequests(), fetchDiscoverableGroups()]);
     return true;
-  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites]);
+  }, [fetchDiscoverableGroups, fetchGroups, fetchPendingInvites, fetchPendingJoinRequests]);
 
   const pinPost = useCallback(async (groupId: string, postId: string | null): Promise<boolean> => {
     const { error } = await supabase.rpc('pin_social_group_post', {
@@ -546,10 +675,11 @@ export function useSocialGroups(currentUserId?: string) {
       setGroups([]);
       setDiscoverableGroups([]);
       setPendingInvites([]);
+      setPendingJoinRequests([]);
       return;
     }
-    void Promise.all([fetchGroups(), fetchPendingInvites(), fetchDiscoverableGroups()]);
-  }, [currentUserId, fetchDiscoverableGroups, fetchGroups, fetchPendingInvites]);
+    void Promise.all([fetchGroups(), fetchPendingInvites(), fetchPendingJoinRequests(), fetchDiscoverableGroups()]);
+  }, [currentUserId, fetchDiscoverableGroups, fetchGroups, fetchPendingInvites, fetchPendingJoinRequests]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -566,15 +696,21 @@ export function useSocialGroups(currentUserId?: string) {
         { event: '*', schema: 'public', table: 'social_group_invites', filter: `invited_user_id=eq.${currentUserId}` },
         () => { void fetchPendingInvites(); }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'social_group_join_requests', filter: `user_id=eq.${currentUserId}` },
+        () => { void fetchPendingJoinRequests(); }
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [currentUserId, fetchGroups, fetchPendingInvites]);
+  }, [currentUserId, fetchGroups, fetchPendingInvites, fetchPendingJoinRequests]);
 
   return {
     groups,
     discoverableGroups,
     pendingInvites,
+    pendingJoinRequests,
     loading,
     refreshing,
     fetchGroups,
@@ -583,6 +719,9 @@ export function useSocialGroups(currentUserId?: string) {
     addMember,
     acceptInvite,
     declineInvite,
+    requestToJoinGroup,
+    respondToJoinRequest,
+    searchGroups,
     updateMemberRole,
     removeMember,
     banMember,

@@ -7,6 +7,7 @@ import {
   Keyboard, PanResponder, ScrollView, Animated, Pressable,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -119,6 +120,7 @@ interface PostData {
   likes_count?: number;
   comments_count?: number;
   users?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
+  group?: { id?: string | null; name?: string | null } | null;
 }
 
 const COMMENTS_PAGE = 10; // how many top-level threads to show at once
@@ -133,6 +135,7 @@ interface Comment {
   updated_at?: string | null;
   likes_count?: number;
   users?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
+  group?: { id?: string | null; name?: string | null } | null;
 }
 
 interface CommentLikeState { liked: boolean; count: number; }
@@ -302,6 +305,7 @@ const nvStyles = StyleSheet.create({
 
 export default function PostCard(props: Props) {
   const { post, currentUserId, onLike, onDelete, onCaptionUpdate, canManagePost } = props;
+  const router = useRouter();
 
   const webViewRef = useRef<WebView | null>(null);
   const commentInputRef = useRef<TextInput | null>(null);
@@ -1101,6 +1105,18 @@ export default function PostCard(props: Props) {
         <View style={styles.headerInfo}>
           <Text style={styles.username}>{post.users?.username || 'Unknown'}</Text>
           <Text style={styles.timestamp}>{timeAgo(post.created_at)}</Text>
+          {post.group?.id && post.group?.name ? (
+            <TouchableOpacity
+              style={styles.groupLinkChip}
+              activeOpacity={0.8}
+              onPress={() => router.push(`/group/${post.group?.id}` as any)}
+            >
+              <Ionicons name="people-outline" size={11} color="#9cc8ff" />
+              <Text style={styles.groupLinkText} numberOfLines={1}>
+                View group • {post.group.name}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
         {canOpenOwnerMenu ? (
           <TouchableOpacity onPress={function () { setShowOwnerMenu(true); }} style={styles.menuBtn}>
@@ -1345,6 +1361,21 @@ const styles = StyleSheet.create({
   headerInfo: { flex: 1 },
   username: { color: '#f0f0f0', fontWeight: '700', fontSize: 14, letterSpacing: 0.2 },
   timestamp: { color: '#666', fontSize: 11, marginTop: 1 },
+  groupLinkChip: {
+    marginTop: 7,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#132033',
+    borderWidth: 1,
+    borderColor: '#29496b',
+    maxWidth: '100%',
+  },
+  groupLinkText: { color: '#9cc8ff', fontSize: 11, fontWeight: '700', flexShrink: 1 },
   menuBtn: { padding: 6 },
   videoContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative' },
   webView: { flex: 1, backgroundColor: '#000' },
