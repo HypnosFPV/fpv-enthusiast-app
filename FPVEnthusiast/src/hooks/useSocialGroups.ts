@@ -155,7 +155,6 @@ export function useSocialGroups(currentUserId?: string) {
         group:group_id (
           id, name, description, privacy, avatar_url, cover_url,
           created_by, chat_room_id, can_post, can_chat, can_invite,
-          moderation_mode, pinned_post_id,
           created_at, updated_at
         )
       `)
@@ -206,7 +205,6 @@ export function useSocialGroups(currentUserId?: string) {
         group:group_id (
           id, name, description, privacy, avatar_url, cover_url,
           created_by, chat_room_id, can_post, can_chat, can_invite,
-          moderation_mode, pinned_post_id,
           created_at, updated_at
         ),
         inviter:invited_by ( id, username, avatar_url )
@@ -251,7 +249,6 @@ export function useSocialGroups(currentUserId?: string) {
         .select(`
           id, name, description, privacy, avatar_url, cover_url,
           created_by, chat_room_id, can_post, can_chat, can_invite,
-          moderation_mode, pinned_post_id,
           created_at, updated_at
         `)
         .eq('privacy', 'public')

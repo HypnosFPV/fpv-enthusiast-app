@@ -154,7 +154,6 @@ export default function GroupDetailScreen() {
       .select(`
         id, name, description, privacy, avatar_url, cover_url,
         created_by, chat_room_id, can_post, can_chat, can_invite,
-        moderation_mode, pinned_post_id,
         created_at, updated_at
       `)
       .eq('id', groupId)
