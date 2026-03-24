@@ -57,10 +57,37 @@ serve(async (req) => {
   }
 
   const pi = event.data.object as Stripe.PaymentIntent;
+  const paymentKind = pi.metadata?.kind ?? null;
 
   // ── Handle events ──────────────────────────────────────────────────────────
   if (event.type === 'payment_intent.succeeded') {
     const now = new Date().toISOString();
+
+    if (paymentKind === 'group_custom_theme') {
+      const { data: customTheme, error: themeErr } = await supabase
+        .from('social_group_custom_themes')
+        .update({ status: 'paid', updated_at: now })
+        .eq('stripe_payment_intent', pi.id)
+        .select('id, group_id, owner_user_id')
+        .single();
+
+      if (themeErr || !customTheme) {
+        console.error('Custom theme not found for PI', pi.id, themeErr);
+        return json({ received: true });
+      }
+
+      await supabase
+        .from('social_group_theme_preferences')
+        .upsert({
+          user_id: customTheme.owner_user_id,
+          group_id: customTheme.group_id,
+          active_theme_type: 'custom',
+          active_theme_id: customTheme.id,
+          updated_at: now,
+        }, { onConflict: 'user_id,group_id' });
+
+      return json({ received: true });
+    }
 
     const { data: order, error: fetchErr } = await supabase
       .from('marketplace_orders')
@@ -73,23 +100,20 @@ serve(async (req) => {
       return json({ received: true });
     }
 
-    // Update order → paid
     await supabase
       .from('marketplace_orders')
       .update({ status: 'paid', paid_at: now, updated_at: now })
       .eq('id', order.id);
 
-    // Mark listing sold
     await supabase
       .from('marketplace_listings')
       .update({ status: 'sold', updated_at: now })
       .eq('id', order.listing_id);
 
-    // Notify seller
     await supabase.from('notifications').insert({
       user_id:    order.seller_id,
       actor_id:   order.buyer_id,
-      type:       'new_message',   // closest existing type; extend if needed
+      type:       'new_message',
       entity_id:  order.listing_id,
       entity_type: 'listing',
       body:       `Someone bought your listing for $${(order.amount_cents / 100).toFixed(2)}! Ship it within 3 days.`,
@@ -100,6 +124,15 @@ serve(async (req) => {
     event.type === 'payment_intent.payment_failed'
   ) {
     const now = new Date().toISOString();
+
+    if (paymentKind === 'group_custom_theme') {
+      await supabase
+        .from('social_group_custom_themes')
+        .update({ status: 'cancelled', updated_at: now })
+        .eq('stripe_payment_intent', pi.id);
+      return json({ received: true });
+    }
+
     await supabase
       .from('marketplace_orders')
       .update({ status: 'cancelled', cancelled_at: now, updated_at: now })

@@ -1,5 +1,5 @@
 // src/components/PostCard.tsx
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, Image, TouchableOpacity, StyleSheet,
   AppState, Modal, Alert, ActivityIndicator, TextInput,
@@ -16,6 +16,7 @@ import MentionTextInputComponent from './MentionTextInput';
 import MentionText from './MentionText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ImageZoomModal from './ImageZoomModal';
+import { useResolvedGroupTheme } from '../hooks/useGroupThemes';
 
 const MentionTextInput = MentionTextInputComponent as any;
 
@@ -448,6 +449,22 @@ export default function PostCard(props: Props) {
   const canOpenOwnerMenu = isOwner || !!canManagePost;
   const deleteActionLabel = isOwner ? 'Delete Post' : 'Remove Post';
   const insets = useSafeAreaInsets();
+  const isGroupPost = !!post.group?.id;
+  const { theme: resolvedGroupTheme } = useResolvedGroupTheme(currentUserId ?? undefined, post.group?.id ?? undefined);
+  const activeGroupTheme = isGroupPost ? resolvedGroupTheme : null;
+  const themedCardStyle = useMemo(() => activeGroupTheme ? ({
+    backgroundColor: activeGroupTheme.surfaceColor,
+    borderColor: activeGroupTheme.borderColor,
+  }) : null, [activeGroupTheme]);
+  const themedHeaderText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
+  const themedMutedText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.mutedTextColor }) : null, [activeGroupTheme]);
+  const themedGroupChipStyle = useMemo(() => activeGroupTheme ? ({
+    backgroundColor: activeGroupTheme.chipBackgroundColor,
+    borderColor: activeGroupTheme.borderColor,
+  }) : null, [activeGroupTheme]);
+  const themedGroupChipText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.chipTextColor }) : null, [activeGroupTheme]);
+  const themedCaptionStyle = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
+  const themedActionsStyle = useMemo(() => activeGroupTheme ? ({ borderTopColor: activeGroupTheme.borderColor }) : null, [activeGroupTheme]);
 
   const commentsPanResponder = useRef(
     PanResponder.create({
@@ -1092,27 +1109,33 @@ export default function PostCard(props: Props) {
 
   // ── Main render ───────────────────────────────────────────────────────────
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, activeGroupTheme && styles.themedCard, themedCardStyle]}>
+      {activeGroupTheme?.cardImageUrl ? (
+        <>
+          <Image source={{ uri: activeGroupTheme.cardImageUrl }} style={styles.themedCardImage} resizeMode="cover" />
+          <View style={[styles.themedCardOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.2, (activeGroupTheme.overlayStrength ?? 72) / 100)})` }]} />
+        </>
+      ) : null}
       <View style={styles.header}>
         <View style={styles.avatarWrap}>
           {post.users?.avatar_url
             ? <Image source={{ uri: post.users.avatar_url }} style={styles.avatar} />
             : <View style={styles.avatarFallback}>
-                <Text style={styles.avatarInitial}>{(post.users?.username || '?')[0].toUpperCase()}</Text>
+                <Text style={[styles.avatarInitial, themedGroupChipText]}>{(post.users?.username || '?')[0].toUpperCase()}</Text>
               </View>
           }
         </View>
         <View style={styles.headerInfo}>
-          <Text style={styles.username}>{post.users?.username || 'Unknown'}</Text>
-          <Text style={styles.timestamp}>{timeAgo(post.created_at)}</Text>
+          <Text style={[styles.username, themedHeaderText]}>{post.users?.username || 'Unknown'}</Text>
+          <Text style={[styles.timestamp, themedMutedText]}>{timeAgo(post.created_at)}</Text>
           {post.group?.id && post.group?.name ? (
             <TouchableOpacity
-              style={styles.groupLinkChip}
+              style={[styles.groupLinkChip, themedGroupChipStyle]}
               activeOpacity={0.8}
               onPress={() => router.push(`/group/${post.group?.id}` as any)}
             >
-              <Ionicons name="people-outline" size={11} color="#9cc8ff" />
-              <Text style={styles.groupLinkText} numberOfLines={1}>
+              <Ionicons name="people-outline" size={11} color={activeGroupTheme?.chipTextColor ?? '#9cc8ff'} />
+              <Text style={[styles.groupLinkText, themedGroupChipText]} numberOfLines={1}>
                 View group • {post.group.name}
               </Text>
             </TouchableOpacity>
@@ -1120,7 +1143,7 @@ export default function PostCard(props: Props) {
         </View>
         {canOpenOwnerMenu ? (
           <TouchableOpacity onPress={function () { setShowOwnerMenu(true); }} style={styles.menuBtn}>
-            <Ionicons name="ellipsis-horizontal" size={20} color="#666" />
+            <Ionicons name="ellipsis-horizontal" size={20} color={activeGroupTheme?.mutedTextColor ?? '#666'} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -1128,7 +1151,7 @@ export default function PostCard(props: Props) {
       {renderMedia()}
 
       {post.caption
-        ? <View style={styles.captionWrap}><MentionText text={post.caption ?? ''} style={styles.caption} /></View>
+        ? <View style={styles.captionWrap}><MentionText text={post.caption ?? ''} style={[styles.caption, themedCaptionStyle]} /></View>
         : null}
 
       {/* ── Tags (collapsible) ──────────────────────────────────────────── */}
@@ -1181,7 +1204,7 @@ export default function PostCard(props: Props) {
       )}
 
       {/* ── Action bar ──────────────────────────────────────────────────── */}
-      <View style={styles.actions}>
+      <View style={[styles.actions, themedActionsStyle]}>
         <TouchableOpacity
           style={styles.actionBtn}
           onPress={handleLikePress}
@@ -1192,10 +1215,10 @@ export default function PostCard(props: Props) {
             <Ionicons
               name={localLiked ? 'heart' : 'heart-outline'}
               size={26}
-              color={localLiked ? '#e74c3c' : '#666'}
+              color={localLiked ? '#e74c3c' : (activeGroupTheme?.mutedTextColor ?? '#666')}
             />
           </Animated.View>
-          <Text style={[styles.actionCount, localLiked && styles.actionCountLiked]}>
+          <Text style={[styles.actionCount, themedMutedText, localLiked && styles.actionCountLiked]}>
             {localLikeCount}
           </Text>
         </TouchableOpacity>
@@ -1208,11 +1231,13 @@ export default function PostCard(props: Props) {
           <Ionicons
             name={localCommentCount > 0 ? 'chatbubble' : 'chatbubble-outline'}
             size={24}
-            color={localCommentCount > 0 ? '#4fc3f7' : '#666'}
+            color={localCommentCount > 0 ? (activeGroupTheme?.accentColor ?? '#4fc3f7') : (activeGroupTheme?.mutedTextColor ?? '#666')}
           />
           <Text style={[
             styles.actionCount,
+            themedMutedText,
             localCommentCount > 0 && styles.actionCountComment,
+            localCommentCount > 0 && activeGroupTheme ? { color: activeGroupTheme.accentColor } : null,
           ]}>
             {localCommentCount}
           </Text>
@@ -1353,6 +1378,9 @@ export default function PostCard(props: Props) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   card: { backgroundColor: '#13132a', marginBottom: 10, borderRadius: 14, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
+  themedCard: { borderWidth: 1 },
+  themedCardImage: { ...StyleSheet.absoluteFillObject, opacity: 0.24 },
+  themedCardOverlay: { ...StyleSheet.absoluteFillObject },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
   avatarWrap: { marginRight: 10 },
   avatar: { width: 38, height: 38, borderRadius: 19 },

@@ -31,6 +31,7 @@ import {
   SocialGroupPrivacy,
   useSocialGroups,
 } from '../../src/hooks/useSocialGroups';
+import { useResolvedGroupTheme } from '../../src/hooks/useGroupThemes';
 import { supabase } from '../../src/services/supabase';
 import { detectPlatform } from '../../src/utils/socialMedia';
 
@@ -139,6 +140,7 @@ export default function GroupDetailScreen() {
     deleteGroup,
     respondToJoinRequest,
   } = useSocialGroups(user?.id);
+  const { theme: activeTheme } = useResolvedGroupTheme(user?.id, groupId);
 
   const scrollRef = useRef<ScrollView | null>(null);
 
@@ -326,6 +328,15 @@ export default function GroupDetailScreen() {
   );
   const pendingMemberActionsCount = pendingInvites.length + joinRequests.length;
   const moderationQueue = useMemo(() => posts.slice(0, 12), [posts]);
+  const themedCardStyle = useMemo(
+    () => ({
+      backgroundColor: activeTheme.surfaceSecondaryColor,
+      borderColor: activeTheme.borderColor,
+    }),
+    [activeTheme.borderColor, activeTheme.surfaceSecondaryColor]
+  );
+  const themeOverlayOpacity = Math.max(0.24, (activeTheme.overlayStrength ?? 72) / 100);
+  const groupBannerUri = activeTheme.bannerImageUrl ?? group?.cover_url ?? null;
 
   const handleToggleLike = async (postId: string) => {
     if (!user?.id) return;
@@ -787,29 +798,33 @@ export default function GroupDetailScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       >
-        <View style={styles.heroCard}>
-          <Avatar uri={group.avatar_url} size={58} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.heroTitle}>{group.name}</Text>
-            <Text style={styles.heroMeta}>
-              {group.privacy === 'public' ? 'Public community' : group.privacy === 'invite_only' ? 'Invite only' : 'Private community'}
-              {group.moderation_mode === 'read_only' ? ' • Read only mode' : ''}
-            </Text>
-            {!!group.description && <Text style={styles.heroDescription}>{group.description}</Text>}
-            <View style={styles.heroStatsRow}>
-              <View style={styles.heroStatChip}>
-                <Ionicons name="people-outline" size={14} color="#9cc8ff" />
-                <Text style={styles.heroStatText}>{members.length} members</Text>
-              </View>
-              <View style={styles.heroStatChip}>
-                <Ionicons name="albums-outline" size={14} color="#9cc8ff" />
-                <Text style={styles.heroStatText}>{posts.length} posts</Text>
-              </View>
-              <View style={styles.heroStatChip}>
-                <Ionicons name="create-outline" size={14} color="#ffb088" />
-                <Text style={styles.heroStatText}>
-                  {group.can_post === 'members' && !isReadOnly ? 'Members can post' : isReadOnly ? 'Read only' : 'Moderators post'}
-                </Text>
+        <View style={[styles.heroCard, { backgroundColor: activeTheme.surfaceColor, borderColor: activeTheme.borderColor }]}> 
+          {groupBannerUri ? <Image source={{ uri: groupBannerUri }} style={styles.heroBannerImage} /> : null}
+          {groupBannerUri ? <View style={[styles.heroBannerOverlay, { backgroundColor: `rgba(0,0,0,${themeOverlayOpacity})` }]} /> : null}
+          <View style={styles.heroCardContent}>
+            <Avatar uri={group.avatar_url} size={58} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.heroTitle, { color: activeTheme.textColor }]}>{group.name}</Text>
+              <Text style={[styles.heroMeta, { color: activeTheme.accentColor }]}>
+                {group.privacy === 'public' ? 'Public community' : group.privacy === 'invite_only' ? 'Invite only' : 'Private community'}
+                {group.moderation_mode === 'read_only' ? ' • Read only mode' : ''}
+              </Text>
+              {!!group.description && <Text style={[styles.heroDescription, { color: activeTheme.mutedTextColor }]}>{group.description}</Text>}
+              <View style={styles.heroStatsRow}>
+                <View style={[styles.heroStatChip, { backgroundColor: activeTheme.chipBackgroundColor, borderColor: activeTheme.borderColor }]}> 
+                  <Ionicons name="people-outline" size={14} color={activeTheme.chipTextColor} />
+                  <Text style={[styles.heroStatText, { color: activeTheme.chipTextColor }]}>{members.length} members</Text>
+                </View>
+                <View style={[styles.heroStatChip, { backgroundColor: activeTheme.chipBackgroundColor, borderColor: activeTheme.borderColor }]}> 
+                  <Ionicons name="albums-outline" size={14} color={activeTheme.chipTextColor} />
+                  <Text style={[styles.heroStatText, { color: activeTheme.chipTextColor }]}>{posts.length} posts</Text>
+                </View>
+                <View style={[styles.heroStatChip, { backgroundColor: activeTheme.chipBackgroundColor, borderColor: activeTheme.borderColor }]}> 
+                  <Ionicons name="create-outline" size={14} color={activeTheme.accentColor} />
+                  <Text style={[styles.heroStatText, { color: activeTheme.chipTextColor }]}>
+                    {group.can_post === 'members' && !isReadOnly ? 'Members can post' : isReadOnly ? 'Read only' : 'Moderators post'}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
@@ -817,17 +832,17 @@ export default function GroupDetailScreen() {
 
         <View style={styles.tabsRow}>
           <TouchableOpacity
-            style={[styles.tabBtn, tab === 'posts' && styles.tabBtnActive]}
+            style={[styles.tabBtn, { backgroundColor: tab === 'posts' ? activeTheme.chipBackgroundColor : activeTheme.surfaceSecondaryColor, borderColor: activeTheme.borderColor }, tab === 'posts' && styles.tabBtnActive]}
             onPress={() => setTab('posts')}
           >
-            <Text style={[styles.tabBtnText, tab === 'posts' && styles.tabBtnTextActive]}>Posts</Text>
+            <Text style={[styles.tabBtnText, { color: tab === 'posts' ? activeTheme.chipTextColor : activeTheme.mutedTextColor }, tab === 'posts' && styles.tabBtnTextActive]}>Posts</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tabBtn, tab === 'members' && styles.tabBtnActive]}
+            style={[styles.tabBtn, { backgroundColor: tab === 'members' ? activeTheme.chipBackgroundColor : activeTheme.surfaceSecondaryColor, borderColor: activeTheme.borderColor }, tab === 'members' && styles.tabBtnActive]}
             onPress={() => setTab('members')}
           >
             <View style={styles.tabBtnLabelRow}>
-              <Text style={[styles.tabBtnText, tab === 'members' && styles.tabBtnTextActive]}>Members</Text>
+              <Text style={[styles.tabBtnText, { color: tab === 'members' ? activeTheme.chipTextColor : activeTheme.mutedTextColor }, tab === 'members' && styles.tabBtnTextActive]}>Members</Text>
               {canModerate && pendingMemberActionsCount > 0 ? (
                 <View style={styles.tabBtnBadge}>
                   <Text style={styles.tabBtnBadgeText}>{pendingMemberActionsCount}</Text>
@@ -837,23 +852,23 @@ export default function GroupDetailScreen() {
           </TouchableOpacity>
           {canModerate ? (
             <TouchableOpacity
-              style={[styles.tabBtn, tab === 'moderation' && styles.tabBtnActive]}
+              style={[styles.tabBtn, { backgroundColor: tab === 'moderation' ? activeTheme.chipBackgroundColor : activeTheme.surfaceSecondaryColor, borderColor: activeTheme.borderColor }, tab === 'moderation' && styles.tabBtnActive]}
               onPress={() => setTab('moderation')}
             >
-              <Text style={[styles.tabBtnText, tab === 'moderation' && styles.tabBtnTextActive]}>Moderation</Text>
+              <Text style={[styles.tabBtnText, { color: tab === 'moderation' ? activeTheme.chipTextColor : activeTheme.mutedTextColor }, tab === 'moderation' && styles.tabBtnTextActive]}>Moderation</Text>
             </TouchableOpacity>
           ) : null}
           <TouchableOpacity
-            style={[styles.tabBtn, tab === 'about' && styles.tabBtnActive]}
+            style={[styles.tabBtn, { backgroundColor: tab === 'about' ? activeTheme.chipBackgroundColor : activeTheme.surfaceSecondaryColor, borderColor: activeTheme.borderColor }, tab === 'about' && styles.tabBtnActive]}
             onPress={() => setTab('about')}
           >
-            <Text style={[styles.tabBtnText, tab === 'about' && styles.tabBtnTextActive]}>About</Text>
+            <Text style={[styles.tabBtnText, { color: tab === 'about' ? activeTheme.chipTextColor : activeTheme.mutedTextColor }, tab === 'about' && styles.tabBtnTextActive]}>About</Text>
           </TouchableOpacity>
         </View>
 
         {tab === 'posts' ? (
           <>
-            <View style={styles.card}>
+            <View style={[styles.card, themedCardStyle]}>
               <Text style={styles.cardTitle}>Post to {group.name}</Text>
               <Text style={styles.cardSubtitle}>
                 {canPost
@@ -978,12 +993,12 @@ export default function GroupDetailScreen() {
             </View>
 
             {loadingPosts ? (
-              <View style={styles.emptyCard}>
+              <View style={[styles.emptyCard, themedCardStyle]}>
                 <ActivityIndicator color="#ff6a2f" size="small" />
                 <Text style={styles.emptyTitle}>Loading posts…</Text>
               </View>
             ) : posts.length === 0 ? (
-              <View style={styles.emptyCard}>
+              <View style={[styles.emptyCard, themedCardStyle]}>
                 <Ionicons name="albums-outline" size={42} color="#333" />
                 <Text style={styles.emptyTitle}>No group posts yet</Text>
                 <Text style={styles.emptySubtitle}>Your first post here will also show up in the member feed.</Text>
@@ -1003,7 +1018,7 @@ export default function GroupDetailScreen() {
         ) : null}
 
         {tab === 'members' ? (
-          <View style={styles.card}>
+          <View style={[styles.card, themedCardStyle]}>
             <View style={styles.membersHeader}>
               <View style={styles.membersHeaderTextWrap}>
                 <Text style={styles.cardTitle}>Members</Text>
@@ -1099,7 +1114,7 @@ export default function GroupDetailScreen() {
         ) : null}
 
         {tab === 'moderation' ? (
-          <View style={styles.card}>
+          <View style={[styles.card, themedCardStyle]}>
             <Text style={styles.cardTitle}>Moderation console</Text>
             <Text style={styles.cardSubtitle}>Admins manage members. Moderators can quickly remove posts that break the rules.</Text>
 
@@ -1181,9 +1196,23 @@ export default function GroupDetailScreen() {
         ) : null}
 
         {tab === 'about' ? (
-          <View style={styles.card}>
+          <View style={[styles.card, themedCardStyle]}>
             <Text style={styles.cardTitle}>Community settings</Text>
             <Text style={styles.cardSubtitle}>Owners and admins can tune who posts, chats, invites, and whether the group is temporarily read only.</Text>
+
+            <View style={[styles.appearanceBanner, { backgroundColor: activeTheme.surfaceColor, borderColor: activeTheme.borderColor }]}> 
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionTitle, { color: activeTheme.textColor }]}>Appearance studio</Text>
+                <Text style={[styles.appearanceBannerText, { color: activeTheme.mutedTextColor }]}>Choose free presets, preview premium custom themes, and upload group avatar/banner artwork.</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.secondaryBtn, { backgroundColor: activeTheme.chipBackgroundColor, borderColor: activeTheme.borderColor }]}
+                onPress={() => router.push(`/group-theme/${group.id}` as any)}
+              >
+                <Ionicons name="color-palette-outline" size={16} color={activeTheme.chipTextColor} />
+                <Text style={[styles.secondaryBtnText, { color: activeTheme.chipTextColor }]}>Open studio</Text>
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.label}>Description</Text>
             <TextInput
@@ -1408,8 +1437,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1e1e1e',
     padding: 16,
+    overflow: 'hidden',
+  },
+  heroCardContent: {
     flexDirection: 'row',
     gap: 12,
+    zIndex: 1,
+  },
+  heroBannerImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  heroBannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
   },
   heroTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
   heroMeta: { color: '#ff9b68', fontSize: 12, fontWeight: '600', marginTop: 4 },
@@ -1644,6 +1685,17 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   moderationBannerText: { flex: 1, color: '#d7b29d', fontSize: 13, lineHeight: 18 },
+  appearanceBanner: {
+    marginTop: 14,
+    marginBottom: 10,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  appearanceBannerText: { fontSize: 12, lineHeight: 18 },
   moderationSection: { marginTop: 18 },
   sectionTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
   sectionHint: { color: '#7e7e7e', fontSize: 12, lineHeight: 18, marginTop: 4, marginBottom: 8 },
