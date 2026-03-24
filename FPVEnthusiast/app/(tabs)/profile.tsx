@@ -648,11 +648,15 @@ export default function ProfileScreen() {
 
   const mediaPosts = useMemo(
     () => myPosts.filter(p => {
-      const url = p.media_url ?? '';
-      const isVideo = p.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(url);
-      const resolved = resolveStorageUrl(p.media_url);
-      const isRemote = resolved !== null && !resolved.startsWith('file://');
-      return isVideo && isRemote;
+      const allUrls = [p.media_url, p.social_url, p.embed_url].filter(Boolean) as string[];
+      const primaryUrl = p.media_url ?? '';
+      const isVideo = p.media_type === 'video' || /\.(mp4|mov|webm)(\?|$)/i.test(primaryUrl);
+      const isInstagram =
+        p.platform === 'instagram' ||
+        (p.social_url ?? '').toLowerCase().includes('instagram') ||
+        (p.media_url ?? '').toLowerCase().includes('instagram');
+      const thumb = thumbnailUri(p);
+      return isVideo || isInstagram || !!thumb || allUrls.length > 0;
     }),
     [myPosts],
   );
@@ -793,12 +797,41 @@ export default function ProfileScreen() {
   }, [eggSpin]);
 
   // ── Render helpers ────────────────────────────────────────────────────────
+  const deleteOwnPost = useCallback(async (id: string) => {
+    const { error } = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user?.id ?? '');
+    if (error) {
+      Alert.alert('Error', 'Could not delete post. Please try again.');
+      return false;
+    }
+    setMyPosts(prev => prev.filter(p => p.id !== id));
+    setSelectedPost(prev => (prev?.id === id ? null : prev));
+    setShowPostDetail(false);
+    return true;
+  }, [user?.id]);
+
   const renderGridCell = useCallback(({ item }: { item: Post }) => (
     <PostGridCell
       item={item}
       onPress={() => { setSelectedPost(item); setShowPostDetail(true); }}
     />
   ), []);
+
+  const renderPostListItem = useCallback(({ item }: { item: Post }) => (
+    <View style={styles.profilePostCardWrap}>
+      <PostCard
+        post={toFeedPost(item)}
+        isVisible={true}
+        shouldAutoplay={false}
+        currentUserId={user?.id ?? undefined}
+        onLike={() => {}}
+        onDelete={deleteOwnPost}
+      />
+    </View>
+  ), [deleteOwnPost, user?.id]);
 
   const renderBuild = useCallback(({ item }: { item: Build }) => (
     <View style={styles.buildCard}>
@@ -1009,11 +1042,17 @@ export default function ProfileScreen() {
             {activeTab === 'posts' && (
               myPosts.length === 0
                 ? <EmptyState icon="camera-outline" text="No posts yet" />
-                : <FlatList data={myPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />
+                : <FlatList
+                    data={myPosts}
+                    keyExtractor={i => i.id}
+                    renderItem={renderPostListItem}
+                    scrollEnabled={false}
+                    contentContainerStyle={styles.profilePostsList}
+                  />
             )}
             {activeTab === 'media' && (
               mediaPosts.length === 0
-                ? <EmptyState icon="videocam-outline" text="No videos yet" />
+                ? <EmptyState icon="images-outline" text="No media yet" />
                 : <FlatList data={mediaPosts} keyExtractor={i => i.id} renderItem={renderGridCell} numColumns={3} scrollEnabled={false} columnWrapperStyle={styles.gridRow} />
             )}
             {activeTab === 'builds' && (
@@ -1180,20 +1219,7 @@ export default function ProfileScreen() {
             {selectedPost && (
               <PostCard post={toFeedPost(selectedPost)} isVisible={true} shouldAutoplay={false}
                 currentUserId={user?.id ?? undefined} onLike={() => {}}
-                onDelete={async (id: string) => {
-  const { error } = await supabase
-    .from('posts')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', user?.id ?? '');
-  if (error) {
-    Alert.alert('Error', 'Could not delete post. Please try again.');
-    return false;
-  }
-  setMyPosts(prev => prev.filter(p => p.id !== id));
-  setShowPostDetail(false);
-  return true;
-}} />
+                onDelete={deleteOwnPost} />
             )}
           </ScrollView>
         </View>
@@ -1736,6 +1762,8 @@ const styles = StyleSheet.create({
   tabLabelActive: { color: '#00d4ff', fontSize: 11, fontWeight: '700' },
 
   feedList: { paddingHorizontal: 12 },
+  profilePostsList: { paddingHorizontal: 12, gap: 10 },
+  profilePostCardWrap: { marginBottom: 2 },
 
   gridRow:              { gap: 2 },
   gridCell:             { width: CELL, height: CELL, backgroundColor: '#1a1a2e', overflow: 'hidden', position: 'relative', margin: 1 },
