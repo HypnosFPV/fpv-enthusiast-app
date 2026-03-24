@@ -226,6 +226,8 @@ function PostGridCell({ item, onPress }: { item: Post; onPress: () => void }) {
     item.platform === 'instagram' ||
     (item.social_url ?? '').toLowerCase().includes('instagram') ||
     (item.media_url  ?? '').toLowerCase().includes('instagram');
+  const hasTextOnlyContent = !thumb && !isIG && !isVid && !allUrls.length && !!item.caption?.trim();
+  const textPreview = item.caption?.trim().slice(0, 56) ?? '';
 
   return (
     <TouchableOpacity style={styles.gridCell} onPress={onPress} activeOpacity={0.8}>
@@ -241,6 +243,16 @@ function PostGridCell({ item, onPress }: { item: Post; onPress: () => void }) {
           <Ionicons name="logo-instagram" size={26} color="#fff" />
           <Text style={styles.gridIgText}>Instagram</Text>
           <Text style={styles.gridIgSub}>Tap to open</Text>
+        </View>
+      ) : hasTextOnlyContent ? (
+        <View style={[styles.gridThumb, styles.gridTextPlaceholder]}>
+          <View style={styles.gridTextBadge}>
+            <Ionicons name="document-text-outline" size={12} color="#9cc8ff" />
+            <Text style={styles.gridTextBadgeLabel}>Text post</Text>
+          </View>
+          <Text style={styles.gridTextPreview} numberOfLines={4}>
+            {textPreview}
+          </Text>
         </View>
       ) : (
         <View style={[styles.gridThumb, styles.gridThumbPlaceholder]}>
@@ -1729,6 +1741,10 @@ const styles = StyleSheet.create({
   gridCell:             { width: CELL, height: CELL, backgroundColor: '#1a1a2e', overflow: 'hidden', position: 'relative', margin: 1 },
   gridThumb:            { width: '100%', height: '100%' },
   gridThumbPlaceholder: { justifyContent: 'center', alignItems: 'center', backgroundColor: '#111' },
+  gridTextPlaceholder:  { justifyContent: 'space-between', backgroundColor: '#111827', padding: 10 },
+  gridTextBadge:        { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(20,35,60,0.9)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  gridTextBadgeLabel:   { color: '#9cc8ff', fontSize: 9, fontWeight: '700' },
+  gridTextPreview:      { color: '#e5eefc', fontSize: 11, lineHeight: 15, fontWeight: '600' },
   gridIgPlaceholder:    { justifyContent: 'center', alignItems: 'center', backgroundColor: '#C13584', gap: 3 },
   gridIgText:           { color: '#fff', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   gridIgSub:            { color: 'rgba(255,255,255,0.75)', fontSize: 8, fontWeight: '500' },

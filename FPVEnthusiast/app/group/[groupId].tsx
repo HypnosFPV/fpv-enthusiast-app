@@ -18,6 +18,9 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as VideoThumbnails from 'expo-video-thumbnails';
+import { decode } from 'base64-arraybuffer';
 import PostCard from '../../src/components/PostCard';
 import { useAuth } from '../../src/context/AuthContext';
 import {
@@ -29,6 +32,7 @@ import {
   useSocialGroups,
 } from '../../src/hooks/useSocialGroups';
 import { supabase } from '../../src/services/supabase';
+import { detectPlatform } from '../../src/utils/socialMedia';
 
 interface PendingInvite {
   id: string;
@@ -132,7 +136,13 @@ export default function GroupDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<'posts' | 'members' | 'moderation' | 'about'>('posts');
+  const [composerMode, setComposerMode] = useState<'text' | 'media' | 'social'>('text');
   const [draft, setDraft] = useState('');
+  const [socialUrl, setSocialUrl] = useState('');
+  const [mediaUri, setMediaUri] = useState<string | null>(null);
+  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
+  const [mediaBase64, setMediaBase64] = useState<string | null>(null);
+  const [selectedThumb, setSelectedThumb] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
@@ -326,16 +336,145 @@ export default function GroupDetailScreen() {
     }
   };
 
-  const handlePost = async () => {
-    if (!user?.id || !groupId || !draft.trim() || posting) return;
-    setPosting(true);
+  const resetComposer = useCallback(() => {
+    setDraft('');
+    setSocialUrl('');
+    setMediaUri(null);
+    setMediaType('image');
+    setMediaBase64(null);
+    setSelectedThumb(null);
+    setComposerMode('text');
+  }, []);
+
+  const pickMedia = useCallback(async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Camera roll access is required.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      quality: 0.8,
+      base64: true,
+      exif: false,
+    });
+
+    if (result.canceled || !result.assets[0]) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    const isVideo = asset.type === 'video';
+    setMediaUri(asset.uri);
+    setMediaType(isVideo ? 'video' : 'image');
+    setMediaBase64(isVideo ? null : (asset.base64 ?? null));
+    setSelectedThumb(null);
+    setComposerMode('media');
+
+    if (isVideo) {
+      try {
+        const durationMs = Math.max(asset.duration ?? 3000, 1500);
+        const { uri } = await VideoThumbnails.getThumbnailAsync(asset.uri, {
+          time: Math.floor(durationMs * 0.33),
+        });
+        setSelectedThumb(uri);
+      } catch (error) {
+        console.warn('[group] thumbnail generation failed:', error);
+      }
+    }
+  }, []);
+
+  const uploadSelectedMedia = useCallback(async () => {
+    if (!user?.id || !mediaUri) {
+      return null;
+    }
+
+    let arrayBuffer: ArrayBuffer;
+    let ext: string;
+    let mime: string;
+
+    if (mediaType === 'video') {
+      ext = mediaUri.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'mp4';
+      mime = ext === 'mov' ? 'video/quicktime' : 'video/mp4';
+      const resp = await fetch(mediaUri);
+      arrayBuffer = await resp.arrayBuffer();
+    } else if (mediaBase64) {
+      arrayBuffer = decode(mediaBase64);
+      ext = 'jpg';
+      mime = 'image/jpeg';
+    } else {
+      ext = mediaUri.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'jpg';
+      mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'heic' ? 'image/heic' : 'image/jpeg';
+      const resp = await fetch(mediaUri);
+      arrayBuffer = await resp.arrayBuffer();
+    }
+
+    if (arrayBuffer.byteLength === 0) {
+      throw new Error('Selected media could not be read.');
+    }
+
+    const storagePath = `${user.id}/${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage
+      .from('posts')
+      .upload(storagePath, arrayBuffer, { contentType: mime, upsert: false });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data: publicData } = supabase.storage.from('posts').getPublicUrl(storagePath);
+    let thumbnailUrl: string | null = null;
+
+    if (mediaType === 'video' && selectedThumb) {
+      try {
+        const thumbResp = await fetch(selectedThumb);
+        const thumbBuf = await thumbResp.arrayBuffer();
+        if (thumbBuf.byteLength > 0) {
+          const thumbPath = `${user.id}/${Date.now()}_thumb.jpg`;
+          const { error: thumbError } = await supabase.storage
+            .from('posts')
+            .upload(thumbPath, thumbBuf, { contentType: 'image/jpeg', upsert: false });
+          if (!thumbError) {
+            const { data: thumbData } = supabase.storage.from('posts').getPublicUrl(thumbPath);
+            thumbnailUrl = thumbData.publicUrl;
+          }
+        }
+      } catch (error) {
+        console.warn('[group] thumbnail upload failed:', error);
+      }
+    }
+
+    return {
+      mediaUrl: publicData.publicUrl,
+      thumbnailUrl,
+    };
+  }, [mediaBase64, mediaType, mediaUri, selectedThumb, user?.id]);
+
+  const insertGroupPost = useCallback(async (payload: {
+    caption?: string | null;
+    media_url?: string | null;
+    media_type?: string | null;
+    thumbnail_url?: string | null;
+    social_url?: string | null;
+    platform?: string | null;
+  }) => {
+    if (!user?.id || !groupId) {
+      return null;
+    }
+
     const { data, error } = await supabase
       .from('posts')
       .insert({
         user_id: user.id,
-        caption: draft.trim(),
         group_id: groupId,
         post_scope: 'group',
+        caption: payload.caption ?? null,
+        media_url: payload.media_url ?? null,
+        media_type: payload.media_type ?? null,
+        thumbnail_url: payload.thumbnail_url ?? null,
+        social_url: payload.social_url ?? null,
+        platform: payload.platform ?? null,
       })
       .select(`
         id, user_id, media_url, media_type, thumbnail_url, caption,
@@ -345,16 +484,69 @@ export default function GroupDetailScreen() {
       `)
       .single();
 
-    setPosting(false);
+    if (error) {
+      throw error;
+    }
 
-    if (error || !data) {
-      Alert.alert('Error', error?.message ?? 'Could not post to the group.');
+    return data;
+  }, [groupId, user?.id]);
+
+  const handlePost = async () => {
+    if (!user?.id || !groupId || posting) return;
+
+    const trimmedCaption = draft.trim();
+    const trimmedUrl = socialUrl.trim();
+
+    if (composerMode === 'text' && !trimmedCaption) {
+      return;
+    }
+    if (composerMode === 'social' && !trimmedUrl) {
+      Alert.alert('Link required', 'Paste a link to share in this group.');
+      return;
+    }
+    if (composerMode === 'media' && !mediaUri) {
+      Alert.alert('Media required', 'Choose a photo or video first.');
       return;
     }
 
-    setPosts(prev => [mergePostLikes([data], [])[0], ...prev]);
-    setDraft('');
-    setTab('posts');
+    setPosting(true);
+
+    try {
+      let data: any = null;
+
+      if (composerMode === 'text') {
+        data = await insertGroupPost({
+          caption: trimmedCaption,
+        });
+      } else if (composerMode === 'social') {
+        data = await insertGroupPost({
+          caption: trimmedCaption || null,
+          social_url: trimmedUrl,
+          platform: detectPlatform(trimmedUrl) ?? 'unknown',
+        });
+      } else {
+        const uploaded = await uploadSelectedMedia();
+        data = await insertGroupPost({
+          caption: trimmedCaption || null,
+          media_url: uploaded?.mediaUrl ?? null,
+          media_type: mediaType,
+          thumbnail_url: uploaded?.thumbnailUrl ?? null,
+        });
+      }
+
+      if (!data) {
+        Alert.alert('Error', 'Could not post to the group.');
+        return;
+      }
+
+      setPosts(prev => [mergePostLikes([data], [])[0], ...prev]);
+      resetComposer();
+      setTab('posts');
+    } catch (error: any) {
+      Alert.alert('Error', error?.message ?? 'Could not post to the group.');
+    } finally {
+      setPosting(false);
+    }
   };
 
   const searchUsers = useCallback(async (q: string) => {
@@ -592,21 +784,118 @@ export default function GroupDetailScreen() {
                 {canPost
                   ? isReadOnly
                     ? 'Read only mode is active for members. Moderator posts still appear in the feed.'
-                    : 'This post will appear in the feed for group members.'
+                    : 'Share text updates, embedded links, or media with this community.'
                   : 'Only moderators can post in this group right now.'}
               </Text>
+
+              <View style={styles.composerModeRow}>
+                {([
+                  { key: 'text', label: 'Text', icon: 'chatbubble-ellipses-outline' },
+                  { key: 'social', label: 'Link', icon: 'link-outline' },
+                  { key: 'media', label: 'Media', icon: 'image-outline' },
+                ] as const).map(option => (
+                  <TouchableOpacity
+                    key={option.key}
+                    style={[
+                      styles.composerModeChip,
+                      composerMode === option.key && styles.composerModeChipActive,
+                      !canPost && { opacity: 0.55 },
+                    ]}
+                    disabled={!canPost}
+                    onPress={() => {
+                      setComposerMode(option.key);
+                      if (option.key === 'media' && !mediaUri) {
+                        void pickMedia();
+                      }
+                    }}
+                  >
+                    <Ionicons
+                      name={option.icon as any}
+                      size={15}
+                      color={composerMode === option.key ? '#ff9b68' : '#8a8a8a'}
+                    />
+                    <Text style={[
+                      styles.composerModeChipText,
+                      composerMode === option.key && styles.composerModeChipTextActive,
+                    ]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {composerMode === 'social' ? (
+                <TextInput
+                  style={[styles.urlInput, !canPost && { opacity: 0.55 }]}
+                  editable={!!canPost}
+                  placeholder={canPost ? 'Paste YouTube, Instagram, TikTok, etc.' : 'Posting restricted'}
+                  placeholderTextColor="#666"
+                  value={socialUrl}
+                  onChangeText={setSocialUrl}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                />
+              ) : null}
+
+              {composerMode === 'media' ? (
+                <>
+                  <TouchableOpacity
+                    style={[styles.mediaPicker, !canPost && { opacity: 0.55 }]}
+                    disabled={!canPost}
+                    onPress={() => void pickMedia()}
+                    activeOpacity={0.82}
+                  >
+                    {mediaUri ? (
+                      mediaType === 'video' ? (
+                        selectedThumb ? (
+                          <Image source={{ uri: selectedThumb }} style={styles.mediaPreview} />
+                        ) : (
+                          <View style={styles.mediaPlaceholder}>
+                            <Ionicons name="videocam-outline" size={32} color="#ff9b68" />
+                            <Text style={styles.mediaPlaceholderText}>Video selected</Text>
+                          </View>
+                        )
+                      ) : (
+                        <Image source={{ uri: mediaUri }} style={styles.mediaPreview} />
+                      )
+                    ) : (
+                      <View style={styles.mediaPlaceholder}>
+                        <Ionicons name="cloud-upload-outline" size={32} color="#666" />
+                        <Text style={styles.mediaPlaceholderText}>Tap to choose a photo or video</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                  {mediaUri ? (
+                    <Text style={styles.mediaMetaText}>
+                      {mediaType === 'video' ? 'Video will upload with a generated thumbnail.' : 'Image selected and ready to upload.'}
+                    </Text>
+                  ) : null}
+                </>
+              ) : null}
+
               <TextInput
                 style={[styles.textArea, !canPost && { opacity: 0.55 }]}
                 editable={!!canPost}
                 multiline
-                placeholder={canPost ? 'Share an update with your group…' : 'Posting restricted'}
+                placeholder={
+                  canPost
+                    ? composerMode === 'text'
+                      ? 'Share an update with your group…'
+                      : composerMode === 'social'
+                        ? 'Add an optional caption…'
+                        : 'Add an optional caption for this media…'
+                    : 'Posting restricted'
+                }
                 placeholderTextColor="#666"
                 value={draft}
                 onChangeText={setDraft}
               />
               <TouchableOpacity
-                style={[styles.primaryBtn, (!canPost || !draft.trim() || posting) && { opacity: 0.45 }]}
-                disabled={!canPost || !draft.trim() || posting}
+                style={[
+                  styles.primaryBtn,
+                  (!canPost || posting || (composerMode === 'text' && !draft.trim()) || (composerMode === 'social' && !socialUrl.trim()) || (composerMode === 'media' && !mediaUri)) && { opacity: 0.45 },
+                ]}
+                disabled={!canPost || posting || (composerMode === 'text' && !draft.trim()) || (composerMode === 'social' && !socialUrl.trim()) || (composerMode === 'media' && !mediaUri)}
                 onPress={handlePost}
               >
                 {posting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.primaryBtnText}>Post to group</Text>}
@@ -1136,6 +1425,46 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   rolePillText: { fontSize: 10, fontWeight: '800' },
+
+  composerModeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14, marginBottom: 12 },
+  composerModeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: '#151515',
+    borderWidth: 1,
+    borderColor: '#282828',
+  },
+  composerModeChipActive: { backgroundColor: '#2a170e', borderColor: '#834627' },
+  composerModeChipText: { color: '#9a9a9a', fontSize: 12, fontWeight: '600' },
+  composerModeChipTextActive: { color: '#ff9b68' },
+  urlInput: {
+    backgroundColor: '#151515',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#262626',
+    color: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  mediaPicker: {
+    height: 176,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#262626',
+    backgroundColor: '#151515',
+    marginBottom: 8,
+  },
+  mediaPreview: { width: '100%', height: '100%', resizeMode: 'cover' },
+  mediaPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  mediaPlaceholderText: { color: '#7b7b7b', fontSize: 13 },
+  mediaMetaText: { color: '#7c7c7c', fontSize: 12, lineHeight: 18, marginBottom: 12 },
 
   choicesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   moderationBanner: {
