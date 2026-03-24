@@ -41,9 +41,15 @@ interface SearchPost {
   user_id: string;
 }
 
-function UserRow({ item, onPress }: { item: SearchUser; onPress: () => void }) {
+const UserRow = React.memo(function UserRow({
+  item,
+  onPressUser,
+}: {
+  item: SearchUser;
+  onPressUser: (username: string | null) => void;
+}) {
   return (
-    <TouchableOpacity style={styles.userRow} onPress={onPress} activeOpacity={0.75}>
+    <TouchableOpacity style={styles.userRow} onPress={() => onPressUser(item.username)} activeOpacity={0.75}>
       {item.avatar_url ? (
         <Image source={{ uri: item.avatar_url }} style={styles.avatar} />
       ) : (
@@ -59,9 +65,15 @@ function UserRow({ item, onPress }: { item: SearchUser; onPress: () => void }) {
       <Ionicons name="chevron-forward" size={16} color="#555" />
     </TouchableOpacity>
   );
-}
+});
 
-function PostCell({ item, onPress }: { item: SearchPost; onPress: () => void }) {
+const PostCell = React.memo(function PostCell({
+  item,
+  onPressPost,
+}: {
+  item: SearchPost;
+  onPressPost: (postId: string) => void;
+}) {
   const thumb = item.thumbnail_url ?? (() => {
     const candidates = [item.video_url, item.media_url, item.social_url];
     for (const url of candidates) {
@@ -81,7 +93,7 @@ function PostCell({ item, onPress }: { item: SearchPost; onPress: () => void }) 
   return (
     <TouchableOpacity
       style={[styles.cell, { width: CELL, height: CELL }]}
-      onPress={onPress}
+      onPress={() => onPressPost(item.id)}
       activeOpacity={0.8}
     >
       {thumb ? (
@@ -103,7 +115,7 @@ function PostCell({ item, onPress }: { item: SearchPost; onPress: () => void }) 
       ) : null}
     </TouchableOpacity>
   );
-}
+});
 
 function groupAction(item: SocialGroupSearchResult) {
   if (item.my_role) return { label: 'Open', disabled: false, tone: 'joined' as const };
@@ -113,22 +125,22 @@ function groupAction(item: SocialGroupSearchResult) {
   return { label: 'Request', disabled: false, tone: 'secondary' as const };
 }
 
-function GroupRow({
+const GroupRow = React.memo(function GroupRow({
   item,
   actionBusy,
-  onPress,
-  onAction,
+  onPressGroup,
+  onActionGroup,
 }: {
   item: SocialGroupSearchResult;
   actionBusy: boolean;
-  onPress: () => void;
-  onAction: () => void;
+  onPressGroup: (group: SocialGroupSearchResult) => void;
+  onActionGroup: (group: SocialGroupSearchResult) => void;
 }) {
   const action = groupAction(item);
   const privacyLabel = item.privacy === 'invite_only' ? 'invite only' : item.privacy;
 
   return (
-    <TouchableOpacity style={styles.groupRow} onPress={onPress} activeOpacity={0.78}>
+    <TouchableOpacity style={styles.groupRow} onPress={() => onPressGroup(item)} activeOpacity={0.78}>
       {item.avatar_url ? (
         <Image source={{ uri: item.avatar_url }} style={styles.groupAvatar} />
       ) : (
@@ -157,7 +169,7 @@ function GroupRow({
           (action.disabled || actionBusy) && { opacity: 0.65 },
         ]}
         disabled={action.disabled || actionBusy}
-        onPress={onAction}
+        onPress={() => onActionGroup(item)}
       >
         {actionBusy ? (
           <ActivityIndicator size="small" color="#fff" />
@@ -174,7 +186,7 @@ function GroupRow({
       </TouchableOpacity>
     </TouchableOpacity>
   );
-}
+});
 
 export default function SearchScreen() {
   const router = useRouter();
@@ -256,40 +268,40 @@ export default function SearchScreen() {
     setLoading(false);
   }, [user?.id, isBlocked, searchGroups]);
 
-  const handleQueryChange = (text: string) => {
+  const handleQueryChange = useCallback((text: string) => {
     setQuery(text);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => { void runSearch(text); }, 350);
-  };
+  }, [runSearch]);
 
-  const clearSearch = () => {
+  const clearSearch = useCallback(() => {
     setQuery('');
     setUsers([]);
     setPosts([]);
     setGroups([]);
-  };
+  }, []);
 
-  const handleUserPress = (username: string | null) => {
+  const handleUserPress = useCallback((username: string | null) => {
     if (!username) return;
     Keyboard.dismiss();
     router.push({ pathname: '/profile/[username]', params: { username } });
-  };
+  }, [router]);
 
-  const handlePostPress = (postId: string) => {
+  const handlePostPress = useCallback((postId: string) => {
     Keyboard.dismiss();
     router.push(`/post/${postId}` as any);
-  };
+  }, [router]);
 
-  const handleGroupPress = (group: SocialGroupSearchResult) => {
+  const handleGroupPress = useCallback((group: SocialGroupSearchResult) => {
     Keyboard.dismiss();
     if (group.my_role || group.privacy === 'public') {
       router.push(`/group/${group.id}` as any);
       return;
     }
     Alert.alert('Request access', 'Use the button on the right to request access to this community.');
-  };
+  }, [router]);
 
-  const handleGroupAction = async (group: SocialGroupSearchResult) => {
+  const handleGroupAction = useCallback(async (group: SocialGroupSearchResult) => {
     Keyboard.dismiss();
 
     if (group.my_role) {
@@ -338,7 +350,7 @@ export default function SearchScreen() {
         : item));
       Alert.alert('Request sent', 'Your join request has been sent to the community team.');
     }
-  };
+  }, [requestToJoinGroup, router]);
 
   const hasQuery = query.trim().length > 0;
 
@@ -372,6 +384,28 @@ export default function SearchScreen() {
   }, [discoverableGroups, myGroups, pendingInviteGroupIds, pendingRequestGroupIds]);
 
   const showTabs = hasQuery || tab === 'groups';
+  const tabItems = useMemo(() => ([
+    { key: 'users', label: `Users (${users.length})` },
+    { key: 'posts', label: `Posts (${posts.length})` },
+    { key: 'groups', label: `Groups (${groups.length})` },
+  ] as const), [groups.length, posts.length, users.length]);
+
+  const renderUserItem = useCallback(({ item }: { item: SearchUser }) => (
+    <UserRow item={item} onPressUser={handleUserPress} />
+  ), [handleUserPress]);
+
+  const renderPostItem = useCallback(({ item }: { item: SearchPost }) => (
+    <PostCell item={item} onPressPost={handlePostPress} />
+  ), [handlePostPress]);
+
+  const renderGroupItem = useCallback(({ item }: { item: SocialGroupSearchResult }) => (
+    <GroupRow
+      item={item}
+      actionBusy={actingGroupId === item.id}
+      onPressGroup={handleGroupPress}
+      onActionGroup={handleGroupAction}
+    />
+  ), [actingGroupId, handleGroupAction, handleGroupPress]);
 
   return (
     <View style={styles.container}>
@@ -404,11 +438,7 @@ export default function SearchScreen() {
 
       {showTabs && !loading && (
         <View style={styles.tabs}>
-          {([
-            { key: 'users', label: `Users (${users.length})` },
-            { key: 'posts', label: `Posts (${posts.length})` },
-            { key: 'groups', label: `Groups (${groups.length})` },
-          ] as const).map(item => (
+          {tabItems.map(item => (
             <TouchableOpacity
               key={item.key}
               style={[styles.tab, tab === item.key && styles.tabActive]}
@@ -426,9 +456,7 @@ export default function SearchScreen() {
             key="search-users-list"
             data={users}
             keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <UserRow item={item} onPress={() => handleUserPress(item.username)} />
-            )}
+            renderItem={renderUserItem}
             ListEmptyComponent={<Text style={styles.empty}>No pilots found for "{query}"</Text>}
             contentContainerStyle={{ paddingBottom: 120 }}
             {...SEARCH_LIST_PROPS}
@@ -439,9 +467,7 @@ export default function SearchScreen() {
             data={posts}
             keyExtractor={item => item.id}
             numColumns={3}
-            renderItem={({ item }) => (
-              <PostCell item={item} onPress={() => handlePostPress(item.id)} />
-            )}
+            renderItem={renderPostItem}
             ListEmptyComponent={<Text style={styles.empty}>No posts found for "{query}"</Text>}
             contentContainerStyle={{ paddingBottom: 120 }}
             columnWrapperStyle={{ gap: 2 }}
@@ -456,14 +482,7 @@ export default function SearchScreen() {
             key="search-groups-list"
             data={groups}
             keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <GroupRow
-                item={item}
-                actionBusy={actingGroupId === item.id}
-                onPress={() => handleGroupPress(item)}
-                onAction={() => void handleGroupAction(item)}
-              />
-            )}
+            renderItem={renderGroupItem}
             ListEmptyComponent={<Text style={styles.empty}>No communities found for "{query}"</Text>}
             contentContainerStyle={{ paddingBottom: 120 }}
             {...SEARCH_LIST_PROPS}
@@ -474,14 +493,7 @@ export default function SearchScreen() {
           key="search-browse-groups-list"
           data={browseGroups}
           keyExtractor={item => item.id}
-          renderItem={({ item }) => (
-            <GroupRow
-              item={item}
-              actionBusy={actingGroupId === item.id}
-              onPress={() => handleGroupPress(item)}
-              onAction={() => void handleGroupAction(item)}
-            />
-          )}
+          renderItem={renderGroupItem}
           ListHeaderComponent={<Text style={styles.sectionLabel}>My communities and public groups to join</Text>}
           ListEmptyComponent={<Text style={styles.empty}>No communities available yet. Try searching for one.</Text>}
           contentContainerStyle={{ paddingBottom: 120 }}
@@ -492,9 +504,7 @@ export default function SearchScreen() {
           key="search-suggested-users-list"
           data={suggested}
           keyExtractor={item => item.id}
-          renderItem={({ item }) => (
-            <UserRow item={item} onPress={() => handleUserPress(item.username)} />
-          )}
+          renderItem={renderUserItem}
           ListHeaderComponent={<Text style={styles.sectionLabel}>Top Pilots</Text>}
           ListEmptyComponent={<Text style={styles.empty}>No pilots yet</Text>}
           contentContainerStyle={{ paddingBottom: 120 }}
