@@ -14,6 +14,14 @@ import { useSocialGroups, SocialGroupSearchResult } from '../../src/hooks/useSoc
 
 const { width } = Dimensions.get('window');
 const CELL = (width - 4) / 3;
+const SEARCH_LIST_PROPS = {
+  keyboardShouldPersistTaps: 'handled' as const,
+  removeClippedSubviews: true,
+  initialNumToRender: 12,
+  maxToRenderPerBatch: 12,
+  windowSize: 7,
+  updateCellsBatchingPeriod: 50,
+};
 
 interface SearchUser {
   id: string;
@@ -415,17 +423,19 @@ export default function SearchScreen() {
       {hasQuery && !loading ? (
         tab === 'users' ? (
           <FlatList
+            key="search-users-list"
             data={users}
             keyExtractor={item => item.id}
             renderItem={({ item }) => (
               <UserRow item={item} onPress={() => handleUserPress(item.username)} />
             )}
             ListEmptyComponent={<Text style={styles.empty}>No pilots found for "{query}"</Text>}
-            keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingBottom: 120 }}
+            {...SEARCH_LIST_PROPS}
           />
         ) : tab === 'posts' ? (
           <FlatList
+            key="search-posts-grid-3"
             data={posts}
             keyExtractor={item => item.id}
             numColumns={3}
@@ -433,12 +443,17 @@ export default function SearchScreen() {
               <PostCell item={item} onPress={() => handlePostPress(item.id)} />
             )}
             ListEmptyComponent={<Text style={styles.empty}>No posts found for "{query}"</Text>}
-            keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingBottom: 120 }}
             columnWrapperStyle={{ gap: 2 }}
+            getItemLayout={(_, index) => {
+              const row = Math.floor(index / 3);
+              return { length: CELL, offset: CELL * row, index };
+            }}
+            {...SEARCH_LIST_PROPS}
           />
         ) : (
           <FlatList
+            key="search-groups-list"
             data={groups}
             keyExtractor={item => item.id}
             renderItem={({ item }) => (
@@ -450,12 +465,13 @@ export default function SearchScreen() {
               />
             )}
             ListEmptyComponent={<Text style={styles.empty}>No communities found for "{query}"</Text>}
-            keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ paddingBottom: 120 }}
+            {...SEARCH_LIST_PROPS}
           />
         )
       ) : tab === 'groups' && !loading ? (
         <FlatList
+          key="search-browse-groups-list"
           data={browseGroups}
           keyExtractor={item => item.id}
           renderItem={({ item }) => (
@@ -468,11 +484,12 @@ export default function SearchScreen() {
           )}
           ListHeaderComponent={<Text style={styles.sectionLabel}>My communities and public groups to join</Text>}
           ListEmptyComponent={<Text style={styles.empty}>No communities available yet. Try searching for one.</Text>}
-          keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: 120 }}
+          {...SEARCH_LIST_PROPS}
         />
       ) : !loading ? (
         <FlatList
+          key="search-suggested-users-list"
           data={suggested}
           keyExtractor={item => item.id}
           renderItem={({ item }) => (
@@ -480,8 +497,8 @@ export default function SearchScreen() {
           )}
           ListHeaderComponent={<Text style={styles.sectionLabel}>Top Pilots</Text>}
           ListEmptyComponent={<Text style={styles.empty}>No pilots yet</Text>}
-          keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: 120 }}
+          {...SEARCH_LIST_PROPS}
         />
       ) : null}
     </View>
