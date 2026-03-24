@@ -523,17 +523,22 @@ export function useSocialGroups(currentUserId?: string) {
     return true;
   }, []);
 
-  const deleteGroup = useCallback(async (groupId: string, confirmName: string): Promise<boolean> => {
+  const deleteGroup = useCallback(async (groupId: string, confirmName: string): Promise<{ ok: boolean; errorMessage?: string }> => {
     const { error } = await supabase.rpc('delete_social_group', {
       p_group_id: groupId,
       p_confirm_name: confirmName,
     });
     if (error) {
       console.warn('[useSocialGroups] deleteGroup error:', error.message);
-      return false;
+      return {
+        ok: false,
+        errorMessage: error.message?.includes('delete_social_group')
+          ? 'Delete action is not available in the database yet. Apply the latest social groups migration and try again.'
+          : error.message ?? 'Could not delete the group.',
+      };
     }
     await fetchGroups();
-    return true;
+    return { ok: true };
   }, [fetchGroups]);
 
   useEffect(() => {

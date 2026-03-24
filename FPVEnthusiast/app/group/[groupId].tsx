@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -122,6 +122,8 @@ export default function GroupDetailScreen() {
     updateGroupSettings,
     deleteGroup,
   } = useSocialGroups(user?.id);
+
+  const scrollRef = useRef<ScrollView | null>(null);
 
   const [group, setGroup] = useState<SocialGroup | null>(null);
   const [members, setMembers] = useState<SocialGroupMember[]>([]);
@@ -475,11 +477,11 @@ export default function GroupDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             setDeletingGroup(true);
-            const ok = await deleteGroup(groupId, deleteConfirmName.trim());
+            const result = await deleteGroup(groupId, deleteConfirmName.trim());
             setDeletingGroup(false);
 
-            if (!ok) {
-              Alert.alert('Error', 'Could not delete the group.');
+            if (!result.ok) {
+              Alert.alert('Error', result.errorMessage ?? 'Could not delete the group.');
               return;
             }
 
@@ -509,7 +511,11 @@ export default function GroupDetailScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 84 : 0}
+    >
       <View style={styles.header}>
         <TouchableOpacity style={styles.headerIconBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={22} color="#fff" />
@@ -531,8 +537,11 @@ export default function GroupDetailScreen() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ff6a2f" />}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: myRole === 'owner' ? 200 : 32 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       >
         <View style={styles.heroCard}>
           <Avatar uri={group.avatar_url} size={58} />
@@ -868,7 +877,11 @@ export default function GroupDetailScreen() {
                   style={styles.dangerInput}
                   value={deleteConfirmName}
                   onChangeText={setDeleteConfirmName}
+                  onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 180)}
                   autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  keyboardAppearance="dark"
                   placeholder={`Type ${group.name}`}
                   placeholderTextColor="#666"
                 />
@@ -936,7 +949,7 @@ export default function GroupDetailScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
