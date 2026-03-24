@@ -582,6 +582,53 @@ export default function ChatTab() {
   const openRoom = (roomId: string) => router.push(`/chat/${roomId}` as any);
   const openGroup = (groupId: string) => router.push(`/group/${groupId}` as any);
 
+  const resolveCreatedGroupId = useCallback(async (candidateId: string | null, candidateName: string) => {
+    const normalizedName = candidateName.trim().toLowerCase();
+    if (!user?.id) return candidateId;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (candidateId) {
+        const { data: directMembership } = await supabase
+          .from('social_group_members')
+          .select('group_id')
+          .eq('user_id', user.id)
+          .eq('group_id', candidateId)
+          .maybeSingle();
+
+        if (directMembership?.group_id) {
+          return directMembership.group_id as string;
+        }
+      }
+
+      const { data: membershipRows } = await supabase
+        .from('social_group_members')
+        .select(`
+          joined_at,
+          group:group_id ( id, name )
+        `)
+        .eq('user_id', user.id)
+        .order('joined_at', { ascending: false })
+        .limit(12);
+
+      const nameMatch = (membershipRows ?? []).find((row: any) => {
+        const group = Array.isArray(row.group) ? (row.group[0] ?? null) : row.group;
+        return (group?.name ?? '').trim().toLowerCase() === normalizedName;
+      });
+
+      const matchedGroup = nameMatch
+        ? (Array.isArray((nameMatch as any).group) ? ((nameMatch as any).group[0] ?? null) : (nameMatch as any).group)
+        : null;
+
+      if (matchedGroup?.id) {
+        return matchedGroup.id as string;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+
+    return candidateId;
+  }, [user?.id]);
+
   const handleNewDM = async (otherUserId: string) => {
     const roomId = await getOrCreateDM(otherUserId);
     if (roomId) openRoom(roomId);
@@ -597,13 +644,24 @@ export default function ChatTab() {
     canChat: SocialGroupPermission;
     canInvite: SocialGroupPermission;
   }) => {
+    Keyboard.dismiss();
     const groupId = await createGroup(payload);
     if (!groupId) {
       Alert.alert('Error', 'Could not create community');
       return;
     }
+
+    await refreshGroups();
+    const resolvedGroupId = await resolveCreatedGroupId(String(groupId), payload.name);
+
     setShowNewCommunity(false);
-    openGroup(groupId);
+
+    if (!resolvedGroupId) {
+      Alert.alert('Community created', 'The community was created, but opening it failed. Pull to refresh and open it from the Groups tab.');
+      return;
+    }
+
+    openGroup(resolvedGroupId);
   };
 
   const filteredRooms = useMemo(() => {
