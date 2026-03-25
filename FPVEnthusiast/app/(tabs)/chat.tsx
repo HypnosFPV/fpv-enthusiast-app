@@ -17,7 +17,7 @@ import {
   FlatList,
   Keyboard,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/context/AuthContext';
 import { ChatRoom, useChat } from '../../src/hooks/useChat';
@@ -554,6 +554,7 @@ function NewCommunityModal({
 
 export default function ChatTab() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const { user } = useAuth();
   const {
     rooms,
@@ -573,11 +574,20 @@ export default function ChatTab() {
     declineInvite,
   } = useSocialGroups(user?.id);
 
-  const [tab, setTab] = useState<'all' | 'marketplace' | 'dm' | 'groups'>('all');
+  const initialTab: 'all' | 'marketplace' | 'dm' | 'groups' = params.tab === 'groups' || params.tab === 'marketplace' || params.tab === 'dm' || params.tab === 'all'
+    ? params.tab
+    : 'all';
+  const [tab, setTab] = useState<'all' | 'marketplace' | 'dm' | 'groups'>(initialTab);
   const [search, setSearch] = useState('');
   const [showNewDM, setShowNewDM] = useState(false);
   const [showNewCommunity, setShowNewCommunity] = useState(false);
   const [expandedBundles, setExpandedBundles] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (params.tab === 'groups' || params.tab === 'marketplace' || params.tab === 'dm' || params.tab === 'all') {
+      setTab(params.tab);
+    }
+  }, [params.tab]);
 
   const openRoom = (roomId: string) => router.push(`/chat/${roomId}` as any);
   const openGroup = (groupId: string) => router.push(`/group/${groupId}` as any);

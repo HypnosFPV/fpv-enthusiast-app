@@ -481,7 +481,7 @@ export default function FeedScreen() {
                     <TouchableOpacity
                       style={styles.communityQuickBtn}
                       activeOpacity={0.82}
-                      onPress={() => router.push('/(tabs)/chat')}
+                      onPress={() => router.push({ pathname: '/(tabs)/chat', params: { tab: 'groups' } } as any)}
                     >
                       <Ionicons name="people-outline" size={16} color="#ffb088" />
                       <Text style={styles.communityQuickBtnText}>Groups</Text>
@@ -498,7 +498,7 @@ export default function FeedScreen() {
                       <TouchableOpacity
                         style={styles.communityQuickBtn}
                         activeOpacity={0.82}
-                        onPress={() => router.push('/(tabs)/chat')}
+                        onPress={() => router.push({ pathname: '/(tabs)/chat', params: { tab: 'groups' } } as any)}
                       >
                         <Ionicons name="mail-open-outline" size={16} color="#ffb088" />
                         <Text style={styles.communityQuickBtnText}>Invites</Text>
