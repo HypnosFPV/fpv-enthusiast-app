@@ -290,11 +290,7 @@ export default function FeedScreen() {
           </View>
 
           {joinedCommunityPreview.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.groupRail}
-            >
+            <View style={styles.groupRail}>
               {joinedCommunityPreview.map(group => (
                 <TouchableOpacity
                   key={group.id}
@@ -303,15 +299,18 @@ export default function FeedScreen() {
                   onPress={() => router.push(`/group/${group.id}` as any)}
                 >
                   <View style={styles.groupRailAvatar}>
-                    <Ionicons name="people-outline" size={16} color="#ff9b68" />
+                    <Ionicons name="people-outline" size={15} color="#ff9b68" />
                   </View>
-                  <Text style={styles.groupRailName} numberOfLines={1}>{group.name}</Text>
-                  <Text style={styles.groupRailMeta} numberOfLines={1}>
-                    {(group.member_count ?? 0)} members • {group.privacy === 'invite_only' ? 'invite only' : group.privacy}
-                  </Text>
+                  <View style={styles.groupRailInfo}>
+                    <Text style={styles.groupRailName} numberOfLines={1}>{group.name}</Text>
+                    <Text style={styles.groupRailMeta} numberOfLines={1}>
+                      {(group.member_count ?? 0)} members • {group.privacy === 'invite_only' ? 'invite only' : group.privacy}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="#6f7b8b" />
                 </TouchableOpacity>
               ))}
-            </ScrollView>
+            </View>
           ) : null}
 
           <View style={styles.communitiesQuickRow}>
@@ -1501,26 +1500,29 @@ const styles = StyleSheet.create({
   communitySectionMeta: { color: '#6f7b8b', fontSize: 12, fontWeight: '700' },
   groupRail: { gap: 8, paddingVertical: 2 },
   groupRailCard: {
-    width: 152,
-    borderRadius: 16,
-    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     backgroundColor: '#151922',
     borderWidth: 1,
     borderColor: '#222a37',
-    gap: 6,
   },
   groupRailAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#2a170e',
     borderWidth: 1,
     borderColor: '#5b3c24',
   },
+  groupRailInfo: { flex: 1, minWidth: 0 },
   groupRailName: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  groupRailMeta: { color: '#778090', fontSize: 11, lineHeight: 15 },
+  groupRailMeta: { color: '#778090', fontSize: 11, lineHeight: 15, marginTop: 2 },
   communityList: { gap: 10 },
   communityRow: {
     flexDirection: 'row',
