@@ -121,7 +121,7 @@ export default function FeedScreen() {
   const propsToast = usePropsToast();
   const { unreadCount } = useNotificationsContext();
   const { mutedIds } = useMute(user?.id);
-  const { groups, discoverableGroups, pendingInvites } = useSocialGroups(user?.id);
+  const { groups, pendingInvites } = useSocialGroups(user?.id);
   const lastRefreshAtRef = useRef(0);
   const hasInitialRefreshRef = useRef(false);
   const visiblePostIdRef = useRef<string | null>(null);
@@ -232,7 +232,7 @@ export default function FeedScreen() {
   const [creating, setCreating] = useState(false);
   const [postDestination, setPostDestination] = useState<'public' | 'group'>('public');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [communitiesExpanded, setCommunitiesExpanded] = useState(false);
+  const [activeCommunityExpanded, setActiveCommunityExpanded] = useState(false);
 
   const postableGroups = useMemo(() => groups.filter(group => {
     const role = group.my_role ?? 'member';
@@ -246,105 +246,11 @@ export default function FeedScreen() {
 
   const detectedPlatform = detectPlatform(socialUrl);
 
-  const joinedCommunityPreview = useMemo(() => groups.slice(0, 4), [groups]);
+  const groupLookup = useMemo(() => new Map(groups.map(group => [group.id, group])), [groups]);
 
-  const hasCommunityHeader = groups.length > 0 || discoverableGroups.length > 0 || pendingInvites.length > 0;
-  const feedHeader = useMemo(() => {
-    if (!hasCommunityHeader) return null;
-
-    const summaryBits = [
-      groups.length > 0 ? `${groups.length} ${groups.length === 1 ? 'group' : 'groups'}` : null,
-      pendingInvites.length > 0 ? `${pendingInvites.length} ${pendingInvites.length === 1 ? 'invite' : 'invites'}` : null,
-      groups.length === 0 && discoverableGroups.length > 0 ? `${discoverableGroups.length} to browse` : null,
-    ].filter(Boolean);
-
-    return (
-      <View style={styles.feedHeaderWrap}>
-        <View style={styles.communitiesCard}>
-          <TouchableOpacity
-            style={styles.communitiesBanner}
-            activeOpacity={0.84}
-            onPress={() => setCommunitiesExpanded(prev => !prev)}
-          >
-            <View style={styles.communitiesBannerTextWrap}>
-              <Text style={styles.communitiesTitle}>Communities</Text>
-              <Text style={styles.communitiesBannerMeta} numberOfLines={1}>
-                {summaryBits.join(' • ') || 'Browse communities'}
-              </Text>
-            </View>
-            <View style={styles.communitiesBannerAction}>
-              <Ionicons name={communitiesExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#9cc8ff" />
-            </View>
-          </TouchableOpacity>
-
-          {communitiesExpanded ? (
-            <View style={styles.communitiesExpandedBody}>
-              <Text style={styles.communitiesSubtitle}>
-                {groups.length > 0
-                  ? 'Quick access to your groups without pushing the main feed too far down.'
-                  : 'Browse groups and jump into community conversations when you are ready.'}
-              </Text>
-
-              {joinedCommunityPreview.length > 0 ? (
-                <View style={styles.groupRail}>
-                  {joinedCommunityPreview.map(group => (
-                    <TouchableOpacity
-                      key={group.id}
-                      style={styles.groupRailCard}
-                      activeOpacity={0.84}
-                      onPress={() => router.push(`/group/${group.id}` as any)}
-                    >
-                      <View style={styles.groupRailAvatar}>
-                        <Ionicons name="people-outline" size={15} color="#ff9b68" />
-                      </View>
-                      <View style={styles.groupRailInfo}>
-                        <Text style={styles.groupRailName} numberOfLines={1}>{group.name}</Text>
-                        <Text style={styles.groupRailMeta} numberOfLines={1}>
-                          {(group.member_count ?? 0)} members • {group.privacy === 'invite_only' ? 'invite only' : group.privacy}
-                        </Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={16} color="#6f7b8b" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null}
-
-              <View style={styles.communitiesQuickRow}>
-                <TouchableOpacity
-                  style={styles.communitiesSearchBtn}
-                  activeOpacity={0.82}
-                  onPress={() => router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
-                >
-                  <Ionicons name="search-outline" size={15} color="#9cc8ff" />
-                  <Text style={styles.communitiesSearchBtnText}>Browse</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.communityQuickBtn}
-                  activeOpacity={0.82}
-                  onPress={() => groups.length > 0
-                    ? router.push('/(tabs)/chat')
-                    : router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
-                >
-                  <Ionicons name="people-outline" size={16} color="#ffb088" />
-                  <Text style={styles.communityQuickBtnText}>{groups.length > 0 ? 'Open groups' : 'Find groups'}</Text>
-                </TouchableOpacity>
-                {pendingInvites.length > 0 ? (
-                  <TouchableOpacity
-                    style={styles.communityQuickBtn}
-                    activeOpacity={0.82}
-                    onPress={() => router.push('/(tabs)/chat')}
-                  >
-                    <Ionicons name="mail-open-outline" size={16} color="#ffb088" />
-                    <Text style={styles.communityQuickBtnText}>Invites</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </View>
-          ) : null}
-        </View>
-      </View>
-    );
-  }, [communitiesExpanded, discoverableGroups.length, groups, hasCommunityHeader, joinedCommunityPreview, pendingInvites.length, router]);
+  useEffect(() => {
+    setActiveCommunityExpanded(false);
+  }, [visiblePostId]);
 
   useEffect(() => {
     if (postDestination === 'group' && !selectedGroupId) {
@@ -517,30 +423,110 @@ export default function FeedScreen() {
     void loadMore();
   }, [hasMore, loadMore, loadingMore]);
 
-  const renderPost = useCallback(({ item }: { item: FeedPost }) => (
-    <View>
-      {/* ── "Why this post?" chip — only in For You mode ── */}
-      {feedMode === 'for_you' && item.tags && item.tags.length > 0 && (
-        <View style={styles.whyChipRow}>
-          <Ionicons name="sparkles-outline" size={11} color="#ff4500" />
-          <Text style={styles.whyChipText}>
-            Based on your interest in{' '}
-            <Text style={styles.whyChipTag}>
-              {item.tags.filter(t => interestProfile.tagWeights[t]).slice(0, 2).join(', ') || item.tags[0]}
+  const renderPost = useCallback(({ item }: { item: FeedPost }) => {
+    const community = item.group_id ? groupLookup.get(item.group_id) : null;
+    const groupName = community?.name ?? item.group?.name ?? 'Community';
+    const memberCount = community?.member_count ?? null;
+    const privacyLabel = community?.privacy === 'invite_only' ? 'invite only' : (community?.privacy ?? null);
+    const communityMeta = [
+      typeof memberCount === 'number' ? `${memberCount} ${memberCount === 1 ? 'member' : 'members'}` : null,
+      privacyLabel,
+    ].filter(Boolean).join(' • ');
+    const showCommunityBanner = item.id === visiblePostId && !!item.group_id;
+
+    return (
+      <View>
+        {/* ── "Why this post?" chip — only in For You mode ── */}
+        {feedMode === 'for_you' && item.tags && item.tags.length > 0 && (
+          <View style={styles.whyChipRow}>
+            <Ionicons name="sparkles-outline" size={11} color="#ff4500" />
+            <Text style={styles.whyChipText}>
+              Based on your interest in{' '}
+              <Text style={styles.whyChipTag}>
+                {item.tags.filter(t => interestProfile.tagWeights[t]).slice(0, 2).join(', ') || item.tags[0]}
+              </Text>
             </Text>
-          </Text>
-        </View>
-      )}
-      <PostCard
-        post={item}
-        isVisible={item.id === visiblePostId}
-        shouldAutoplay={autoplayEnabled}
-        currentUserId={user?.id ?? undefined}
-        onLike={handleLike}
-        onDelete={handleDelete}
-      />
-    </View>
-  ), [visiblePostId, autoplayEnabled, user?.id, handleLike, handleDelete, feedMode, interestProfile]);
+          </View>
+        )}
+
+        {showCommunityBanner ? (
+          <View style={styles.contextCommunityWrap}>
+            <View style={styles.contextCommunityCard}>
+              <TouchableOpacity
+                style={styles.communitiesBanner}
+                activeOpacity={0.84}
+                onPress={() => setActiveCommunityExpanded(prev => !prev)}
+              >
+                <View style={styles.communitiesBannerTextWrap}>
+                  <Text style={styles.contextCommunityEyebrow}>Community</Text>
+                  <Text style={styles.groupRailName} numberOfLines={1}>{groupName}</Text>
+                  <Text style={styles.communitiesBannerMeta} numberOfLines={1}>
+                    {communityMeta || 'Open this group and keep browsing related posts.'}
+                  </Text>
+                </View>
+                <View style={styles.communitiesBannerAction}>
+                  <Ionicons name={activeCommunityExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#9cc8ff" />
+                </View>
+              </TouchableOpacity>
+
+              {activeCommunityExpanded ? (
+                <View style={styles.contextCommunityExpandedBody}>
+                  <Text style={styles.contextCommunityHint}>
+                    You are currently on a community post. Open the group, browse your group list, or discover more communities.
+                  </Text>
+                  <View style={styles.communitiesQuickRow}>
+                    <TouchableOpacity
+                      style={styles.communitiesSearchBtn}
+                      activeOpacity={0.82}
+                      onPress={() => router.push(`/group/${item.group_id}` as any)}
+                    >
+                      <Ionicons name="enter-outline" size={15} color="#9cc8ff" />
+                      <Text style={styles.communitiesSearchBtnText}>Open group</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.communityQuickBtn}
+                      activeOpacity={0.82}
+                      onPress={() => router.push('/(tabs)/chat')}
+                    >
+                      <Ionicons name="people-outline" size={16} color="#ffb088" />
+                      <Text style={styles.communityQuickBtnText}>Groups</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.communityQuickBtn}
+                      activeOpacity={0.82}
+                      onPress={() => router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
+                    >
+                      <Ionicons name="search-outline" size={16} color="#ffb088" />
+                      <Text style={styles.communityQuickBtnText}>Browse</Text>
+                    </TouchableOpacity>
+                    {pendingInvites.length > 0 ? (
+                      <TouchableOpacity
+                        style={styles.communityQuickBtn}
+                        activeOpacity={0.82}
+                        onPress={() => router.push('/(tabs)/chat')}
+                      >
+                        <Ionicons name="mail-open-outline" size={16} color="#ffb088" />
+                        <Text style={styles.communityQuickBtnText}>Invites</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
+        <PostCard
+          post={item}
+          isVisible={item.id === visiblePostId}
+          shouldAutoplay={autoplayEnabled}
+          currentUserId={user?.id ?? undefined}
+          onLike={handleLike}
+          onDelete={handleDelete}
+        />
+      </View>
+    );
+  }, [activeCommunityExpanded, autoplayEnabled, feedMode, groupLookup, handleDelete, handleLike, interestProfile, pendingInvites.length, router, user?.id, visiblePostId]);
 
   if (loading && posts.length === 0) {
     return (
@@ -640,8 +626,7 @@ export default function FeedScreen() {
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         scrollEventThrottle={16}
-        contentContainerStyle={visiblePosts.length === 0 && !hasCommunityHeader ? styles.emptyContainer : undefined}
-        ListHeaderComponent={feedHeader}
+        contentContainerStyle={visiblePosts.length === 0 ? styles.emptyContainer : undefined}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Ionicons name="videocam-outline" size={64} color="#333" />
@@ -1639,4 +1624,17 @@ const styles = StyleSheet.create({
     color: '#ff4500',
     fontWeight: '700',
   },
+  contextCommunityWrap: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4 },
+  contextCommunityCard: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 16,
+    backgroundColor: '#101218',
+    borderWidth: 1,
+    borderColor: '#1f2630',
+    gap: 10,
+  },
+  contextCommunityEyebrow: { color: '#9cc8ff', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 2 },
+  contextCommunityExpandedBody: { gap: 10 },
+  contextCommunityHint: { color: '#7d8696', fontSize: 12, lineHeight: 17 },
 });
