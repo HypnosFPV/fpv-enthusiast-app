@@ -528,38 +528,35 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
       <View>
         <Text style={styles.previewSectionLabel}>Feed card treatment</Text>
         <View style={[styles.previewPostCard, { backgroundColor: theme.surfaceColor, borderColor: theme.borderColor }]}> 
-          <View style={styles.previewPostHeader}>
-            <Avatar uri={group.avatar_url} size={34} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.previewPostAuthor, { color: theme.textColor }]}>HypnosBot</Text>
-              <View style={[styles.previewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
-                <Ionicons name="people-outline" size={11} color={theme.chipTextColor} />
-                <Text style={[styles.previewChipText, { color: theme.chipTextColor }]} numberOfLines={1}>View group • {group.name}</Text>
+          {theme.cardImageUrl ? <Image source={{ uri: theme.cardImageUrl }} style={styles.previewPostImage} /> : null}
+          {theme.cardImageUrl ? <View style={[styles.previewPostOverlay, { backgroundColor: `rgba(0,0,0,${cardOverlayOpacity})` }]} /> : null}
+          {!theme.cardImageUrl ? (
+            <View style={styles.previewPostPlaceholder}>
+              <Ionicons name="image-outline" size={26} color="#cfcfcf" />
+              <Text style={styles.previewPostPlaceholderText}>Upload card art to preview the full-card treatment.</Text>
+            </View>
+          ) : null}
+          <View style={[styles.previewArtBadge, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}> 
+            <Ionicons name="sparkles-outline" size={12} color={theme.chipTextColor} />
+            <Text style={[styles.previewArtBadgeText, { color: theme.chipTextColor }]}>Full-card art preview</Text>
+          </View>
+          <View style={styles.previewPostContent}>
+            <View style={styles.previewPostHeader}>
+              <Avatar uri={group.avatar_url} size={34} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.previewPostAuthor, { color: theme.textColor }]}>HypnosBot</Text>
+                <View style={[styles.previewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
+                  <Ionicons name="people-outline" size={11} color={theme.chipTextColor} />
+                  <Text style={[styles.previewChipText, { color: theme.chipTextColor }]} numberOfLines={1}>View group • {group.name}</Text>
+                </View>
               </View>
             </View>
-          </View>
-          <View style={[styles.previewPostArtFrame, { backgroundColor: theme.surfaceSecondaryColor, borderColor: theme.borderColor }]}> 
-            {theme.cardImageUrl ? (
-              <>
-                <Image source={{ uri: theme.cardImageUrl }} style={styles.previewPostArtImage} />
-                <View style={[styles.previewPostArtOverlay, { backgroundColor: `rgba(0,0,0,${cardOverlayOpacity})` }]} />
-              </>
-            ) : (
-              <View style={styles.previewPostArtPlaceholder}>
-                <Ionicons name="image-outline" size={26} color="#cfcfcf" />
-                <Text style={styles.previewPostArtPlaceholderText}>Upload card art to preview the premium treatment.</Text>
-              </View>
-            )}
-            <View style={[styles.previewArtBadge, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}> 
-              <Ionicons name="sparkles-outline" size={12} color={theme.chipTextColor} />
-              <Text style={[styles.previewArtBadgeText, { color: theme.chipTextColor }]}>Art-forward feed frame</Text>
+            <Text style={[styles.previewCaption, { color: theme.textColor }]}>The uploaded card art now fills the full preview card so the premium theme reads the way it will feel across the surface, with only enough overlay to keep text readable.</Text>
+            <View style={[styles.previewDivider, { backgroundColor: theme.borderColor }]} />
+            <View style={styles.previewActions}>
+              <Ionicons name="heart-outline" size={22} color={theme.mutedTextColor} />
+              <Ionicons name="chatbubble-outline" size={20} color={theme.accentColor} />
             </View>
-          </View>
-          <Text style={[styles.previewCaption, { color: theme.textColor }]}>Feed cards keep the theme colors, but artwork now gets its own framed space so the image feels intentional instead of disappearing behind the post chrome.</Text>
-          <View style={[styles.previewDivider, { backgroundColor: theme.borderColor }]} />
-          <View style={styles.previewActions}>
-            <Ionicons name="heart-outline" size={22} color={theme.mutedTextColor} />
-            <Ionicons name="chatbubble-outline" size={20} color={theme.accentColor} />
           </View>
         </View>
       </View>
@@ -716,16 +713,16 @@ const styles = StyleSheet.create({
   previewHeroContent: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', gap: 12, padding: 16 },
   previewHeroTitle: { fontSize: 18, fontWeight: '800' },
   previewHeroMeta: { fontSize: 12, marginTop: 2 },
-  previewPostCard: { borderRadius: 18, overflow: 'hidden', borderWidth: 1, padding: 14 },
+  previewPostCard: { borderRadius: 18, overflow: 'hidden', borderWidth: 1, minHeight: 240, justifyContent: 'flex-end' },
+  previewPostImage: { ...StyleSheet.absoluteFillObject, opacity: 0.54 },
+  previewPostOverlay: { ...StyleSheet.absoluteFillObject },
+  previewPostPlaceholder: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, backgroundColor: 'rgba(255,255,255,0.06)' },
+  previewPostPlaceholderText: { color: '#d4d4d4', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 10 },
+  previewPostContent: { padding: 14, zIndex: 1 },
   previewPostHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   previewPostAuthor: { fontSize: 15, fontWeight: '700' },
   previewChip: { marginTop: 6, borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%' },
   previewChipText: { fontSize: 11, fontWeight: '700', flexShrink: 1 },
-  previewPostArtFrame: { marginTop: 14, height: 178, borderRadius: 16, overflow: 'hidden', borderWidth: 1, justifyContent: 'flex-end' },
-  previewPostArtImage: { ...StyleSheet.absoluteFillObject },
-  previewPostArtOverlay: { ...StyleSheet.absoluteFillObject },
-  previewPostArtPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, backgroundColor: 'rgba(255,255,255,0.06)' },
-  previewPostArtPlaceholderText: { color: '#d4d4d4', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 10 },
   previewArtBadge: {
     position: 'absolute',
     top: 12,
