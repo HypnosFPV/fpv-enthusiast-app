@@ -782,14 +782,12 @@ export default function GroupDetailScreen() {
           </Text>
         </View>
         <View style={styles.headerActionsRow}>
-          {canManage ? (
-            <TouchableOpacity
-              style={styles.headerActionBtn}
-              onPress={() => router.push(`/group-theme/${group.id}` as any)}
-            >
-              <Ionicons name="color-palette-outline" size={20} color="#ff9b68" />
-            </TouchableOpacity>
-          ) : null}
+          <TouchableOpacity
+            style={styles.headerActionBtn}
+            onPress={() => router.push(`/group-theme/${group.id}` as any)}
+          >
+            <Ionicons name="color-palette-outline" size={20} color="#ff9b68" />
+          </TouchableOpacity>
           {group.chat_room_id ? (
             <TouchableOpacity
               style={[styles.headerActionBtn, !canChat && { opacity: 0.55 }]}
@@ -836,18 +834,20 @@ export default function GroupDetailScreen() {
                   </Text>
                 </View>
               </View>
-              {canManage ? (
-                <View style={styles.heroAdminActionsWrap}>
-                  <Text style={[styles.heroAdminHint, { color: activeTheme.mutedTextColor }]}>Admin shortcut: update the group photo, banner, and theme from one place.</Text>
-                  <TouchableOpacity
-                    style={[styles.heroAppearanceBtn, { backgroundColor: activeTheme.chipBackgroundColor, borderColor: activeTheme.borderColor }]}
-                    onPress={() => router.push(`/group-theme/${group.id}` as any)}
-                  >
-                    <Ionicons name="color-palette-outline" size={16} color={activeTheme.chipTextColor} />
-                    <Text style={[styles.heroAppearanceBtnText, { color: activeTheme.chipTextColor }]}>Customize appearance</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
+              <View style={styles.heroAdminActionsWrap}>
+                <Text style={[styles.heroAdminHint, { color: activeTheme.mutedTextColor }]}>
+                  {canManage
+                    ? 'Admin shortcut: update the group photo, banner, and theme from one place.'
+                    : 'Personalize how this group looks for you. Group photo and banner changes stay admin-only.'}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.heroAppearanceBtn, { backgroundColor: activeTheme.chipBackgroundColor, borderColor: activeTheme.borderColor }]}
+                  onPress={() => router.push(`/group-theme/${group.id}` as any)}
+                >
+                  <Ionicons name="color-palette-outline" size={16} color={activeTheme.chipTextColor} />
+                  <Text style={[styles.heroAppearanceBtnText, { color: activeTheme.chipTextColor }]}>Customize appearance</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
@@ -1225,14 +1225,18 @@ export default function GroupDetailScreen() {
             <View style={[styles.appearanceBanner, { backgroundColor: activeTheme.surfaceColor, borderColor: activeTheme.borderColor }]}> 
               <View style={{ flex: 1 }}>
                 <Text style={[styles.sectionTitle, { color: activeTheme.textColor }]}>Appearance studio</Text>
-                <Text style={[styles.appearanceBannerText, { color: activeTheme.mutedTextColor }]}>Edit the group photo and banner, switch free presets, and preview premium custom themes without leaving this community.</Text>
+                <Text style={[styles.appearanceBannerText, { color: activeTheme.mutedTextColor }]}>
+                  {canManage
+                    ? 'Edit the group photo and banner, switch free presets, and preview premium custom themes without leaving this community.'
+                    : 'Switch free presets, preview premium custom themes, and personalize this group for your account. Group photo and banner changes stay admin-only.'}
+                </Text>
               </View>
               <TouchableOpacity
                 style={[styles.secondaryBtn, { backgroundColor: activeTheme.chipBackgroundColor, borderColor: activeTheme.borderColor }]}
                 onPress={() => router.push(`/group-theme/${group.id}` as any)}
               >
                 <Ionicons name="color-palette-outline" size={16} color={activeTheme.chipTextColor} />
-                <Text style={[styles.secondaryBtnText, { color: activeTheme.chipTextColor }]}>Edit photo & theme</Text>
+                <Text style={[styles.secondaryBtnText, { color: activeTheme.chipTextColor }]}>{canManage ? 'Edit photo & theme' : 'Customize your theme'}</Text>
               </TouchableOpacity>
             </View>
 
