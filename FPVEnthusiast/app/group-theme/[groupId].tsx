@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
@@ -254,17 +255,18 @@ export default function GroupThemeScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={22} color="#fff" />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Appearance studio</Text>
-            <Text style={styles.headerSubtitle}>{group.name}</Text>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerTitle}>Appearance studio</Text>
+              <Text style={styles.headerSubtitle}>{group.name}</Text>
+            </View>
           </View>
-        </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Quick start</Text>
@@ -497,8 +499,9 @@ export default function GroupThemeScreen() {
           <Ionicons name="refresh-outline" size={16} color="#bbb" />
           <Text style={styles.refreshBtnText}>Refresh appearance data</Text>
         </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -568,7 +571,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   centered: { alignItems: 'center', justifyContent: 'center' },
   loadingText: { color: '#9a9a9a', marginTop: 12, fontSize: 14 },
-  scrollContent: { padding: 16, paddingTop: 54, paddingBottom: 32, gap: 14 },
+  scrollContent: { padding: 16, paddingTop: 16, paddingBottom: 32, gap: 14 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerBtn: {
     width: 40,
