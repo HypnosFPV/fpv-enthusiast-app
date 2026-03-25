@@ -1141,20 +1141,7 @@ export default function PostCard(props: Props) {
 
   // ── Main render ───────────────────────────────────────────────────────────
   return (
-    <View
-      style={[styles.card, activeGroupTheme && styles.themedCard, themedCardStyle]}
-      onLayout={(event) => {
-        const nextWidth = Math.round(event.nativeEvent.layout.width);
-        const nextHeight = Math.round(event.nativeEvent.layout.height);
-        setCardFrame((prev) => (prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }));
-      }}
-    >
-      {activeGroupTheme?.cardImageUrl ? (
-        <>
-          <Image source={{ uri: activeGroupTheme.cardImageUrl }} style={styles.themedCardImage} resizeMode="cover" />
-          <View style={[styles.themedCardOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.08, Math.min(0.32, (activeGroupTheme.overlayStrength ?? 72) / 180))})` }]} />
-        </>
-      ) : null}
+    <View style={styles.cardShell}>
       {activeGroupTheme && shouldAnimateGroupCard && cardFrame.width > 0 && cardFrame.height > 0 ? (
         <AnimatedGroupBorder
           width={cardFrame.width}
@@ -1165,7 +1152,21 @@ export default function PostCard(props: Props) {
           variant={groupAnimationVariantId}
         />
       ) : null}
-      <View style={styles.header}>
+      <View
+        style={[styles.card, activeGroupTheme && styles.themedCard, themedCardStyle]}
+        onLayout={(event) => {
+          const nextWidth = Math.round(event.nativeEvent.layout.width);
+          const nextHeight = Math.round(event.nativeEvent.layout.height);
+          setCardFrame((prev) => (prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }));
+        }}
+      >
+        {activeGroupTheme?.cardImageUrl ? (
+          <>
+            <Image source={{ uri: activeGroupTheme.cardImageUrl }} style={styles.themedCardImage} resizeMode="cover" />
+            <View style={[styles.themedCardOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.08, Math.min(0.32, (activeGroupTheme.overlayStrength ?? 72) / 180))})` }]} />
+          </>
+        ) : null}
+        <View style={styles.header}>
         <View style={styles.avatarWrap}>
           {post.users?.avatar_url
             ? <Image source={{ uri: post.users.avatar_url }} style={styles.avatar} />
@@ -1420,13 +1421,24 @@ export default function PostCard(props: Props) {
         uri={zoomUri}
         onClose={function () { setZoomUri(null); }}
       />
+      </View>
     </View>
   );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  card: { backgroundColor: '#13132a', marginBottom: 10, borderRadius: 14, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
+  cardShell: {
+    position: 'relative',
+    marginBottom: 10,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  card: { backgroundColor: '#13132a', borderRadius: 14, overflow: 'hidden' },
   themedCard: { borderWidth: 1 },
   themedCardImage: { ...StyleSheet.absoluteFillObject, opacity: 0.4 },
   themedCardOverlay: { ...StyleSheet.absoluteFillObject },

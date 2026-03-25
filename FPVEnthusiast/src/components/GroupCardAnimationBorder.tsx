@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, Easing, StyleSheet } from 'react-native';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { GroupCardAnimationVariantId } from '../constants/groupThemes';
-
-const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 
 interface Props {
   width: number;
@@ -31,167 +29,360 @@ export default function GroupCardAnimationBorder({
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const orbitAnim = useRef(new Animated.Value(0)).current;
   const chaseAnim = useRef(new Animated.Value(0)).current;
-  const shimmerAnim = useRef(new Animated.Value(0)).current;
   const cornerAnim = useRef(new Animated.Value(0)).current;
+
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const orbitLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const chaseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
-  const shimmerLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const cornerLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   const isBasic = variant === 'basic';
   const isStandard = variant === 'standard';
   const isPremium = variant === 'premium';
 
-  const edgePulseRange = isPremium ? [0.78, 1] : isStandard ? [0.58, 0.96] : [0.38, 0.84];
-  const glowRange = isPremium ? [0.36, 0.82] : isStandard ? [0.22, 0.48] : [0.14, 0.3];
-  const auraRange = isPremium ? [0.28, 0.52] : isStandard ? [0.12, 0.22] : [0.06, 0.12];
-  const thicknessRange = isPremium ? [3.2, 5.6] : isStandard ? [2.4, 4.2] : [2, 3.2];
-  const pulseDuration = isPremium ? 880 : isStandard ? 980 : 1120;
-  const orbitDuration = isPremium ? 2200 : isStandard ? 2800 : 2600;
+  const edgeThickness = isPremium ? 4 : isStandard ? 3 : 2;
+  const secondaryThickness = isPremium ? 3 : 2;
+  const outerSpread = isPremium ? 10 : isStandard ? 8 : 6;
+  const edgeInset = Math.max(Math.round(cornerRadius * 0.72), 11);
+  const sideInset = Math.max(Math.round(cornerRadius * 0.88), 13);
 
   useEffect(() => {
     pulseLoopRef.current?.stop?.();
     orbitLoopRef.current?.stop?.();
     chaseLoopRef.current?.stop?.();
-    shimmerLoopRef.current?.stop?.();
     cornerLoopRef.current?.stop?.();
+
     pulseAnim.stopAnimation();
     orbitAnim.stopAnimation();
     chaseAnim.stopAnimation();
-    shimmerAnim.stopAnimation();
     cornerAnim.stopAnimation();
 
     if (!active || width < 40 || height < 40 || variant === 'none') {
       pulseAnim.setValue(0);
       orbitAnim.setValue(0);
       chaseAnim.setValue(0);
-      shimmerAnim.setValue(0);
       cornerAnim.setValue(0);
       return;
     }
 
     pulseLoopRef.current = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: pulseDuration, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-        Animated.timing(pulseAnim, { toValue: 0, duration: pulseDuration, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: isPremium ? 820 : isStandard ? 980 : 1160,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0,
+          duration: isPremium ? 820 : isStandard ? 980 : 1160,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
       ]),
     );
+
     orbitLoopRef.current = Animated.loop(
-      Animated.timing(orbitAnim, { toValue: 1, duration: orbitDuration, easing: Easing.linear, useNativeDriver: true }),
+      Animated.timing(orbitAnim, {
+        toValue: 1,
+        duration: isPremium ? 1900 : isStandard ? 2550 : 2350,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
     );
 
-    if (isPremium) {
+    if (!isBasic) {
       chaseLoopRef.current = Animated.loop(
-        Animated.timing(chaseAnim, { toValue: 1, duration: 1700, easing: Easing.linear, useNativeDriver: true }),
-      );
-      shimmerLoopRef.current = Animated.loop(
         Animated.sequence([
-          Animated.delay(120),
-          Animated.timing(shimmerAnim, { toValue: 1, duration: 2100, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-          Animated.timing(shimmerAnim, { toValue: 0, duration: 0, easing: Easing.linear, useNativeDriver: true }),
-          Animated.delay(260),
+          Animated.delay(isPremium ? 120 : 220),
+          Animated.timing(chaseAnim, {
+            toValue: 1,
+            duration: isPremium ? 1600 : 2300,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+          Animated.timing(chaseAnim, {
+            toValue: 0,
+            duration: 0,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
         ]),
       );
+    }
+
+    if (isPremium) {
       cornerLoopRef.current = Animated.loop(
         Animated.sequence([
-          Animated.timing(cornerAnim, { toValue: 1, duration: 760, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-          Animated.timing(cornerAnim, { toValue: 0, duration: 760, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(cornerAnim, {
+            toValue: 1,
+            duration: 680,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(cornerAnim, {
+            toValue: 0,
+            duration: 820,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
         ]),
       );
-      chaseLoopRef.current.start();
-      shimmerLoopRef.current.start();
-      cornerLoopRef.current.start();
     }
 
     pulseLoopRef.current.start();
     orbitLoopRef.current.start();
+    chaseLoopRef.current?.start?.();
+    cornerLoopRef.current?.start?.();
 
     return () => {
       pulseLoopRef.current?.stop?.();
       orbitLoopRef.current?.stop?.();
       chaseLoopRef.current?.stop?.();
-      shimmerLoopRef.current?.stop?.();
       cornerLoopRef.current?.stop?.();
       pulseAnim.stopAnimation();
       orbitAnim.stopAnimation();
       chaseAnim.stopAnimation();
-      shimmerAnim.stopAnimation();
       cornerAnim.stopAnimation();
     };
-  }, [active, chaseAnim, cornerAnim, height, isPremium, orbitAnim, orbitDuration, pulseAnim, pulseDuration, shimmerAnim, variant, width]);
+  }, [active, chaseAnim, cornerAnim, height, isBasic, isPremium, isStandard, orbitAnim, pulseAnim, variant, width]);
 
-  const edgeOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: edgePulseRange });
-  const glowOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: glowRange });
-  const auraOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: auraRange });
-  const edgeThickness = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: thicknessRange });
-  const cornerOpacity = cornerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0.95] });
-  const cornerScale = cornerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1.18] });
-  const sheenOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: isPremium ? [0.08, 0.2] : [0.05, 0.12] });
-  const primaryCometOpacity = orbitAnim.interpolate({ inputRange: [0, 0.08, 0.5, 0.92, 1], outputRange: [0, 1, 0.58, 1, 0] });
-  const secondaryCometOpacity = chaseAnim.interpolate({ inputRange: [0, 0.08, 0.5, 0.92, 1], outputRange: [0, 0.95, 0.5, 0.95, 0] });
+  const edgeOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isPremium ? [0.74, 1] : isStandard ? [0.58, 0.92] : [0.4, 0.82],
+  });
+  const glowOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isPremium ? [0.34, 0.76] : isStandard ? [0.16, 0.34] : [0.08, 0.18],
+  });
+  const auraOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isPremium ? [0.18, 0.42] : isStandard ? [0.08, 0.18] : [0.03, 0.08],
+  });
+  const auraScale = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isPremium ? [0.992, 1.02] : isStandard ? [0.995, 1.012] : [0.998, 1.006],
+  });
+  const edgeScaleX = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isPremium ? [0.985, 1.015] : isStandard ? [0.99, 1.01] : [0.995, 1.004],
+  });
+  const edgeScaleY = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isPremium ? [0.985, 1.02] : isStandard ? [0.992, 1.014] : [0.996, 1.006],
+  });
+  const cornerOpacity = cornerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.22, 0.95] });
+  const cornerScale = cornerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1.24] });
 
-  const horizontalSweepWidth = clamp(width * (isPremium ? 0.38 : isStandard ? 0.34 : 0.3), 94, isPremium ? 180 : 150);
-  const verticalSweepHeight = clamp(height * (isPremium ? 0.34 : isStandard ? 0.3 : 0.26), 74, isPremium ? 150 : 126);
-  const cometThickness = isPremium ? 14 : isStandard ? 11 : 8;
-  const sideThickness = isPremium ? 12 : isStandard ? 10 : 8;
-  const edgeInset = Math.max(8, Math.round(cornerRadius * 0.7));
-  const sideInset = Math.max(12, Math.round(cornerRadius * 1.05));
+  const horizontalSweepWidth = clamp(width * (isPremium ? 0.38 : isStandard ? 0.32 : 0.28), 96, isPremium ? 188 : 152);
+  const verticalSweepHeight = clamp(height * (isPremium ? 0.34 : isStandard ? 0.28 : 0.24), 82, isPremium ? 164 : 128);
 
-  const topCometX = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [-horizontalSweepWidth, width] });
-  const rightCometY = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [-verticalSweepHeight, height] });
-  const bottomCometX = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [width, -horizontalSweepWidth] });
-  const leftCometY = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [height, -verticalSweepHeight] });
+  const topTravel = Math.max(width - edgeInset * 2, horizontalSweepWidth + 12);
+  const sideTravel = Math.max(height - sideInset * 2, verticalSweepHeight + 12);
 
-  const topChaseX = chaseAnim.interpolate({ inputRange: [0, 1], outputRange: [width * 0.28, -horizontalSweepWidth] });
-  const rightChaseY = chaseAnim.interpolate({ inputRange: [0, 1], outputRange: [height * 0.18, -verticalSweepHeight] });
-  const bottomChaseX = chaseAnim.interpolate({ inputRange: [0, 1], outputRange: [-horizontalSweepWidth, width] });
-  const leftChaseY = chaseAnim.interpolate({ inputRange: [0, 1], outputRange: [-verticalSweepHeight, height] });
+  const topCometX = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [-horizontalSweepWidth, topTravel] });
+  const rightCometY = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [-verticalSweepHeight, sideTravel] });
+  const bottomCometX = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [topTravel, -horizontalSweepWidth] });
+  const leftCometY = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [sideTravel, -verticalSweepHeight] });
 
-  const shimmerTranslateX = shimmerAnim.interpolate({ inputRange: [0, 1], outputRange: [-width * 1.25, width * 1.2] });
+  const secondaryTopX = chaseAnim.interpolate({ inputRange: [0, 1], outputRange: [topTravel * 0.42, -horizontalSweepWidth] });
+  const secondaryRightY = chaseAnim.interpolate({ inputRange: [0, 1], outputRange: [sideTravel * 0.18, -verticalSweepHeight] });
+  const secondaryBottomX = chaseAnim.interpolate({ inputRange: [0, 1], outputRange: [-horizontalSweepWidth, topTravel] });
+  const secondaryLeftY = chaseAnim.interpolate({ inputRange: [0, 1], outputRange: [-verticalSweepHeight, sideTravel] });
 
-  const dynamicStyles = useMemo(() => ({
-    wrap: { borderRadius: cornerRadius },
-    glow: { borderRadius: cornerRadius },
-    aura: { borderRadius: cornerRadius + 2 },
-    topEdge: { borderTopLeftRadius: cornerRadius, borderTopRightRadius: cornerRadius },
-    bottomEdge: { borderBottomLeftRadius: cornerRadius, borderBottomRightRadius: cornerRadius },
-    leftEdge: { borderTopLeftRadius: cornerRadius, borderBottomLeftRadius: cornerRadius },
-    rightEdge: { borderTopRightRadius: cornerRadius, borderBottomRightRadius: cornerRadius },
-    shimmer: {
-      top: Math.max(22, height * 0.18),
-      width: Math.max(width * 0.62, 180),
-      height: Math.max(height * 0.42, 76),
-    },
-    cornerTopLeft: { top: sideInset - 3, left: sideInset - 3 },
-    cornerTopRight: { top: sideInset - 3, right: sideInset - 3 },
-    cornerBottomLeft: { bottom: sideInset - 3, left: sideInset - 3 },
-    cornerBottomRight: { bottom: sideInset - 3, right: sideInset - 3 },
-  }), [cornerRadius, height, sideInset, width]);
+  const primaryCometOpacity = orbitAnim.interpolate({
+    inputRange: [0, 0.08, 0.5, 0.92, 1],
+    outputRange: [0, 1, isPremium ? 0.72 : 0.56, 1, 0],
+  });
+  const secondaryCometOpacity = chaseAnim.interpolate({
+    inputRange: [0, 0.08, 0.5, 0.92, 1],
+    outputRange: [0, 0.94, isPremium ? 0.66 : 0.44, 0.94, 0],
+  });
+
+  const dynamicStyles = useMemo(
+    () => ({
+      wrap: {
+        top: -outerSpread,
+        right: -outerSpread,
+        bottom: -outerSpread,
+        left: -outerSpread,
+      },
+      aura: {
+        top: outerSpread - 1,
+        right: outerSpread - 1,
+        bottom: outerSpread - 1,
+        left: outerSpread - 1,
+        borderRadius: cornerRadius + 2,
+      },
+      glow: {
+        top: outerSpread - 2,
+        right: outerSpread - 2,
+        bottom: outerSpread - 2,
+        left: outerSpread - 2,
+        borderRadius: cornerRadius + 4,
+      },
+      topEdge: {
+        top: outerSpread - Math.round(edgeThickness / 2),
+        left: outerSpread + edgeInset,
+        right: outerSpread + edgeInset,
+        height: edgeThickness,
+      },
+      bottomEdge: {
+        bottom: outerSpread - Math.round(edgeThickness / 2),
+        left: outerSpread + edgeInset,
+        right: outerSpread + edgeInset,
+        height: edgeThickness,
+      },
+      leftEdge: {
+        top: outerSpread + sideInset,
+        bottom: outerSpread + sideInset,
+        left: outerSpread - Math.round(edgeThickness / 2),
+        width: edgeThickness,
+      },
+      rightEdge: {
+        top: outerSpread + sideInset,
+        bottom: outerSpread + sideInset,
+        right: outerSpread - Math.round(edgeThickness / 2),
+        width: edgeThickness,
+      },
+      topCometTrack: {
+        top: outerSpread - Math.round((isPremium ? 12 : 10) / 2),
+        left: outerSpread + edgeInset,
+      },
+      rightCometTrack: {
+        top: outerSpread + sideInset,
+        right: outerSpread - Math.round((isPremium ? 12 : 10) / 2),
+      },
+      bottomCometTrack: {
+        bottom: outerSpread - Math.round((isPremium ? 12 : 10) / 2),
+        left: outerSpread + edgeInset,
+      },
+      leftCometTrack: {
+        top: outerSpread + sideInset,
+        left: outerSpread - Math.round((isPremium ? 12 : 10) / 2),
+      },
+      secondaryTopTrack: {
+        top: outerSpread + 5,
+        left: outerSpread + edgeInset,
+      },
+      secondaryRightTrack: {
+        top: outerSpread + sideInset,
+        right: outerSpread + 4,
+      },
+      secondaryBottomTrack: {
+        bottom: outerSpread + 5,
+        left: outerSpread + edgeInset,
+      },
+      secondaryLeftTrack: {
+        top: outerSpread + sideInset,
+        left: outerSpread + 4,
+      },
+      cornerTopLeft: { top: outerSpread - 3, left: outerSpread - 3 },
+      cornerTopRight: { top: outerSpread - 3, right: outerSpread - 3 },
+      cornerBottomLeft: { bottom: outerSpread - 3, left: outerSpread - 3 },
+      cornerBottomRight: { bottom: outerSpread - 3, right: outerSpread - 3 },
+    }),
+    [cornerRadius, edgeInset, edgeThickness, isPremium, outerSpread, sideInset],
+  );
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.groupAnimWrap, dynamicStyles.wrap, { opacity: edgeOpacity }]}>
-      <Animated.View style={[styles.groupAnimAura, dynamicStyles.aura, { opacity: auraOpacity, shadowColor: accentColor }]} />
-      <Animated.View style={[styles.groupAnimGlow, dynamicStyles.glow, { opacity: glowOpacity, shadowColor: accentColor, borderColor }]} />
+    <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap]}>
+      <Animated.View
+        style={[
+          styles.aura,
+          dynamicStyles.aura,
+          {
+            opacity: auraOpacity,
+            borderColor: accentColor,
+            shadowColor: accentColor,
+            transform: [{ scale: auraScale }],
+          },
+        ]}
+      />
 
-      <AnimatedLinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.groupAnimTopEdge, dynamicStyles.topEdge, { height: edgeThickness }]} />
-      <AnimatedLinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={[styles.groupAnimBottomEdge, dynamicStyles.bottomEdge, { height: edgeThickness }]} />
-      <AnimatedLinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[styles.groupAnimLeftEdge, dynamicStyles.leftEdge, { width: edgeThickness }]} />
-      <AnimatedLinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={[styles.groupAnimRightEdge, dynamicStyles.rightEdge, { width: edgeThickness }]} />
+      <Animated.View
+        style={[
+          styles.glow,
+          dynamicStyles.glow,
+          {
+            opacity: glowOpacity,
+            borderColor,
+            shadowColor: accentColor,
+            transform: [{ scale: auraScale }],
+          },
+        ]}
+      />
 
-      <Animated.View style={[styles.horizontalComet, { top: edgeInset, width: horizontalSweepWidth, height: cometThickness, opacity: primaryCometOpacity, transform: [{ translateX: topCometX }] }]}>
+      <Animated.View style={[styles.edgeHorizontal, dynamicStyles.topEdge, { opacity: edgeOpacity, transform: [{ scaleX: edgeScaleX }] }]}>
+        <LinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.gradientFill} />
+      </Animated.View>
+      <Animated.View style={[styles.edgeHorizontal, dynamicStyles.bottomEdge, { opacity: edgeOpacity, transform: [{ scaleX: edgeScaleX }] }]}>
+        <LinearGradient colors={[accentColor, borderColor, '#ffffff', accentColor]} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.gradientFill} />
+      </Animated.View>
+      <Animated.View style={[styles.edgeVertical, dynamicStyles.leftEdge, { opacity: edgeOpacity, transform: [{ scaleY: edgeScaleY }] }]}>
+        <LinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.gradientFill} />
+      </Animated.View>
+      <Animated.View style={[styles.edgeVertical, dynamicStyles.rightEdge, { opacity: edgeOpacity, transform: [{ scaleY: edgeScaleY }] }]}>
+        <LinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.gradientFill} />
+      </Animated.View>
+
+      <Animated.View
+        style={[
+          styles.horizontalComet,
+          dynamicStyles.topCometTrack,
+          {
+            width: horizontalSweepWidth,
+            height: isPremium ? 12 : isStandard ? 10 : 8,
+            opacity: primaryCometOpacity,
+            transform: [{ translateX: topCometX }],
+          },
+        ]}
+      >
         <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.gradientFill} />
       </Animated.View>
 
       {!isBasic ? (
         <>
-          <Animated.View style={[styles.verticalComet, { right: edgeInset, width: sideThickness, height: verticalSweepHeight, opacity: primaryCometOpacity, transform: [{ translateY: rightCometY }] }]}>
+          <Animated.View
+            style={[
+              styles.verticalComet,
+              dynamicStyles.rightCometTrack,
+              {
+                width: isPremium ? 12 : 10,
+                height: verticalSweepHeight,
+                opacity: primaryCometOpacity,
+                transform: [{ translateY: rightCometY }],
+              },
+            ]}
+          >
             <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.gradientFill} />
           </Animated.View>
-          <Animated.View style={[styles.horizontalComet, { bottom: edgeInset, width: horizontalSweepWidth, height: cometThickness, opacity: primaryCometOpacity, transform: [{ translateX: bottomCometX }] }]}>
+          <Animated.View
+            style={[
+              styles.horizontalComet,
+              dynamicStyles.bottomCometTrack,
+              {
+                width: horizontalSweepWidth,
+                height: isPremium ? 12 : 10,
+                opacity: primaryCometOpacity,
+                transform: [{ translateX: bottomCometX }],
+              },
+            ]}
+          >
             <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.gradientFill} />
           </Animated.View>
-          <Animated.View style={[styles.verticalComet, { left: edgeInset, width: sideThickness, height: verticalSweepHeight, opacity: primaryCometOpacity, transform: [{ translateY: leftCometY }] }]}>
+          <Animated.View
+            style={[
+              styles.verticalComet,
+              dynamicStyles.leftCometTrack,
+              {
+                width: isPremium ? 12 : 10,
+                height: verticalSweepHeight,
+                opacity: primaryCometOpacity,
+                transform: [{ translateY: leftCometY }],
+              },
+            ]}
+          >
             <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.gradientFill} />
           </Animated.View>
         </>
@@ -199,21 +390,65 @@ export default function GroupCardAnimationBorder({
 
       {isPremium ? (
         <>
-          <Animated.View style={[styles.horizontalComet, styles.premiumSecondaryGlow, { top: edgeInset + 12, width: horizontalSweepWidth * 0.82, height: cometThickness + 2, opacity: secondaryCometOpacity, transform: [{ translateX: topChaseX }] }]}>
+          <Animated.View
+            style={[
+              styles.horizontalComet,
+              styles.secondaryComet,
+              dynamicStyles.secondaryTopTrack,
+              {
+                width: horizontalSweepWidth * 0.8,
+                height: secondaryThickness + 3,
+                opacity: secondaryCometOpacity,
+                transform: [{ translateX: secondaryTopX }],
+              },
+            ]}
+          >
             <LinearGradient colors={['transparent', borderColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.gradientFill} />
           </Animated.View>
-          <Animated.View style={[styles.verticalComet, styles.premiumSecondaryGlow, { right: edgeInset + 12, width: sideThickness + 2, height: verticalSweepHeight * 0.78, opacity: secondaryCometOpacity, transform: [{ translateY: rightChaseY }] }]}>
+          <Animated.View
+            style={[
+              styles.verticalComet,
+              styles.secondaryComet,
+              dynamicStyles.secondaryRightTrack,
+              {
+                width: secondaryThickness + 3,
+                height: verticalSweepHeight * 0.78,
+                opacity: secondaryCometOpacity,
+                transform: [{ translateY: secondaryRightY }],
+              },
+            ]}
+          >
             <LinearGradient colors={['transparent', borderColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.gradientFill} />
           </Animated.View>
-          <Animated.View style={[styles.horizontalComet, styles.premiumSecondaryGlow, { bottom: edgeInset + 12, width: horizontalSweepWidth * 0.82, height: cometThickness + 2, opacity: secondaryCometOpacity, transform: [{ translateX: bottomChaseX }] }]}>
+          <Animated.View
+            style={[
+              styles.horizontalComet,
+              styles.secondaryComet,
+              dynamicStyles.secondaryBottomTrack,
+              {
+                width: horizontalSweepWidth * 0.8,
+                height: secondaryThickness + 3,
+                opacity: secondaryCometOpacity,
+                transform: [{ translateX: secondaryBottomX }],
+              },
+            ]}
+          >
             <LinearGradient colors={['transparent', accentColor, '#ffffff', borderColor, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.gradientFill} />
           </Animated.View>
-          <Animated.View style={[styles.verticalComet, styles.premiumSecondaryGlow, { left: edgeInset + 12, width: sideThickness + 2, height: verticalSweepHeight * 0.78, opacity: secondaryCometOpacity, transform: [{ translateY: leftChaseY }] }]}>
+          <Animated.View
+            style={[
+              styles.verticalComet,
+              styles.secondaryComet,
+              dynamicStyles.secondaryLeftTrack,
+              {
+                width: secondaryThickness + 3,
+                height: verticalSweepHeight * 0.78,
+                opacity: secondaryCometOpacity,
+                transform: [{ translateY: secondaryLeftY }],
+              },
+            ]}
+          >
             <LinearGradient colors={['transparent', accentColor, '#ffffff', borderColor, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.gradientFill} />
-          </Animated.View>
-
-          <Animated.View style={[styles.premiumSheen, dynamicStyles.shimmer, { opacity: sheenOpacity, transform: [{ translateX: shimmerTranslateX }, { rotate: '-18deg' }] }]}>
-            <LinearGradient colors={['transparent', 'rgba(255,255,255,0.0)', 'rgba(255,255,255,0.22)', 'rgba(255,255,255,0.0)', 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.gradientFill} />
           </Animated.View>
 
           {[
@@ -234,7 +469,9 @@ export default function GroupCardAnimationBorder({
                   transform: [{ scale: cornerScale }],
                 },
               ]}
-            />
+            >
+              <View style={[styles.cornerBurstCore, { backgroundColor: accentColor }]} />
+            </Animated.View>
           ))}
         </>
       ) : null}
@@ -243,77 +480,72 @@ export default function GroupCardAnimationBorder({
 }
 
 const styles = StyleSheet.create({
-  groupAnimWrap: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 2,
+  wrap: {
+    position: 'absolute',
+    zIndex: 12,
   },
-  groupAnimAura: {
-    ...StyleSheet.absoluteFillObject,
-    borderWidth: 1,
-    shadowOpacity: 0.28,
-    shadowRadius: 22,
-  },
-  groupAnimGlow: {
-    ...StyleSheet.absoluteFillObject,
+  aura: {
+    position: 'absolute',
     borderWidth: 1,
     shadowOpacity: 0.32,
-    shadowRadius: 16,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
   },
-  groupAnimTopEdge: {
+  glow: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+    borderWidth: 1,
+    shadowOpacity: 0.44,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
   },
-  groupAnimBottomEdge: {
+  edgeHorizontal: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    borderRadius: 999,
+    overflow: 'hidden',
   },
-  groupAnimLeftEdge: {
+  edgeVertical: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-  },
-  groupAnimRightEdge: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    right: 0,
+    borderRadius: 999,
+    overflow: 'hidden',
   },
   horizontalComet: {
     position: 'absolute',
-    left: 0,
-    overflow: 'hidden',
     borderRadius: 999,
+    overflow: 'hidden',
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
   },
   verticalComet: {
     position: 'absolute',
-    top: 0,
-    overflow: 'hidden',
     borderRadius: 999,
-  },
-  premiumSecondaryGlow: {
-    shadowOpacity: 0.26,
+    overflow: 'hidden',
+    shadowOpacity: 0.6,
     shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
   },
-  premiumSheen: {
-    position: 'absolute',
-    left: 0,
-    overflow: 'hidden',
-    borderRadius: 999,
-  },
-  gradientFill: {
-    flex: 1,
+  secondaryComet: {
+    shadowOpacity: 0.75,
+    shadowRadius: 12,
   },
   cornerBurst: {
     position: 'absolute',
-    width: 10,
-    height: 10,
+    width: 12,
+    height: 12,
     borderRadius: 999,
-    shadowOpacity: 0.55,
-    shadowRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  cornerBurstCore: {
+    width: 5,
+    height: 5,
+    borderRadius: 999,
+    opacity: 0.95,
+  },
+  gradientFill: {
+    flex: 1,
   },
 });

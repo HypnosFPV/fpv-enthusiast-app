@@ -111,15 +111,13 @@ function AnimationVariantPreviewCard({
         </View>
       </View>
       <View
-        style={[styles.animationPreviewCard, { backgroundColor: theme.surfaceColor, borderColor: theme.borderColor }]}
+        style={styles.animationPreviewCardShell}
         onLayout={(event) => {
           const nextWidth = Math.round(event.nativeEvent.layout.width);
           const nextHeight = Math.round(event.nativeEvent.layout.height);
           setCardFrame((prev) => (prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }));
         }}
       >
-        {theme.cardImageUrl ? <Image source={{ uri: theme.cardImageUrl }} style={styles.animationPreviewImage} resizeMode="cover" /> : null}
-        {theme.cardImageUrl ? <View style={[styles.animationPreviewImageOverlay, { backgroundColor: `rgba(0,0,0,${overlayOpacity})` }]} /> : null}
         {variantId !== 'none' && cardFrame.width > 0 && cardFrame.height > 0 ? (
           <GroupCardAnimationBorder
             width={cardFrame.width}
@@ -131,7 +129,10 @@ function AnimationVariantPreviewCard({
             cornerRadius={18}
           />
         ) : null}
-        <View style={styles.animationPreviewContent}>
+        <View style={[styles.animationPreviewCard, { backgroundColor: theme.surfaceColor, borderColor: theme.borderColor }]}>
+          {theme.cardImageUrl ? <Image source={{ uri: theme.cardImageUrl }} style={styles.animationPreviewImage} resizeMode="cover" /> : null}
+          {theme.cardImageUrl ? <View style={[styles.animationPreviewImageOverlay, { backgroundColor: `rgba(0,0,0,${overlayOpacity})` }]} /> : null}
+          <View style={styles.animationPreviewContent}>
           <View style={[styles.animationPreviewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
             <Ionicons name="sparkles-outline" size={11} color={theme.chipTextColor} />
             <Text style={[styles.animationPreviewChipText, { color: theme.chipTextColor }]}>{variantId === 'none' ? 'Static feed card' : 'Animated feed card'}</Text>
@@ -139,6 +140,7 @@ function AnimationVariantPreviewCard({
           <Text style={[styles.animationPreviewTitleText, { color: theme.textColor }]}>View group • {groupName}</Text>
           <Text style={[styles.animationPreviewBodyText, { color: theme.textColor }]}>This is how the border motion will read on a real post card for your current theme.</Text>
           <Text style={[styles.animationPreviewMetaText, { color: theme.mutedTextColor }]}>{isLive ? 'Currently active in your feed.' : 'Preview only until you tap Use or complete checkout.'}</Text>
+          </View>
         </View>
       </View>
     </View>
@@ -891,6 +893,7 @@ const styles = StyleSheet.create({
   animationPreviewPillActive: { borderColor: '#ff6a2f', backgroundColor: 'rgba(255,106,47,0.14)' },
   animationPreviewPillText: { color: '#d7b09b', fontSize: 11, fontWeight: '800' },
   animationPreviewPillTextActive: { color: '#ffe1d4' },
+  animationPreviewCardShell: { position: 'relative', minHeight: 168, borderRadius: 18, marginTop: 14 },
   animationPreviewCard: {
     minHeight: 168,
     borderRadius: 18,
@@ -898,6 +901,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'flex-end',
     backgroundColor: '#141414',
+    flex: 1,
   },
   animationPreviewImage: { ...StyleSheet.absoluteFillObject, opacity: 0.38 },
   animationPreviewImageOverlay: { ...StyleSheet.absoluteFillObject },
