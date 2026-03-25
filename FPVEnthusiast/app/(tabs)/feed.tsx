@@ -432,6 +432,7 @@ export default function FeedScreen() {
       typeof memberCount === 'number' ? `${memberCount} ${memberCount === 1 ? 'member' : 'members'}` : null,
       privacyLabel,
     ].filter(Boolean).join(' • ');
+    const communitySummary = ['Community', groupName, communityMeta].filter(Boolean).join(' • ');
     const showCommunityBanner = item.id === visiblePostId && !!item.group_id;
 
     return (
@@ -453,27 +454,21 @@ export default function FeedScreen() {
           <View style={styles.contextCommunityWrap}>
             <View style={styles.contextCommunityCard}>
               <TouchableOpacity
-                style={styles.communitiesBanner}
+                style={styles.contextCommunityBar}
                 activeOpacity={0.84}
                 onPress={() => setActiveCommunityExpanded(prev => !prev)}
               >
-                <View style={styles.communitiesBannerTextWrap}>
-                  <Text style={styles.contextCommunityEyebrow}>Community</Text>
-                  <Text style={styles.groupRailName} numberOfLines={1}>{groupName}</Text>
-                  <Text style={styles.communitiesBannerMeta} numberOfLines={1}>
-                    {communityMeta || 'Open this group and keep browsing related posts.'}
-                  </Text>
+                <View style={styles.contextCommunityIconWrap}>
+                  <Ionicons name="people-outline" size={14} color="#9cc8ff" />
                 </View>
-                <View style={styles.communitiesBannerAction}>
-                  <Ionicons name={activeCommunityExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#9cc8ff" />
-                </View>
+                <Text style={styles.contextCommunitySummary} numberOfLines={1}>
+                  {communitySummary}
+                </Text>
+                <Ionicons name={activeCommunityExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#9cc8ff" />
               </TouchableOpacity>
 
               {activeCommunityExpanded ? (
                 <View style={styles.contextCommunityExpandedBody}>
-                  <Text style={styles.contextCommunityHint}>
-                    You are currently on a community post. Open the group, browse your group list, or discover more communities.
-                  </Text>
                   <View style={styles.communitiesQuickRow}>
                     <TouchableOpacity
                       style={styles.communitiesSearchBtn}
@@ -1624,17 +1619,27 @@ const styles = StyleSheet.create({
     color: '#ff4500',
     fontWeight: '700',
   },
-  contextCommunityWrap: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4 },
+  contextCommunityWrap: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 2 },
   contextCommunityCard: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 14,
     backgroundColor: '#101218',
     borderWidth: 1,
     borderColor: '#1f2630',
-    gap: 10,
+    gap: 8,
   },
-  contextCommunityEyebrow: { color: '#9cc8ff', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 2 },
-  contextCommunityExpandedBody: { gap: 10 },
-  contextCommunityHint: { color: '#7d8696', fontSize: 12, lineHeight: 17 },
+  contextCommunityBar: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  contextCommunityIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#132033',
+    borderWidth: 1,
+    borderColor: '#29496b',
+  },
+  contextCommunitySummary: { flex: 1, minWidth: 0, color: '#d7e8ff', fontSize: 12, fontWeight: '700' },
+  contextCommunityExpandedBody: { gap: 8 },
 });
