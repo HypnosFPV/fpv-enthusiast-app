@@ -16,10 +16,22 @@ serve(async (req) => {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) return json({ error: 'Unauthorized' }, 401);
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY');
+    const stripePublishableKey = Deno.env.get('STRIPE_PUBLISHABLE_KEY');
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return json({ error: 'Supabase environment variables are missing.' }, 500);
+    }
+    if (!stripeSecretKey) {
+      return json({ error: 'Stripe secret key is not configured.' }, 500);
+    }
+    if (!stripePublishableKey) {
+      return json({ error: 'Stripe publishable key is not configured.' }, 500);
+    }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
@@ -28,8 +40,8 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const groupId = body?.group_id as string | undefined;
-    const themeName = String(body?.theme_name ?? '').trim();
+    const groupId = typeof body?.group_id === 'string' ? body.group_id : undefined;
+    const themeName = String(body?.theme_name ?? body?.name ?? '').trim();
     const accentColor = String(body?.accent_color ?? '').trim();
     const surfaceColor = String(body?.surface_color ?? '').trim();
     const surfaceSecondaryColor = String(body?.surface_secondary_color ?? '').trim();
@@ -48,6 +60,16 @@ serve(async (req) => {
       return json({ error: 'Missing theme colors.' }, 400);
     }
 
+    const { data: groupData, error: groupErr } = await supabase
+      .from('social_groups')
+      .select('id, name, created_by')
+      .eq('id', groupId)
+      .maybeSingle();
+
+    if (groupErr || !groupData?.id) {
+      return json({ error: groupErr?.message ?? 'Group not found.' }, 404);
+    }
+
     const { data: membership } = await supabase
       .from('social_group_members')
       .select('group_id')
@@ -55,15 +77,11 @@ serve(async (req) => {
       .eq('user_id', user.id)
       .maybeSingle();
 
-    if (!membership?.group_id) {
-      return json({ error: 'You must be a group member to create a custom theme for this group.' }, 403);
+    const isOwner = groupData.created_by === user.id;
+    const isMember = membership?.group_id === groupId;
+    if (!isOwner && !isMember) {
+      return json({ error: 'You must be a group owner or member to create a custom theme for this group.' }, 403);
     }
-
-    const { data: groupData } = await supabase
-      .from('social_groups')
-      .select('name')
-      .eq('id', groupId)
-      .maybeSingle();
 
     const { data: customTheme, error: insertErr } = await supabase
       .from('social_group_custom_themes')
@@ -92,7 +110,7 @@ serve(async (req) => {
       return json({ error: insertErr?.message ?? 'Could not create theme draft.' }, 500);
     }
 
-    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
+    const stripe = new Stripe(stripeSecretKey, {
       apiVersion: '2024-04-10',
       httpClient: Stripe.createFetchHttpClient(),
     });
@@ -107,7 +125,7 @@ serve(async (req) => {
         group_id: groupId,
         owner_user_id: user.id,
       },
-      description: `FPV Enthusiast custom group theme — ${groupData?.name ?? 'Community'} / ${themeName}`,
+      description: `FPV Enthusiast custom group theme — ${groupData.name ?? 'Community'} / ${themeName}`,
     });
 
     const { error: updateErr } = await supabase
@@ -125,7 +143,7 @@ serve(async (req) => {
     return json({
       clientSecret: paymentIntent.client_secret,
       customThemeId: customTheme.id,
-      publishableKey: Deno.env.get('STRIPE_PUBLISHABLE_KEY'),
+      publishableKey: stripePublishableKey,
       amountCents: CUSTOM_THEME_PRICE_CENTS,
     });
   } catch (err) {

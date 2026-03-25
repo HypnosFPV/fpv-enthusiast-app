@@ -310,18 +310,27 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
     const uri = asset.uri;
     const ext = (uri.split('?')[0].split('.').pop() ?? 'jpg').toLowerCase() === 'png' ? 'png' : 'jpg';
     const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
-    const bucket = kind === 'avatar' ? 'avatars' : 'headers';
     const path = `groups/${groupId}/${kind}-${userId}-${Date.now()}.${ext}`;
+    const bucketCandidates = kind === 'avatar' ? ['avatars', 'headers'] : ['headers'];
 
     setUploadingImage(true);
     try {
       const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
       const buffer = decode(base64);
-      const { error } = await supabase.storage.from(bucket).upload(path, buffer, { contentType: mime, upsert: true });
-      if (error) throw error;
-      const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-      setUploadingImage(false);
-      return { url: data.publicUrl };
+
+      let lastError: any = null;
+      for (const bucket of bucketCandidates) {
+        const { error } = await supabase.storage.from(bucket).upload(path, buffer, { contentType: mime, upsert: true });
+        if (!error) {
+          const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+          setUploadingImage(false);
+          return { url: data.publicUrl };
+        }
+        lastError = error;
+        console.warn(`[useGroupThemes] upload failed for bucket ${bucket}:`, error.message);
+      }
+
+      throw lastError ?? new Error('Upload failed');
     } catch (err: any) {
       setUploadingImage(false);
       return { error: err?.message ?? 'Upload failed' };
