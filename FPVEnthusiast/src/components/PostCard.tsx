@@ -101,6 +101,7 @@ function injectCmd(ref: React.RefObject<WebView | null>, cmd: string): void {
 }
 
 const PC_TAG_COLORS = ['#ff4500','#00d4ff','#9c27b0','#ff9100','#00e676','#e91e63','#2979FF','#ffcc00'];
+const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 
 function AnimatedGroupBorder({
   width,
@@ -162,10 +163,10 @@ function AnimatedGroupBorder({
   return (
     <Animated.View pointerEvents="none" style={[styles.groupAnimWrap, { opacity: edgeOpacity }]}> 
       <Animated.View style={[styles.groupAnimGlow, { opacity: glowOpacity, shadowColor: accentColor, borderColor }]} />
-      <LinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.groupAnimTopEdge, { height: edgeThickness }]} />
-      <LinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={[styles.groupAnimBottomEdge, { height: edgeThickness }]} />
-      <LinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[styles.groupAnimLeftEdge, { width: edgeThickness }]} />
-      <LinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={[styles.groupAnimRightEdge, { width: edgeThickness }]} />
+      <AnimatedLinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.groupAnimTopEdge, { height: edgeThickness }]} />
+      <AnimatedLinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={[styles.groupAnimBottomEdge, { height: edgeThickness }]} />
+      <AnimatedLinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[styles.groupAnimLeftEdge, { width: edgeThickness }]} />
+      <AnimatedLinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={[styles.groupAnimRightEdge, { width: edgeThickness }]} />
       <Animated.View style={[styles.groupAnimSweep, { transform: [{ translateX: sweepTranslateX }], opacity: sweepOpacity }]}> 
         <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.groupAnimSweepFill} />
       </Animated.View>
