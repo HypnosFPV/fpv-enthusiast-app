@@ -1,10 +1,10 @@
 import React from 'react';
-import { Text, TextStyle } from 'react-native';
+import { Text, TextStyle, StyleProp } from 'react-native';
 import { useRouter } from 'expo-router';
 
 interface Props {
   text: string;
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
 }
 
 export default function MentionText({ text, style }: Props) {
