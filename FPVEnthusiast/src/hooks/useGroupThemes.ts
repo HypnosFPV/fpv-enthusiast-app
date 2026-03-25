@@ -3,7 +3,16 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 import { supabase } from '../services/supabase';
-import { DEFAULT_GROUP_THEME, GROUP_THEME_PRESETS, GroupThemeTokens, clampOverlayStrength, getPresetGroupTheme } from '../constants/groupThemes';
+import {
+  DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID,
+  DEFAULT_GROUP_THEME,
+  GROUP_CARD_ANIMATION_VARIANTS,
+  GROUP_THEME_PRESETS,
+  GroupCardAnimationVariantId,
+  GroupThemeTokens,
+  clampOverlayStrength,
+  getPresetGroupTheme,
+} from '../constants/groupThemes';
 
 export type GroupThemeSelectionType = 'preset' | 'custom';
 
@@ -12,6 +21,7 @@ export interface GroupThemePreferenceRow {
   group_id: string;
   active_theme_type: GroupThemeSelectionType;
   active_theme_id: string;
+  active_animation_variant_id?: GroupCardAnimationVariantId | null;
 }
 
 export interface GroupCustomTheme {
@@ -37,11 +47,30 @@ export interface GroupCustomTheme {
   updated_at: string;
 }
 
+export interface GroupAnimationPurchase {
+  id: string;
+  group_id: string;
+  owner_user_id: string;
+  variant_id: GroupCardAnimationVariantId;
+  status: 'pending_payment' | 'paid' | 'cancelled' | 'archived';
+  stripe_payment_intent?: string | null;
+  purchase_amount_cents?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 const resolvedThemeCache = new Map<string, GroupThemeTokens>();
 const resolvedThemePromiseCache = new Map<string, Promise<GroupThemeTokens>>();
 
 function cacheKey(userId?: string | null, groupId?: string | null) {
   return `${userId ?? 'anon'}:${groupId ?? 'none'}`;
+}
+
+function applyAnimationVariant(theme: GroupThemeTokens, variantId?: string | null): GroupThemeTokens {
+  return {
+    ...theme,
+    animationVariantId: (variantId as GroupCardAnimationVariantId | null | undefined) ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID,
+  };
 }
 
 export function customThemeToTokens(theme: GroupCustomTheme): GroupThemeTokens {
@@ -63,6 +92,7 @@ export function customThemeToTokens(theme: GroupCustomTheme): GroupThemeTokens {
     cardImageUrl: theme.card_image_url ?? null,
     bannerImageUrl: theme.banner_image_url ?? null,
     overlayStrength: clampOverlayStrength(theme.overlay_strength),
+    animationVariantId: DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID,
   };
 }
 
@@ -110,18 +140,22 @@ export async function fetchResolvedGroupTheme(userId?: string | null, groupId?: 
   const request = (async () => {
     const { data: preference } = await supabase
       .from('social_group_theme_preferences')
-      .select('active_theme_type, active_theme_id')
+      .select('active_theme_type, active_theme_id, active_animation_variant_id')
       .eq('user_id', userId)
       .eq('group_id', groupId)
       .maybeSingle();
 
+    const activeAnimationVariantId = (preference?.active_animation_variant_id as GroupCardAnimationVariantId | null | undefined)
+      ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID;
+
     if (!preference?.active_theme_id) {
-      resolvedThemeCache.set(key, DEFAULT_GROUP_THEME);
-      return DEFAULT_GROUP_THEME;
+      const fallback = applyAnimationVariant(DEFAULT_GROUP_THEME, activeAnimationVariantId);
+      resolvedThemeCache.set(key, fallback);
+      return fallback;
     }
 
     if (preference.active_theme_type === 'preset') {
-      const preset = getPresetGroupTheme(preference.active_theme_id);
+      const preset = applyAnimationVariant(getPresetGroupTheme(preference.active_theme_id), activeAnimationVariantId);
       resolvedThemeCache.set(key, preset);
       return preset;
     }
@@ -135,7 +169,10 @@ export async function fetchResolvedGroupTheme(userId?: string | null, groupId?: 
       .eq('status', 'paid')
       .maybeSingle();
 
-    const resolved = customTheme ? customThemeToTokens(customTheme as GroupCustomTheme) : DEFAULT_GROUP_THEME;
+    const resolved = applyAnimationVariant(
+      customTheme ? customThemeToTokens(customTheme as GroupCustomTheme) : DEFAULT_GROUP_THEME,
+      activeAnimationVariantId,
+    );
     resolvedThemeCache.set(key, resolved);
     return resolved;
   })().finally(() => {
@@ -218,6 +255,7 @@ export function createDraftFromPreset(themeId?: string | null): GroupThemeDraft 
 
 export function useGroupThemes(userId?: string | null, groupId?: string | null) {
   const [customThemes, setCustomThemes] = useState<GroupCustomTheme[]>([]);
+  const [animationPurchases, setAnimationPurchases] = useState<GroupAnimationPurchase[]>([]);
   const [activePreference, setActivePreference] = useState<GroupThemePreferenceRow | null>(null);
   const [loadingThemes, setLoadingThemes] = useState(false);
   const [savingPreference, setSavingPreference] = useState(false);
@@ -226,12 +264,13 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
   const refreshThemes = useCallback(async () => {
     if (!userId || !groupId) {
       setCustomThemes([]);
+      setAnimationPurchases([]);
       setActivePreference(null);
       return;
     }
 
     setLoadingThemes(true);
-    const [{ data: preference }, { data: customData }] = await Promise.all([
+    const [{ data: preference }, { data: customData }, { data: animationData }] = await Promise.all([
       supabase
         .from('social_group_theme_preferences')
         .select('*')
@@ -245,10 +284,18 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
         .eq('group_id', groupId)
         .in('status', ['paid', 'pending_payment'])
         .order('created_at', { ascending: false }),
+      supabase
+        .from('social_group_animation_purchases')
+        .select('*')
+        .eq('owner_user_id', userId)
+        .eq('group_id', groupId)
+        .in('status', ['paid', 'pending_payment'])
+        .order('created_at', { ascending: false }),
     ]);
 
     setActivePreference((preference as GroupThemePreferenceRow | null) ?? null);
     setCustomThemes((customData as GroupCustomTheme[] | null) ?? []);
+    setAnimationPurchases((animationData as GroupAnimationPurchase[] | null) ?? []);
     setLoadingThemes(false);
   }, [groupId, userId]);
 
@@ -257,13 +304,23 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
   }, [refreshThemes]);
 
   const activeTheme = useMemo(() => {
-    if (!activePreference?.active_theme_id) return DEFAULT_GROUP_THEME;
-    if (activePreference.active_theme_type === 'preset') {
-      return getPresetGroupTheme(activePreference.active_theme_id);
+    const activeAnimationVariantId = activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID;
+    let baseTheme: GroupThemeTokens;
+    if (!activePreference?.active_theme_id) {
+      baseTheme = DEFAULT_GROUP_THEME;
+    } else if (activePreference.active_theme_type === 'preset') {
+      baseTheme = getPresetGroupTheme(activePreference.active_theme_id);
+    } else {
+      const custom = customThemes.find((theme) => theme.id === activePreference.active_theme_id && theme.status === 'paid');
+      baseTheme = custom ? customThemeToTokens(custom) : DEFAULT_GROUP_THEME;
     }
-    const custom = customThemes.find((theme) => theme.id === activePreference.active_theme_id && theme.status === 'paid');
-    return custom ? customThemeToTokens(custom) : DEFAULT_GROUP_THEME;
+    return applyAnimationVariant(baseTheme, activeAnimationVariantId);
   }, [activePreference, customThemes]);
+
+  const activeAnimationVariantId = useMemo(
+    () => (activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID),
+    [activePreference?.active_animation_variant_id],
+  );
 
   const saveThemePreference = useCallback(async (themeType: GroupThemeSelectionType, themeId: string) => {
     if (!userId || !groupId) return false;
@@ -275,6 +332,7 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
         group_id: groupId,
         active_theme_type: themeType,
         active_theme_id: themeId,
+        active_animation_variant_id: activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID,
       }, { onConflict: 'user_id,group_id' });
     setSavingPreference(false);
 
@@ -286,7 +344,36 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
     invalidateResolvedGroupTheme(userId, groupId);
     await refreshThemes();
     return true;
-  }, [groupId, refreshThemes, userId]);
+  }, [activePreference?.active_animation_variant_id, groupId, refreshThemes, userId]);
+
+  const saveAnimationPreference = useCallback(async (variantId: GroupCardAnimationVariantId) => {
+    if (!userId || !groupId) return false;
+
+    const canUseVariant = variantId === 'none'
+      || animationPurchases.some((purchase) => purchase.variant_id === variantId && purchase.status === 'paid');
+    if (!canUseVariant) return false;
+
+    setSavingPreference(true);
+    const { error } = await supabase
+      .from('social_group_theme_preferences')
+      .upsert({
+        user_id: userId,
+        group_id: groupId,
+        active_theme_type: activePreference?.active_theme_type ?? 'preset',
+        active_theme_id: activePreference?.active_theme_id ?? DEFAULT_GROUP_THEME.id,
+        active_animation_variant_id: variantId,
+      }, { onConflict: 'user_id,group_id' });
+    setSavingPreference(false);
+
+    if (error) {
+      console.warn('[useGroupThemes] saveAnimationPreference error:', error.message);
+      return false;
+    }
+
+    invalidateResolvedGroupTheme(userId, groupId);
+    await refreshThemes();
+    return true;
+  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, animationPurchases, groupId, refreshThemes, userId]);
 
   const uploadImage = useCallback(async (
     kind: 'avatar' | 'cover' | 'theme_banner' | 'theme_card',
@@ -369,20 +456,44 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
     return false;
   }, [groupId, refreshThemes, userId]);
 
+  const waitForAnimationPurchase = useCallback(async (purchaseId: string, timeoutMs = 25000) => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const { data } = await supabase
+        .from('social_group_animation_purchases')
+        .select('*')
+        .eq('id', purchaseId)
+        .maybeSingle();
+      if ((data as GroupAnimationPurchase | null)?.status === 'paid') {
+        invalidateResolvedGroupTheme(userId, groupId);
+        await refreshThemes();
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+    await refreshThemes();
+    return false;
+  }, [groupId, refreshThemes, userId]);
+
   return {
     presetThemes: GROUP_THEME_PRESETS,
+    animationVariants: GROUP_CARD_ANIMATION_VARIANTS,
     defaultDraft: DEFAULT_DRAFT,
     createDraftFromPreset,
     customThemes,
+    animationPurchases,
     activePreference,
     activeTheme,
+    activeAnimationVariantId,
     loadingThemes,
     savingPreference,
     uploadingImage,
     refreshThemes,
     saveThemePreference,
+    saveAnimationPreference,
     uploadImage,
     updateGroupBranding,
     waitForThemePurchase,
+    waitForAnimationPurchase,
   };
 }

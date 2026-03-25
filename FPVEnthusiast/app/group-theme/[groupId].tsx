@@ -17,9 +17,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
-import { GROUP_THEME_PRESETS, GroupThemeTokens } from '../../src/constants/groupThemes';
+import { GROUP_CARD_ANIMATION_VARIANTS, GROUP_THEME_PRESETS, GroupThemeTokens } from '../../src/constants/groupThemes';
 import { createDraftFromPreset, customThemeToTokens, GroupCustomTheme, GroupThemeDraft, useGroupThemes } from '../../src/hooks/useGroupThemes';
 import { useGroupThemeCheckout } from '../../src/hooks/useGroupThemeCheckout';
+import { useGroupAnimationCheckout } from '../../src/hooks/useGroupAnimationCheckout';
 
 interface GroupAppearanceSummary {
   id: string;
@@ -93,18 +94,23 @@ export default function GroupThemeScreen() {
 
   const {
     customThemes,
+    animationPurchases,
     activePreference,
+    activeAnimationVariantId,
     loadingThemes,
     savingPreference,
     uploadingImage,
     saveThemePreference,
+    saveAnimationPreference,
     uploadImage,
     updateGroupBranding,
     waitForThemePurchase,
+    waitForAnimationPurchase,
     refreshThemes,
   } = useGroupThemes(user?.id, groupId);
 
   const { initCheckout, confirmCheckout, checkoutState, resetCheckout } = useGroupThemeCheckout();
+  const { initCheckout: initAnimationCheckout, confirmCheckout: confirmAnimationCheckout, checkoutState: animationCheckoutState, resetCheckout: resetAnimationCheckout } = useGroupAnimationCheckout();
 
   const canManageBranding = myRole === 'owner' || myRole === 'admin';
 
@@ -141,6 +147,7 @@ export default function GroupThemeScreen() {
   }, [loadGroup]);
 
   const previewTheme = useMemo(() => previewThemeFromDraft(draft), [draft]);
+  const ownedAnimationVariantIds = useMemo(() => new Set(animationPurchases.filter((purchase) => purchase.status === 'paid').map((purchase) => purchase.variant_id)), [animationPurchases]);
 
   const handleUploadBranding = useCallback(async (kind: 'avatar' | 'cover') => {
     const result = await uploadImage(kind, kind === 'avatar' ? [1, 1] : [16, 9]);
@@ -196,6 +203,42 @@ export default function GroupThemeScreen() {
     }
     Alert.alert('Theme updated', 'Your custom theme is now active for this community.');
   }, [saveThemePreference]);
+
+  const handleSelectAnimation = useCallback(async (variantId: 'none' | 'basic' | 'standard' | 'premium') => {
+    const ok = await saveAnimationPreference(variantId);
+    if (!ok) {
+      Alert.alert('Could not update animation', variantId === 'none' ? 'Could not switch this group back to a static card.' : 'Please unlock this variant first or try again.');
+      return;
+    }
+    Alert.alert('Animation updated', variantId === 'none' ? 'This community is now using the static card treatment for you.' : 'Your selected animation variant is now active for this community.');
+  }, [saveAnimationPreference]);
+
+  const handlePurchaseAnimation = useCallback(async (variantId: 'basic' | 'standard' | 'premium') => {
+    if (!groupId) return;
+
+    const started = await initAnimationCheckout({ groupId, variantId });
+    if (!started.ok || !started.purchaseId) {
+      Alert.alert('Checkout failed', started.error ?? 'Could not start animation checkout.');
+      return;
+    }
+
+    const completed = await confirmAnimationCheckout();
+    if (!completed.ok || !completed.purchaseId) {
+      if (completed.error !== 'cancelled') {
+        Alert.alert('Payment failed', completed.error ?? 'Payment did not complete.');
+      }
+      return;
+    }
+
+    const unlocked = await waitForAnimationPurchase(completed.purchaseId);
+    resetAnimationCheckout();
+    if (!unlocked) {
+      Alert.alert('Payment received', 'Your purchase went through. Pull to refresh in a moment if the animation does not appear yet.');
+      return;
+    }
+
+    Alert.alert('Animation unlocked', 'This animation variant is now available in your collection for this group, and you can swap to it any time.');
+  }, [confirmAnimationCheckout, groupId, initAnimationCheckout, resetAnimationCheckout, waitForAnimationPurchase]);
 
   const handlePurchaseCustomTheme = useCallback(async () => {
     if (!groupId) return;
@@ -381,6 +424,43 @@ export default function GroupThemeScreen() {
               );
             })
           )}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Feed animation variants</Text>
+          <Text style={styles.sectionHint}>Cards stay static unless you unlock an animation for this group. Buy variants one by one, then swap between anything you own whenever you want.</Text>
+          {GROUP_CARD_ANIMATION_VARIANTS.map((variant) => {
+            const isOwned = variant.id === 'none' || ownedAnimationVariantIds.has(variant.id);
+            const isActive = activeAnimationVariantId === variant.id;
+            const isPending = animationPurchases.some((purchase) => purchase.variant_id === variant.id && purchase.status === 'pending_payment');
+            const isBusy = savingPreference || animationCheckoutState.status === 'loading' || animationCheckoutState.status === 'processing';
+            const priceLabel = variant.priceCents > 0 ? `$${(variant.priceCents / 100).toFixed(2)}` : 'Included';
+            return (
+              <View key={variant.id} style={[styles.variantRow, isActive && styles.variantRowActive]}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.variantTitleRow}>
+                    <Text style={styles.variantName}>{variant.name}</Text>
+                    <View style={styles.variantBadge}>
+                      <Text style={styles.variantBadgeText}>{variant.badge}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.variantDescription}>{variant.description}</Text>
+                  <Text style={styles.variantMeta}>{isOwned ? (isActive ? 'Active for this group' : 'Owned — tap Use any time') : isPending ? 'Payment pending' : `Unlock separately for ${priceLabel}`}</Text>
+                </View>
+                {isOwned ? (
+                  <TouchableOpacity style={[styles.secondaryBtn, isActive && styles.secondaryBtnActive]} disabled={isBusy} onPress={() => void handleSelectAnimation(variant.id)}>
+                    <Text style={[styles.secondaryBtnText, isActive && styles.secondaryBtnTextActive]}>{isActive ? 'Active' : 'Use'}</Text>
+                  </TouchableOpacity>
+                ) : isPending ? (
+                  <View style={styles.pendingPill}><Text style={styles.pendingPillText}>Pending</Text></View>
+                ) : (
+                  <TouchableOpacity style={styles.secondaryBtn} disabled={isBusy} onPress={() => void handlePurchaseAnimation(variant.id as 'basic' | 'standard' | 'premium')}>
+                    <Text style={styles.secondaryBtnText}>Unlock {priceLabel}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            );
+          })}
         </View>
 
         <View style={styles.card}>
@@ -669,6 +749,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   secondaryBtnText: { color: '#ffb088', fontSize: 13, fontWeight: '700' },
+  secondaryBtnActive: { borderColor: '#ff6a2f', backgroundColor: '#26140d' },
+  secondaryBtnTextActive: { color: '#fff0e8' },
   lockedText: { color: '#7b7b7b', fontSize: 13, marginTop: 14 },
   horizontalList: { gap: 10, paddingTop: 14, paddingBottom: 2 },
   presetCard: {
@@ -685,6 +767,14 @@ const styles = StyleSheet.create({
   presetTitle: { color: '#fff', fontSize: 13, fontWeight: '700', marginTop: 10 },
   presetMeta: { color: '#8c8c8c', fontSize: 12, marginTop: 4 },
   emptyText: { color: '#8b8b8b', marginTop: 14, fontSize: 13 },
+  variantRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: '#252525', backgroundColor: '#151515' },
+  variantRowActive: { borderColor: '#ff6a2f', backgroundColor: '#21120c' },
+  variantTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  variantName: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  variantBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#24130c', borderWidth: 1, borderColor: '#4f2d1d' },
+  variantBadgeText: { color: '#ffb088', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  variantDescription: { color: '#c7c7c7', fontSize: 12, lineHeight: 17, marginTop: 6 },
+  variantMeta: { color: '#8b8b8b', fontSize: 11, lineHeight: 16, marginTop: 6 },
   collectionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
   collectionSwatch: { width: 56, height: 56, borderRadius: 14, borderWidth: 1, justifyContent: 'flex-end', padding: 8 },
   collectionSwatchAccent: { width: 28, height: 6, borderRadius: 999 },

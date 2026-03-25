@@ -18,6 +18,7 @@ import MentionText from './MentionText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ImageZoomModal from './ImageZoomModal';
 import { useResolvedGroupTheme } from '../hooks/useGroupThemes';
+import { GroupCardAnimationVariantId } from '../constants/groupThemes';
 
 const MentionTextInput = MentionTextInputComponent as any;
 
@@ -109,39 +110,78 @@ function AnimatedGroupBorder({
   accentColor,
   borderColor,
   active,
+  variant,
 }: {
   width: number;
   height: number;
   accentColor: string;
   borderColor: string;
   active: boolean;
+  variant: GroupCardAnimationVariantId;
 }) {
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const sweepAnim = useRef(new Animated.Value(0)).current;
+  const orbitAnim = useRef(new Animated.Value(0)).current;
+  const sideAnim = useRef(new Animated.Value(0)).current;
   const pulseLoopRef = useRef<any>(null);
   const sweepLoopRef = useRef<any>(null);
+  const orbitLoopRef = useRef<any>(null);
+  const sideLoopRef = useRef<any>(null);
+
+  const isBasic = variant === 'basic';
+  const isStandard = variant === 'standard';
+  const isPremium = variant === 'premium';
+
+  const pulseRange = isPremium ? [0.55, 1] : isStandard ? [0.45, 0.98] : [0.35, 0.92];
+  const glowRange = isPremium ? [0.28, 0.62] : isStandard ? [0.22, 0.5] : [0.16, 0.4];
+  const thicknessRange = isPremium ? [2.4, 4.2] : isStandard ? [2.2, 3.8] : [2, 3.4];
+  const pulseDuration = isPremium ? 850 : isStandard ? 980 : 1100;
+  const topSweepDuration = isPremium ? 1800 : isStandard ? 2200 : 2600;
 
   useEffect(() => {
     pulseLoopRef.current?.stop?.();
     sweepLoopRef.current?.stop?.();
+    orbitLoopRef.current?.stop?.();
+    sideLoopRef.current?.stop?.();
     pulseAnim.stopAnimation();
     sweepAnim.stopAnimation();
+    orbitAnim.stopAnimation();
+    sideAnim.stopAnimation();
 
-    if (!active || width < 40 || height < 40) {
+    if (!active || width < 40 || height < 40 || variant === 'none') {
       pulseAnim.setValue(0);
       sweepAnim.setValue(0);
+      orbitAnim.setValue(0);
+      sideAnim.setValue(0);
       return;
     }
 
     pulseLoopRef.current = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-        Animated.timing(pulseAnim, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: pulseDuration, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(pulseAnim, { toValue: 0, duration: pulseDuration, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
       ])
     );
     sweepLoopRef.current = Animated.loop(
-      Animated.timing(sweepAnim, { toValue: 1, duration: 2600, easing: Easing.linear, useNativeDriver: true })
+      Animated.timing(sweepAnim, { toValue: 1, duration: topSweepDuration, easing: Easing.linear, useNativeDriver: true })
     );
+
+    if (!isBasic) {
+      orbitLoopRef.current = Animated.loop(
+        Animated.timing(orbitAnim, { toValue: 1, duration: isPremium ? 2600 : 3200, easing: Easing.linear, useNativeDriver: true })
+      );
+      orbitLoopRef.current.start();
+    }
+
+    if (isPremium) {
+      sideLoopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(sideAnim, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          Animated.timing(sideAnim, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        ])
+      );
+      sideLoopRef.current.start();
+    }
 
     pulseLoopRef.current.start();
     sweepLoopRef.current.start();
@@ -149,27 +189,54 @@ function AnimatedGroupBorder({
     return () => {
       pulseLoopRef.current?.stop?.();
       sweepLoopRef.current?.stop?.();
+      orbitLoopRef.current?.stop?.();
+      sideLoopRef.current?.stop?.();
       pulseAnim.stopAnimation();
       sweepAnim.stopAnimation();
+      orbitAnim.stopAnimation();
+      sideAnim.stopAnimation();
     };
-  }, [active, height, pulseAnim, sweepAnim, width]);
+  }, [active, height, isBasic, isPremium, pulseAnim, orbitAnim, sideAnim, sweepAnim, variant, width]);
 
-  const edgeOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.92] });
-  const glowOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.16, 0.4] });
-  const edgeThickness = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [2, 3.4] });
+  const edgeOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: pulseRange });
+  const glowOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: glowRange });
+  const edgeThickness = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: thicknessRange });
   const sweepOpacity = sweepAnim.interpolate({ inputRange: [0, 0.1, 0.5, 0.9, 1], outputRange: [0, 0.95, 0.35, 0.95, 0] });
   const sweepTranslateX = sweepAnim.interpolate({ inputRange: [0, 1], outputRange: [-width * 0.3, width * 0.88] });
+  const bottomSweepTranslateX = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [width * 0.82, -width * 0.36] });
+  const leftSweepTranslateY = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [height * 0.82, -height * 0.22] });
+  const rightSweepTranslateY = orbitAnim.interpolate({ inputRange: [0, 1], outputRange: [-height * 0.22, height * 0.82] });
+  const sideGlowOpacity = sideAnim.interpolate({ inputRange: [0, 1], outputRange: [0.18, 0.62] });
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.groupAnimWrap, { opacity: edgeOpacity }]}> 
+    <Animated.View pointerEvents="none" style={[styles.groupAnimWrap, { opacity: edgeOpacity }]}>
       <Animated.View style={[styles.groupAnimGlow, { opacity: glowOpacity, shadowColor: accentColor, borderColor }]} />
       <AnimatedLinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.groupAnimTopEdge, { height: edgeThickness }]} />
       <AnimatedLinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={[styles.groupAnimBottomEdge, { height: edgeThickness }]} />
       <AnimatedLinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[styles.groupAnimLeftEdge, { width: edgeThickness }]} />
       <AnimatedLinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={[styles.groupAnimRightEdge, { width: edgeThickness }]} />
-      <Animated.View style={[styles.groupAnimSweep, { transform: [{ translateX: sweepTranslateX }], opacity: sweepOpacity }]}> 
+      <Animated.View style={[styles.groupAnimSweep, { transform: [{ translateX: sweepTranslateX }], opacity: sweepOpacity }]}>
         <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.groupAnimSweepFill} />
       </Animated.View>
+      {!isBasic ? (
+        <>
+          <Animated.View style={[styles.groupAnimSweep, { top: undefined, bottom: 10, transform: [{ translateX: bottomSweepTranslateX }], opacity: sweepOpacity }]}>
+            <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.groupAnimSweepFill} />
+          </Animated.View>
+          <Animated.View style={[styles.groupAnimSweep, { top: 42, left: 0, width: 10, height: 82, transform: [{ translateY: leftSweepTranslateY }], opacity: sweepOpacity }]}>
+            <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.groupAnimSweepFill} />
+          </Animated.View>
+          <Animated.View style={[styles.groupAnimSweep, { top: 42, left: undefined, right: 0, width: 10, height: 82, transform: [{ translateY: rightSweepTranslateY }], opacity: sweepOpacity }]}>
+            <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.groupAnimSweepFill} />
+          </Animated.View>
+        </>
+      ) : null}
+      {isPremium ? (
+        <>
+          <Animated.View style={{ position: 'absolute', top: 22, left: 14, right: 14, height: 1, backgroundColor: '#ffffff', opacity: sideGlowOpacity }} />
+          <Animated.View style={{ position: 'absolute', bottom: 22, left: 14, right: 14, height: 1, backgroundColor: accentColor, opacity: sideGlowOpacity }} />
+        </>
+      ) : null}
     </Animated.View>
   );
 }
@@ -538,7 +605,8 @@ export default function PostCard(props: Props) {
   const themedGroupChipText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.chipTextColor }) : null, [activeGroupTheme]);
   const themedCaptionStyle = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
   const themedActionsStyle = useMemo(() => activeGroupTheme ? ({ borderTopColor: activeGroupTheme.borderColor }) : null, [activeGroupTheme]);
-  const shouldAnimateGroupCard = !!activeGroupTheme && isGroupPost && !!props.isVisible;
+  const groupAnimationVariantId = activeGroupTheme?.animationVariantId ?? 'none';
+  const shouldAnimateGroupCard = !!activeGroupTheme && groupAnimationVariantId !== 'none' && isGroupPost && !!props.isVisible;
   const [cardFrame, setCardFrame] = useState({ width: 0, height: 0 });
 
   const commentsPanResponder = useRef(
@@ -1205,6 +1273,7 @@ export default function PostCard(props: Props) {
           accentColor={activeGroupTheme.accentColor}
           borderColor={activeGroupTheme.borderColor}
           active={shouldAnimateGroupCard}
+          variant={groupAnimationVariantId}
         />
       ) : null}
       <View style={styles.header}>

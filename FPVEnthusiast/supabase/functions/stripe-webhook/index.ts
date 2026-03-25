@@ -76,6 +76,13 @@ serve(async (req) => {
         return json({ received: true });
       }
 
+      const { data: existingPreference } = await supabase
+        .from('social_group_theme_preferences')
+        .select('active_animation_variant_id')
+        .eq('user_id', customTheme.owner_user_id)
+        .eq('group_id', customTheme.group_id)
+        .maybeSingle();
+
       await supabase
         .from('social_group_theme_preferences')
         .upsert({
@@ -83,6 +90,41 @@ serve(async (req) => {
           group_id: customTheme.group_id,
           active_theme_type: 'custom',
           active_theme_id: customTheme.id,
+          active_animation_variant_id: existingPreference?.active_animation_variant_id ?? 'none',
+          updated_at: now,
+        }, { onConflict: 'user_id,group_id' });
+
+      return json({ received: true });
+    }
+
+    if (paymentKind === 'group_card_animation') {
+      const { data: animationPurchase, error: animationErr } = await supabase
+        .from('social_group_animation_purchases')
+        .update({ status: 'paid', updated_at: now })
+        .eq('stripe_payment_intent', pi.id)
+        .select('id, group_id, owner_user_id, variant_id')
+        .single();
+
+      if (animationErr || !animationPurchase) {
+        console.error('Animation purchase not found for PI', pi.id, animationErr);
+        return json({ received: true });
+      }
+
+      const { data: existingPreference } = await supabase
+        .from('social_group_theme_preferences')
+        .select('active_theme_type, active_theme_id')
+        .eq('user_id', animationPurchase.owner_user_id)
+        .eq('group_id', animationPurchase.group_id)
+        .maybeSingle();
+
+      await supabase
+        .from('social_group_theme_preferences')
+        .upsert({
+          user_id: animationPurchase.owner_user_id,
+          group_id: animationPurchase.group_id,
+          active_theme_type: existingPreference?.active_theme_type ?? 'preset',
+          active_theme_id: existingPreference?.active_theme_id ?? 'midnight',
+          active_animation_variant_id: animationPurchase.variant_id,
           updated_at: now,
         }, { onConflict: 'user_id,group_id' });
 
@@ -128,6 +170,14 @@ serve(async (req) => {
     if (paymentKind === 'group_custom_theme') {
       await supabase
         .from('social_group_custom_themes')
+        .update({ status: 'cancelled', updated_at: now })
+        .eq('stripe_payment_intent', pi.id);
+      return json({ received: true });
+    }
+
+    if (paymentKind === 'group_card_animation') {
+      await supabase
+        .from('social_group_animation_purchases')
         .update({ status: 'cancelled', updated_at: now })
         .eq('stripe_payment_intent', pi.id);
       return json({ received: true });
