@@ -17,7 +17,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { useProfile } from '../../src/hooks/useProfile';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
 import { useMute } from '../../src/hooks/useMute';
-import { useSocialGroups, SocialGroup } from '../../src/hooks/useSocialGroups';
+import { useSocialGroups } from '../../src/hooks/useSocialGroups';
 import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
 import { detectPlatform } from '../../src/utils/socialMedia';
 import { supabase } from '../../src/services/supabase';
@@ -121,7 +121,7 @@ export default function FeedScreen() {
   const propsToast = usePropsToast();
   const { unreadCount } = useNotificationsContext();
   const { mutedIds } = useMute(user?.id);
-  const { groups, discoverableGroups, pendingInvites, pendingJoinRequests, requestToJoinGroup } = useSocialGroups(user?.id);
+  const { groups, discoverableGroups, pendingInvites } = useSocialGroups(user?.id);
   const lastRefreshAtRef = useRef(0);
   const hasInitialRefreshRef = useRef(false);
   const visiblePostIdRef = useRef<string | null>(null);
@@ -232,7 +232,6 @@ export default function FeedScreen() {
   const [creating, setCreating] = useState(false);
   const [postDestination, setPostDestination] = useState<'public' | 'group'>('public');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [actingGroupId, setActingGroupId] = useState<string | null>(null);
 
   const postableGroups = useMemo(() => groups.filter(group => {
     const role = group.my_role ?? 'member';
@@ -246,67 +245,9 @@ export default function FeedScreen() {
 
   const detectedPlatform = detectPlatform(socialUrl);
 
-  const pendingInviteGroupIds = useMemo(() => new Set(pendingInvites.map(invite => invite.group_id)), [pendingInvites]);
-  const pendingRequestGroupIds = useMemo(() => new Set(pendingJoinRequests.map(request => request.group_id)), [pendingJoinRequests]);
-  const highlightedGroups = useMemo(() => discoverableGroups.slice(0, 4), [discoverableGroups]);
+  const joinedCommunityPreview = useMemo(() => groups.slice(0, 4), [groups]);
 
-  const getCommunityAction = useCallback((group: SocialGroup) => {
-    if (groups.some(item => item.id === group.id)) {
-      return { label: 'Open', disabled: false, tone: 'joined' as const };
-    }
-    if (pendingInviteGroupIds.has(group.id)) {
-      return { label: 'Invited', disabled: true, tone: 'pending' as const };
-    }
-    if (pendingRequestGroupIds.has(group.id)) {
-      return { label: 'Requested', disabled: true, tone: 'pending' as const };
-    }
-    if (group.privacy === 'public') {
-      return { label: 'Join', disabled: false, tone: 'primary' as const };
-    }
-    return { label: 'Request', disabled: false, tone: 'secondary' as const };
-  }, [groups, pendingInviteGroupIds, pendingRequestGroupIds]);
-
-  const handleCommunityAction = useCallback(async (group: SocialGroup) => {
-    if (groups.some(item => item.id === group.id)) {
-      router.push(`/group/${group.id}` as any);
-      return;
-    }
-
-    if (pendingInviteGroupIds.has(group.id)) {
-      Alert.alert('Invite waiting', 'You already have an invite for this community. Open Messages to accept it.');
-      return;
-    }
-
-    if (pendingRequestGroupIds.has(group.id)) {
-      Alert.alert('Request pending', 'Your join request is already waiting for review.');
-      return;
-    }
-
-    setActingGroupId(group.id);
-    const status = await requestToJoinGroup(group.id);
-    setActingGroupId(null);
-
-    if (!status) {
-      Alert.alert('Error', 'Could not process that community action. Please try again.');
-      return;
-    }
-
-    if (status === 'joined' || status === 'already_member') {
-      router.push(`/group/${group.id}` as any);
-      return;
-    }
-
-    if (status === 'pending_invite') {
-      Alert.alert('Invite waiting', 'You already have an invite for this community. Open Messages to accept it.');
-      return;
-    }
-
-    if (status === 'pending_request' || status === 'requested') {
-      Alert.alert('Request sent', 'Your join request has been sent to the community team.');
-    }
-  }, [groups, pendingInviteGroupIds, pendingRequestGroupIds, requestToJoinGroup, router]);
-
-  const hasCommunityHeader = groups.length > 0 || highlightedGroups.length > 0 || pendingInvites.length > 0;
+  const hasCommunityHeader = groups.length > 0 || discoverableGroups.length > 0 || pendingInvites.length > 0;
   const feedHeader = useMemo(() => {
     if (!hasCommunityHeader) return null;
 
@@ -317,7 +258,9 @@ export default function FeedScreen() {
             <View style={styles.communitiesHeaderTextWrap}>
               <Text style={styles.communitiesTitle}>Communities</Text>
               <Text style={styles.communitiesSubtitle}>
-                Jump into your groups faster, discover public communities, and stop hiding the feature behind Messages.
+                {groups.length > 0
+                  ? 'Quick access to your groups without pushing the main feed too far down.'
+                  : 'Browse groups and jump into community conversations when you are ready.'}
               </Text>
             </View>
             <TouchableOpacity
@@ -330,14 +273,57 @@ export default function FeedScreen() {
             </TouchableOpacity>
           </View>
 
+          <View style={styles.communitiesMetaRow}>
+            <View style={styles.communitiesMetaPill}>
+              <Text style={styles.communitiesMetaPillText}>{groups.length} {groups.length === 1 ? 'group' : 'groups'}</Text>
+            </View>
+            {pendingInvites.length > 0 ? (
+              <View style={styles.communitiesMetaPill}>
+                <Text style={styles.communitiesMetaPillText}>{pendingInvites.length} {pendingInvites.length === 1 ? 'invite' : 'invites'}</Text>
+              </View>
+            ) : null}
+            {discoverableGroups.length > 0 ? (
+              <View style={styles.communitiesMetaPill}>
+                <Text style={styles.communitiesMetaPillText}>{discoverableGroups.length} to browse</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {joinedCommunityPreview.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.groupRail}
+            >
+              {joinedCommunityPreview.map(group => (
+                <TouchableOpacity
+                  key={group.id}
+                  style={styles.groupRailCard}
+                  activeOpacity={0.84}
+                  onPress={() => router.push(`/group/${group.id}` as any)}
+                >
+                  <View style={styles.groupRailAvatar}>
+                    <Ionicons name="people-outline" size={16} color="#ff9b68" />
+                  </View>
+                  <Text style={styles.groupRailName} numberOfLines={1}>{group.name}</Text>
+                  <Text style={styles.groupRailMeta} numberOfLines={1}>
+                    {(group.member_count ?? 0)} members • {group.privacy === 'invite_only' ? 'invite only' : group.privacy}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : null}
+
           <View style={styles.communitiesQuickRow}>
             <TouchableOpacity
               style={styles.communityQuickBtn}
               activeOpacity={0.82}
-              onPress={() => router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
+              onPress={() => groups.length > 0
+                ? router.push('/(tabs)/chat')
+                : router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
             >
               <Ionicons name="people-outline" size={16} color="#ffb088" />
-              <Text style={styles.communityQuickBtnText}>Find groups</Text>
+              <Text style={styles.communityQuickBtnText}>{groups.length > 0 ? 'Open groups' : 'Find groups'}</Text>
             </TouchableOpacity>
             {pendingInvites.length > 0 ? (
               <TouchableOpacity
@@ -346,101 +332,14 @@ export default function FeedScreen() {
                 onPress={() => router.push('/(tabs)/chat')}
               >
                 <Ionicons name="mail-open-outline" size={16} color="#ffb088" />
-                <Text style={styles.communityQuickBtnText}>Invites ({pendingInvites.length})</Text>
+                <Text style={styles.communityQuickBtnText}>Invites</Text>
               </TouchableOpacity>
             ) : null}
           </View>
-
-          {groups.length > 0 ? (
-            <>
-              <View style={styles.communitySectionHeader}>
-                <Text style={styles.communitySectionTitle}>My groups</Text>
-                <Text style={styles.communitySectionMeta}>{groups.length}</Text>
-              </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.groupRail}
-              >
-                {groups.slice(0, 8).map(group => (
-                  <TouchableOpacity
-                    key={group.id}
-                    style={styles.groupRailCard}
-                    activeOpacity={0.84}
-                    onPress={() => router.push(`/group/${group.id}` as any)}
-                  >
-                    <View style={styles.groupRailAvatar}>
-                      <Ionicons name="people-outline" size={18} color="#ff9b68" />
-                    </View>
-                    <Text style={styles.groupRailName} numberOfLines={1}>{group.name}</Text>
-                    <Text style={styles.groupRailMeta} numberOfLines={1}>
-                      {(group.member_count ?? 0)} members • {group.privacy === 'invite_only' ? 'invite only' : group.privacy}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </>
-          ) : null}
-
-          {highlightedGroups.length > 0 ? (
-            <>
-              <View style={styles.communitySectionHeader}>
-                <Text style={styles.communitySectionTitle}>Discover</Text>
-                <Text style={styles.communitySectionMeta}>{discoverableGroups.length}</Text>
-              </View>
-              <View style={styles.communityList}>
-                {highlightedGroups.map(group => {
-                  const action = getCommunityAction(group);
-                  return (
-                    <View key={group.id} style={styles.communityRow}>
-                      <TouchableOpacity
-                        style={styles.communityRowBody}
-                        activeOpacity={0.82}
-                        onPress={() => router.push(`/group/${group.id}` as any)}
-                      >
-                        <View style={styles.communityRowAvatar}>
-                          <Ionicons name="people-outline" size={16} color="#9cc8ff" />
-                        </View>
-                        <View style={styles.communityRowInfo}>
-                          <Text style={styles.communityRowName} numberOfLines={1}>{group.name}</Text>
-                          <Text style={styles.communityRowMeta} numberOfLines={2}>
-                            {(group.member_count ?? 0)} members • {group.description?.trim() || 'FPV community'}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[
-                          styles.communityActionBtn,
-                          action.tone === 'joined' && styles.communityActionBtnJoined,
-                          action.tone === 'secondary' && styles.communityActionBtnSecondary,
-                          action.tone === 'pending' && styles.communityActionBtnPending,
-                          (action.disabled || actingGroupId === group.id) && { opacity: 0.65 },
-                        ]}
-                        activeOpacity={0.82}
-                        disabled={action.disabled || actingGroupId === group.id}
-                        onPress={() => void handleCommunityAction(group)}
-                      >
-                        {actingGroupId === group.id ? (
-                          <ActivityIndicator size="small" color={action.tone === 'primary' ? '#fff' : '#d8d8e5'} />
-                        ) : (
-                          <Text style={[
-                            styles.communityActionBtnText,
-                            action.tone !== 'primary' && styles.communityActionBtnTextMuted,
-                          ]}>
-                            {action.label}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })}
-              </View>
-            </>
-          ) : null}
         </View>
       </View>
     );
-  }, [actingGroupId, discoverableGroups.length, getCommunityAction, groups, handleCommunityAction, hasCommunityHeader, highlightedGroups, pendingInvites.length, router]);
+  }, [discoverableGroups.length, groups, hasCommunityHeader, joinedCommunityPreview, pendingInvites.length, router]);
 
   useEffect(() => {
     if (postDestination === 'group' && !selectedGroupId) {
@@ -1540,13 +1439,13 @@ const styles = StyleSheet.create({
   },
   communitiesCard: {
     marginHorizontal: 12,
-    marginBottom: 10,
-    padding: 14,
+    marginBottom: 8,
+    padding: 12,
     borderRadius: 18,
     backgroundColor: '#101218',
     borderWidth: 1,
     borderColor: '#1f2630',
-    gap: 12,
+    gap: 10,
   },
   communitiesHeader: {
     flexDirection: 'row',
@@ -1556,7 +1455,17 @@ const styles = StyleSheet.create({
   },
   communitiesHeaderTextWrap: { flex: 1 },
   communitiesTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  communitiesSubtitle: { color: '#7d8696', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  communitiesSubtitle: { color: '#7d8696', fontSize: 12, lineHeight: 17, marginTop: 3 },
+  communitiesMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  communitiesMetaPill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#151922',
+    borderWidth: 1,
+    borderColor: '#262f3d',
+  },
+  communitiesMetaPillText: { color: '#9da8ba', fontSize: 11, fontWeight: '700' },
   communitiesSearchBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1569,7 +1478,7 @@ const styles = StyleSheet.create({
     borderColor: '#29496b',
   },
   communitiesSearchBtnText: { color: '#9cc8ff', fontSize: 12, fontWeight: '700' },
-  communitiesQuickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  communitiesQuickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
   communityQuickBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1590,28 +1499,28 @@ const styles = StyleSheet.create({
   },
   communitySectionTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
   communitySectionMeta: { color: '#6f7b8b', fontSize: 12, fontWeight: '700' },
-  groupRail: { gap: 10, paddingVertical: 2 },
+  groupRail: { gap: 8, paddingVertical: 2 },
   groupRailCard: {
-    width: 168,
+    width: 152,
     borderRadius: 16,
-    padding: 12,
+    padding: 10,
     backgroundColor: '#151922',
     borderWidth: 1,
     borderColor: '#222a37',
-    gap: 8,
+    gap: 6,
   },
   groupRailAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#2a170e',
     borderWidth: 1,
     borderColor: '#5b3c24',
   },
-  groupRailName: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  groupRailMeta: { color: '#778090', fontSize: 12, lineHeight: 17 },
+  groupRailName: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  groupRailMeta: { color: '#778090', fontSize: 11, lineHeight: 15 },
   communityList: { gap: 10 },
   communityRow: {
     flexDirection: 'row',
