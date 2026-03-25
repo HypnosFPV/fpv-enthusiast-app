@@ -335,7 +335,7 @@ export default function GroupDetailScreen() {
     }),
     [activeTheme.borderColor, activeTheme.surfaceSecondaryColor]
   );
-  const themeOverlayOpacity = Math.max(0.24, (activeTheme.overlayStrength ?? 72) / 100);
+  const themeOverlayOpacity = Math.max(0.14, Math.min(0.42, (activeTheme.overlayStrength ?? 72) / 180));
   const groupBannerUri = activeTheme.bannerImageUrl ?? group?.cover_url ?? null;
 
   const handleToggleLike = async (postId: string) => {
@@ -781,14 +781,24 @@ export default function GroupDetailScreen() {
             {(group.member_count ?? members.length)} members • {group.privacy.replace('_', ' ')}
           </Text>
         </View>
-        {group.chat_room_id ? (
-          <TouchableOpacity
-            style={[styles.headerActionBtn, !canChat && { opacity: 0.55 }]}
-            onPress={() => canChat ? router.push(`/chat/${group.chat_room_id}` as any) : Alert.alert('Chat limited', 'Only moderators can chat in this group right now.')}
-          >
-            <Ionicons name="chatbubble-ellipses-outline" size={20} color="#ff9b68" />
-          </TouchableOpacity>
-        ) : null}
+        <View style={styles.headerActionsRow}>
+          {canManage ? (
+            <TouchableOpacity
+              style={styles.headerActionBtn}
+              onPress={() => router.push(`/group-theme/${group.id}` as any)}
+            >
+              <Ionicons name="color-palette-outline" size={20} color="#ff9b68" />
+            </TouchableOpacity>
+          ) : null}
+          {group.chat_room_id ? (
+            <TouchableOpacity
+              style={[styles.headerActionBtn, !canChat && { opacity: 0.55 }]}
+              onPress={() => canChat ? router.push(`/chat/${group.chat_room_id}` as any) : Alert.alert('Chat limited', 'Only moderators can chat in this group right now.')}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={20} color="#ff9b68" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       <ScrollView
@@ -826,6 +836,18 @@ export default function GroupDetailScreen() {
                   </Text>
                 </View>
               </View>
+              {canManage ? (
+                <View style={styles.heroAdminActionsWrap}>
+                  <Text style={[styles.heroAdminHint, { color: activeTheme.mutedTextColor }]}>Admin shortcut: update the group photo, banner, and theme from one place.</Text>
+                  <TouchableOpacity
+                    style={[styles.heroAppearanceBtn, { backgroundColor: activeTheme.chipBackgroundColor, borderColor: activeTheme.borderColor }]}
+                    onPress={() => router.push(`/group-theme/${group.id}` as any)}
+                  >
+                    <Ionicons name="color-palette-outline" size={16} color={activeTheme.chipTextColor} />
+                    <Text style={[styles.heroAppearanceBtnText, { color: activeTheme.chipTextColor }]}>Customize appearance</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
             </View>
           </View>
         </View>
@@ -1203,14 +1225,14 @@ export default function GroupDetailScreen() {
             <View style={[styles.appearanceBanner, { backgroundColor: activeTheme.surfaceColor, borderColor: activeTheme.borderColor }]}> 
               <View style={{ flex: 1 }}>
                 <Text style={[styles.sectionTitle, { color: activeTheme.textColor }]}>Appearance studio</Text>
-                <Text style={[styles.appearanceBannerText, { color: activeTheme.mutedTextColor }]}>Choose free presets, preview premium custom themes, and upload group avatar/banner artwork.</Text>
+                <Text style={[styles.appearanceBannerText, { color: activeTheme.mutedTextColor }]}>Edit the group photo and banner, switch free presets, and preview premium custom themes without leaving this community.</Text>
               </View>
               <TouchableOpacity
                 style={[styles.secondaryBtn, { backgroundColor: activeTheme.chipBackgroundColor, borderColor: activeTheme.borderColor }]}
                 onPress={() => router.push(`/group-theme/${group.id}` as any)}
               >
                 <Ionicons name="color-palette-outline" size={16} color={activeTheme.chipTextColor} />
-                <Text style={[styles.secondaryBtnText, { color: activeTheme.chipTextColor }]}>Open studio</Text>
+                <Text style={[styles.secondaryBtnText, { color: activeTheme.chipTextColor }]}>Edit photo & theme</Text>
               </TouchableOpacity>
             </View>
 
@@ -1416,6 +1438,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#151515',
   },
+  headerActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerActionBtn: {
     width: 40,
     height: 40,
@@ -1618,6 +1641,19 @@ const styles = StyleSheet.create({
   },
   rolePillText: { fontSize: 10, fontWeight: '800' },
   heroStatsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  heroAdminActionsWrap: { marginTop: 14, gap: 10 },
+  heroAdminHint: { fontSize: 12, lineHeight: 17 },
+  heroAppearanceBtn: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  heroAppearanceBtnText: { fontSize: 12, fontWeight: '800' },
   heroStatChip: {
     flexDirection: 'row',
     alignItems: 'center',

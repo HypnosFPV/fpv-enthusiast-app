@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -63,6 +63,11 @@ function previewThemeFromDraft(draft: GroupThemeDraft): GroupThemeTokens {
   };
 }
 
+function resolveOverlayOpacity(strength?: number | null, min = 0.14, max = 0.5) {
+  const normalized = (strength ?? 72) / 180;
+  return Math.max(min, Math.min(max, normalized));
+}
+
 function Avatar({ uri, size = 58 }: { uri?: string | null; size?: number }) {
   if (uri) {
     return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} />;
@@ -78,6 +83,7 @@ export default function GroupThemeScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const scrollRef = useRef<ScrollView | null>(null);
   const [group, setGroup] = useState<GroupAppearanceSummary | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);
   const [loadingGroup, setLoadingGroup] = useState(true);
@@ -249,7 +255,7 @@ export default function GroupThemeScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={22} color="#fff" />
@@ -257,6 +263,43 @@ export default function GroupThemeScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Appearance studio</Text>
             <Text style={styles.headerSubtitle}>{group.name}</Text>
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Quick start</Text>
+          <Text style={styles.sectionHint}>The key actions are surfaced here so you do not have to hunt through the studio to update the group look.</Text>
+          <View style={styles.quickActionsGrid}>
+            <TouchableOpacity style={styles.quickActionCard} disabled={!canManageBranding || savingBranding || uploadingImage} onPress={() => void handleUploadBranding('avatar')}>
+              <View style={styles.quickActionIconWrap}>
+                <Ionicons name="camera-outline" size={18} color="#ff9b68" />
+              </View>
+              <Text style={styles.quickActionTitle}>Group photo</Text>
+              <Text style={styles.quickActionMeta}>{group.avatar_url ? 'Replace the current avatar' : 'Add a square avatar'}</Text>
+              <View style={styles.quickActionBadge}>
+                <Text style={styles.quickActionBadgeText}>{group.avatar_url ? 'Set' : 'Missing'}</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionCard} disabled={!canManageBranding || savingBranding || uploadingImage} onPress={() => void handleUploadBranding('cover')}>
+              <View style={styles.quickActionIconWrap}>
+                <Ionicons name="image-outline" size={18} color="#ff9b68" />
+              </View>
+              <Text style={styles.quickActionTitle}>Group banner</Text>
+              <Text style={styles.quickActionMeta}>{group.cover_url ? 'Replace the current banner' : 'Add a wide cover image'}</Text>
+              <View style={styles.quickActionBadge}>
+                <Text style={styles.quickActionBadgeText}>{group.cover_url ? 'Set' : 'Missing'}</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionCard} onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}>
+              <View style={styles.quickActionIconWrap}>
+                <Ionicons name="sparkles-outline" size={18} color="#ff9b68" />
+              </View>
+              <Text style={styles.quickActionTitle}>Custom theme</Text>
+              <Text style={styles.quickActionMeta}>Jump to the premium builder and preview the art treatment.</Text>
+              <View style={styles.quickActionBadge}>
+                <Text style={styles.quickActionBadgeText}>{customThemes.length > 0 ? `${customThemes.length} saved` : 'Build now'}</Text>
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -347,7 +390,7 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Build a premium custom theme</Text>
-          <Text style={styles.sectionHint}>Preview first, then unlock if you like it. The purchase is bound to this group only and will be added to your collection here.</Text>
+          <Text style={styles.sectionHint}>Preview first, then unlock if you like it. Artwork now sits in dedicated preview frames so you can judge the banner and feed card treatment before paying.</Text>
 
           <Text style={styles.label}>Theme name</Text>
           <TextInput
@@ -402,6 +445,7 @@ export default function GroupThemeScreen() {
           </View>
 
           <Text style={styles.label}>Template art</Text>
+          <Text style={styles.assetHint}>Banner art is used on the group header. Card art is used in the feed theme and now gets its own framed treatment so it does not disappear into the background.</Text>
           <View style={styles.identityActionRow}>
             <TouchableOpacity style={styles.secondaryBtn} disabled={uploadingImage} onPress={() => void handleUploadDraftImage('theme_banner')}>
               <Ionicons name="image-outline" size={16} color="#ff9b68" />
@@ -411,6 +455,18 @@ export default function GroupThemeScreen() {
               <Ionicons name="albums-outline" size={16} color="#ff9b68" />
               <Text style={styles.secondaryBtnText}>{draft.cardImageUrl ? 'Change card art' : 'Upload card art'}</Text>
             </TouchableOpacity>
+          </View>
+          <View style={styles.assetPreviewGrid}>
+            <View style={styles.assetPreviewCard}>
+              <Text style={styles.assetPreviewLabel}>Header banner art</Text>
+              {draft.bannerImageUrl ? <Image source={{ uri: draft.bannerImageUrl }} style={styles.assetPreviewThumb} /> : <View style={[styles.assetPreviewThumb, styles.assetPreviewPlaceholder]}><Ionicons name="image-outline" size={22} color="#666" /></View>}
+              <Text style={styles.assetPreviewMeta}>{draft.bannerImageUrl ? 'Ready for the group header preview.' : 'No banner art yet.'}</Text>
+            </View>
+            <View style={styles.assetPreviewCard}>
+              <Text style={styles.assetPreviewLabel}>Feed card art</Text>
+              {draft.cardImageUrl ? <Image source={{ uri: draft.cardImageUrl }} style={styles.assetPreviewThumb} /> : <View style={[styles.assetPreviewThumb, styles.assetPreviewPlaceholder]}><Ionicons name="albums-outline" size={22} color="#666" /></View>}
+              <Text style={styles.assetPreviewMeta}>{draft.cardImageUrl ? 'Ready for the feed card frame.' : 'No card art yet.'}</Text>
+            </View>
           </View>
 
           <Text style={styles.label}>Readability overlay</Text>
@@ -447,43 +503,64 @@ export default function GroupThemeScreen() {
 }
 
 function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: GroupThemeTokens }) {
+  const heroOverlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.16, 0.46);
+  const cardOverlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.08, 0.32);
+
   return (
     <View style={styles.previewWrap}>
-      <View style={[styles.previewHero, { backgroundColor: theme.surfaceSecondaryColor, borderColor: theme.borderColor }]}> 
-        {group.cover_url || theme.bannerImageUrl ? (
-          <Image source={{ uri: theme.bannerImageUrl ?? group.cover_url ?? undefined }} style={styles.previewHeroBanner} />
-        ) : null}
-        <View style={[styles.previewHeroOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.24, (theme.overlayStrength ?? 72) / 100)})` }]} />
-        <View style={styles.previewHeroContent}>
-          <Avatar uri={group.avatar_url} size={50} />
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.previewHeroTitle, { color: theme.textColor }]}>{group.name}</Text>
-            <Text style={[styles.previewHeroMeta, { color: theme.mutedTextColor }]}>Community page preview</Text>
+      <View>
+        <Text style={styles.previewSectionLabel}>Community header</Text>
+        <View style={[styles.previewHero, { backgroundColor: theme.surfaceSecondaryColor, borderColor: theme.borderColor }]}> 
+          {group.cover_url || theme.bannerImageUrl ? (
+            <Image source={{ uri: theme.bannerImageUrl ?? group.cover_url ?? undefined }} style={styles.previewHeroBanner} />
+          ) : null}
+          <View style={[styles.previewHeroOverlay, { backgroundColor: `rgba(0,0,0,${heroOverlayOpacity})` }]} />
+          <View style={styles.previewHeroContent}>
+            <Avatar uri={group.avatar_url} size={50} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.previewHeroTitle, { color: theme.textColor }]}>{group.name}</Text>
+              <Text style={[styles.previewHeroMeta, { color: theme.mutedTextColor }]}>Community page preview</Text>
+            </View>
           </View>
         </View>
       </View>
 
-      <View style={[styles.previewPostCard, { backgroundColor: theme.surfaceColor, borderColor: theme.borderColor }]}> 
-        {theme.cardImageUrl ? <Image source={{ uri: theme.cardImageUrl }} style={styles.previewPostImage} /> : null}
-        {theme.cardImageUrl ? <View style={[styles.previewPostOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.22, (theme.overlayStrength ?? 72) / 100)})` }]} /> : null}
-        <View style={styles.previewPostHeader}>
-          <Avatar uri={group.avatar_url} size={34} />
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.previewPostAuthor, { color: theme.textColor }]}>HypnosBot</Text>
-            <View style={[styles.previewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
-              <Ionicons name="people-outline" size={11} color={theme.chipTextColor} />
-              <Text style={[styles.previewChipText, { color: theme.chipTextColor }]} numberOfLines={1}>View group • {group.name}</Text>
+      <View>
+        <Text style={styles.previewSectionLabel}>Feed card treatment</Text>
+        <View style={[styles.previewPostCard, { backgroundColor: theme.surfaceColor, borderColor: theme.borderColor }]}> 
+          <View style={styles.previewPostHeader}>
+            <Avatar uri={group.avatar_url} size={34} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.previewPostAuthor, { color: theme.textColor }]}>HypnosBot</Text>
+              <View style={[styles.previewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
+                <Ionicons name="people-outline" size={11} color={theme.chipTextColor} />
+                <Text style={[styles.previewChipText, { color: theme.chipTextColor }]} numberOfLines={1}>View group • {group.name}</Text>
+              </View>
             </View>
           </View>
-        </View>
-        <View style={styles.previewMediaBox}>
-          <Ionicons name="play" size={30} color="#fff" />
-        </View>
-        <Text style={[styles.previewCaption, { color: theme.textColor }]}>Feed cards use your selected group theme colors while keeping layout and readability consistent.</Text>
-        <View style={[styles.previewDivider, { backgroundColor: theme.borderColor }]} />
-        <View style={styles.previewActions}>
-          <Ionicons name="heart-outline" size={22} color={theme.mutedTextColor} />
-          <Ionicons name="chatbubble-outline" size={20} color={theme.accentColor} />
+          <View style={[styles.previewPostArtFrame, { backgroundColor: theme.surfaceSecondaryColor, borderColor: theme.borderColor }]}> 
+            {theme.cardImageUrl ? (
+              <>
+                <Image source={{ uri: theme.cardImageUrl }} style={styles.previewPostArtImage} />
+                <View style={[styles.previewPostArtOverlay, { backgroundColor: `rgba(0,0,0,${cardOverlayOpacity})` }]} />
+              </>
+            ) : (
+              <View style={styles.previewPostArtPlaceholder}>
+                <Ionicons name="image-outline" size={26} color="#cfcfcf" />
+                <Text style={styles.previewPostArtPlaceholderText}>Upload card art to preview the premium treatment.</Text>
+              </View>
+            )}
+            <View style={[styles.previewArtBadge, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}> 
+              <Ionicons name="sparkles-outline" size={12} color={theme.chipTextColor} />
+              <Text style={[styles.previewArtBadgeText, { color: theme.chipTextColor }]}>Art-forward feed frame</Text>
+            </View>
+          </View>
+          <Text style={[styles.previewCaption, { color: theme.textColor }]}>Feed cards keep the theme colors, but artwork now gets its own framed space so the image feels intentional instead of disappearing behind the post chrome.</Text>
+          <View style={[styles.previewDivider, { backgroundColor: theme.borderColor }]} />
+          <View style={styles.previewActions}>
+            <Ionicons name="heart-outline" size={22} color={theme.mutedTextColor} />
+            <Ionicons name="chatbubble-outline" size={20} color={theme.accentColor} />
+          </View>
         </View>
       </View>
     </View>
@@ -515,6 +592,39 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
   sectionHint: { color: '#8b8b8b', fontSize: 13, lineHeight: 18, marginTop: 5 },
+  quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
+  quickActionCard: {
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 150,
+    backgroundColor: '#151515',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#242424',
+    padding: 14,
+    gap: 8,
+  },
+  quickActionIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#24130c',
+  },
+  quickActionTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  quickActionMeta: { color: '#9a9a9a', fontSize: 12, lineHeight: 17 },
+  quickActionBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#4f2d1d',
+    backgroundColor: '#1d130f',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  quickActionBadgeText: { color: '#ffb088', fontSize: 11, fontWeight: '800' },
   label: { color: '#ddd', fontSize: 13, fontWeight: '700', marginTop: 16, marginBottom: 8 },
   input: {
     backgroundColor: '#171717',
@@ -582,21 +692,53 @@ const styles = StyleSheet.create({
   choiceChipActive: { borderColor: '#ff6a2f', backgroundColor: '#24130c' },
   choiceChipText: { color: '#bbb', fontSize: 12, fontWeight: '700' },
   choiceChipTextActive: { color: '#ffb088' },
-  previewWrap: { marginTop: 16, gap: 12 },
-  previewHero: { height: 140, borderRadius: 18, overflow: 'hidden', borderWidth: 1 },
+  assetHint: { color: '#8f8f8f', fontSize: 12, lineHeight: 17, marginBottom: 2 },
+  assetPreviewGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  assetPreviewCard: {
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 146,
+    backgroundColor: '#151515',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#252525',
+    padding: 12,
+  },
+  assetPreviewLabel: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  assetPreviewThumb: { width: '100%', height: 92, borderRadius: 12, marginTop: 10, backgroundColor: '#0f0f0f' },
+  assetPreviewPlaceholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#2d2d2d' },
+  assetPreviewMeta: { color: '#8b8b8b', fontSize: 11, lineHeight: 16, marginTop: 8 },
+  previewWrap: { marginTop: 16, gap: 14 },
+  previewSectionLabel: { color: '#a6a6a6', fontSize: 12, fontWeight: '700', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.6 },
+  previewHero: { height: 148, borderRadius: 18, overflow: 'hidden', borderWidth: 1 },
   previewHeroBanner: { ...StyleSheet.absoluteFillObject },
   previewHeroOverlay: { ...StyleSheet.absoluteFillObject },
   previewHeroContent: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', gap: 12, padding: 16 },
   previewHeroTitle: { fontSize: 18, fontWeight: '800' },
   previewHeroMeta: { fontSize: 12, marginTop: 2 },
   previewPostCard: { borderRadius: 18, overflow: 'hidden', borderWidth: 1, padding: 14 },
-  previewPostImage: { ...StyleSheet.absoluteFillObject, opacity: 0.28 },
-  previewPostOverlay: { ...StyleSheet.absoluteFillObject },
   previewPostHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   previewPostAuthor: { fontSize: 15, fontWeight: '700' },
   previewChip: { marginTop: 6, borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%' },
   previewChipText: { fontSize: 11, fontWeight: '700', flexShrink: 1 },
-  previewMediaBox: { marginTop: 14, height: 160, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
+  previewPostArtFrame: { marginTop: 14, height: 178, borderRadius: 16, overflow: 'hidden', borderWidth: 1, justifyContent: 'flex-end' },
+  previewPostArtImage: { ...StyleSheet.absoluteFillObject },
+  previewPostArtOverlay: { ...StyleSheet.absoluteFillObject },
+  previewPostArtPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, backgroundColor: 'rgba(255,255,255,0.06)' },
+  previewPostArtPlaceholderText: { color: '#d4d4d4', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 10 },
+  previewArtBadge: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  previewArtBadgeText: { fontSize: 11, fontWeight: '800' },
   previewCaption: { marginTop: 12, fontSize: 13, lineHeight: 18 },
   previewDivider: { marginTop: 12, height: StyleSheet.hairlineWidth, width: '100%' },
   previewActions: { flexDirection: 'row', gap: 18, alignItems: 'center', marginTop: 12 },

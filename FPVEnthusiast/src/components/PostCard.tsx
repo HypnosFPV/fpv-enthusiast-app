@@ -1113,7 +1113,7 @@ export default function PostCard(props: Props) {
       {activeGroupTheme?.cardImageUrl ? (
         <>
           <Image source={{ uri: activeGroupTheme.cardImageUrl }} style={styles.themedCardImage} resizeMode="cover" />
-          <View style={[styles.themedCardOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.2, (activeGroupTheme.overlayStrength ?? 72) / 100)})` }]} />
+          <View style={[styles.themedCardOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.08, Math.min(0.32, (activeGroupTheme.overlayStrength ?? 72) / 180))})` }]} />
         </>
       ) : null}
       <View style={styles.header}>
@@ -1379,7 +1379,7 @@ export default function PostCard(props: Props) {
 const styles = StyleSheet.create({
   card: { backgroundColor: '#13132a', marginBottom: 10, borderRadius: 14, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
   themedCard: { borderWidth: 1 },
-  themedCardImage: { ...StyleSheet.absoluteFillObject, opacity: 0.24 },
+  themedCardImage: { ...StyleSheet.absoluteFillObject, opacity: 0.4 },
   themedCardOverlay: { ...StyleSheet.absoluteFillObject },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
   avatarWrap: { marginRight: 10 },
