@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
@@ -201,6 +202,14 @@ export function useResolvedGroupTheme(userId?: string | null, groupId?: string |
   useEffect(() => {
     void loadTheme();
   }, [loadTheme]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!userId || !groupId) return undefined;
+      void loadTheme();
+      return undefined;
+    }, [groupId, loadTheme, userId]),
+  );
 
   return { theme, loadingTheme, refreshTheme: loadTheme };
 }

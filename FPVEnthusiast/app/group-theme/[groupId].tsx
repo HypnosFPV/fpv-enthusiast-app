@@ -17,10 +17,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
-import { GROUP_CARD_ANIMATION_VARIANTS, GROUP_THEME_PRESETS, GroupThemeTokens } from '../../src/constants/groupThemes';
+import { GROUP_CARD_ANIMATION_VARIANTS, GROUP_THEME_PRESETS, GroupCardAnimationVariantId, GroupThemeTokens } from '../../src/constants/groupThemes';
 import { createDraftFromPreset, customThemeToTokens, GroupCustomTheme, GroupThemeDraft, useGroupThemes } from '../../src/hooks/useGroupThemes';
 import { useGroupThemeCheckout } from '../../src/hooks/useGroupThemeCheckout';
 import { useGroupAnimationCheckout } from '../../src/hooks/useGroupAnimationCheckout';
+import GroupCardAnimationBorder from '../../src/components/GroupCardAnimationBorder';
 
 interface GroupAppearanceSummary {
   id: string;
@@ -75,8 +76,71 @@ function Avatar({ uri, size = 58 }: { uri?: string | null; size?: number }) {
     return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} />;
   }
   return (
-    <View style={[styles.avatarFallback, { width: size, height: size, borderRadius: size / 2 }]}> 
+    <View style={[styles.avatarFallback, { width: size, height: size, borderRadius: size / 2 }]}>
       <Ionicons name="people-outline" size={Math.round(size * 0.42)} color="#999" />
+    </View>
+  );
+}
+
+
+function AnimationVariantPreviewCard({
+  theme,
+  groupName,
+  variantId,
+  activeVariantId,
+}: {
+  theme: GroupThemeTokens;
+  groupName: string;
+  variantId: GroupCardAnimationVariantId;
+  activeVariantId: GroupCardAnimationVariantId;
+}) {
+  const [cardFrame, setCardFrame] = useState({ width: 0, height: 0 });
+  const overlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.08, 0.32);
+  const variantLabel = GROUP_CARD_ANIMATION_VARIANTS.find((variant) => variant.id === variantId)?.name ?? 'No animation';
+  const isLive = variantId === activeVariantId;
+
+  return (
+    <View style={styles.animationPreviewShell}>
+      <View style={styles.animationPreviewHeader}>
+        <View>
+          <Text style={styles.animationPreviewLabel}>Live card preview</Text>
+          <Text style={styles.animationPreviewHelp}>Tap a tier below to preview it here before you decide to activate or buy it.</Text>
+        </View>
+        <View style={[styles.animationPreviewPill, isLive && styles.animationPreviewPillActive]}>
+          <Text style={[styles.animationPreviewPillText, isLive && styles.animationPreviewPillTextActive]}>{variantLabel} {isLive ? '• active' : '• preview'}</Text>
+        </View>
+      </View>
+      <View
+        style={[styles.animationPreviewCard, { backgroundColor: theme.surfaceColor, borderColor: theme.borderColor }]}
+        onLayout={(event) => {
+          const nextWidth = Math.round(event.nativeEvent.layout.width);
+          const nextHeight = Math.round(event.nativeEvent.layout.height);
+          setCardFrame((prev) => (prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }));
+        }}
+      >
+        {theme.cardImageUrl ? <Image source={{ uri: theme.cardImageUrl }} style={styles.animationPreviewImage} resizeMode="cover" /> : null}
+        {theme.cardImageUrl ? <View style={[styles.animationPreviewImageOverlay, { backgroundColor: `rgba(0,0,0,${overlayOpacity})` }]} /> : null}
+        {variantId !== 'none' && cardFrame.width > 0 && cardFrame.height > 0 ? (
+          <GroupCardAnimationBorder
+            width={cardFrame.width}
+            height={cardFrame.height}
+            accentColor={theme.accentColor}
+            borderColor={theme.borderColor}
+            active
+            variant={variantId}
+            cornerRadius={18}
+          />
+        ) : null}
+        <View style={styles.animationPreviewContent}>
+          <View style={[styles.animationPreviewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
+            <Ionicons name="sparkles-outline" size={11} color={theme.chipTextColor} />
+            <Text style={[styles.animationPreviewChipText, { color: theme.chipTextColor }]}>{variantId === 'none' ? 'Static feed card' : 'Animated feed card'}</Text>
+          </View>
+          <Text style={[styles.animationPreviewTitleText, { color: theme.textColor }]}>View group • {groupName}</Text>
+          <Text style={[styles.animationPreviewBodyText, { color: theme.textColor }]}>This is how the border motion will read on a real post card for your current theme.</Text>
+          <Text style={[styles.animationPreviewMetaText, { color: theme.mutedTextColor }]}>{isLive ? 'Currently active in your feed.' : 'Preview only until you tap Use or complete checkout.'}</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -91,11 +155,13 @@ export default function GroupThemeScreen() {
   const [loadingGroup, setLoadingGroup] = useState(true);
   const [savingBranding, setSavingBranding] = useState(false);
   const [draft, setDraft] = useState<GroupThemeDraft>(() => createDraftFromPreset('midnight'));
+  const [previewAnimationVariantId, setPreviewAnimationVariantId] = useState<GroupCardAnimationVariantId>('none');
 
   const {
     customThemes,
     animationPurchases,
     activePreference,
+    activeTheme,
     activeAnimationVariantId,
     loadingThemes,
     savingPreference,
@@ -148,6 +214,10 @@ export default function GroupThemeScreen() {
 
   const previewTheme = useMemo(() => previewThemeFromDraft(draft), [draft]);
   const ownedAnimationVariantIds = useMemo(() => new Set(animationPurchases.filter((purchase) => purchase.status === 'paid').map((purchase) => purchase.variant_id)), [animationPurchases]);
+
+  useEffect(() => {
+    setPreviewAnimationVariantId(activeAnimationVariantId);
+  }, [activeAnimationVariantId]);
 
   const handleUploadBranding = useCallback(async (kind: 'avatar' | 'cover') => {
     const result = await uploadImage(kind, kind === 'avatar' ? [1, 1] : [16, 9]);
@@ -205,6 +275,7 @@ export default function GroupThemeScreen() {
   }, [saveThemePreference]);
 
   const handleSelectAnimation = useCallback(async (variantId: 'none' | 'basic' | 'standard' | 'premium') => {
+    setPreviewAnimationVariantId(variantId);
     const ok = await saveAnimationPreference(variantId);
     if (!ok) {
       Alert.alert('Could not update animation', variantId === 'none' ? 'Could not switch this group back to a static card.' : 'Please unlock this variant first or try again.');
@@ -216,6 +287,7 @@ export default function GroupThemeScreen() {
   const handlePurchaseAnimation = useCallback(async (variantId: 'basic' | 'standard' | 'premium') => {
     if (!groupId) return;
 
+    setPreviewAnimationVariantId(variantId);
     const started = await initAnimationCheckout({ groupId, variantId });
     if (!started.ok || !started.purchaseId) {
       Alert.alert('Checkout failed', started.error ?? 'Could not start animation checkout.');
@@ -237,7 +309,8 @@ export default function GroupThemeScreen() {
       return;
     }
 
-    Alert.alert('Animation unlocked', 'This animation variant is now available in your collection for this group, and you can swap to it any time.');
+    setPreviewAnimationVariantId(variantId);
+    Alert.alert('Animation unlocked', 'This animation variant is now available and should already be active for this group. You can tap any tier to preview it and Use to switch later.');
   }, [confirmAnimationCheckout, groupId, initAnimationCheckout, resetAnimationCheckout, waitForAnimationPurchase]);
 
   const handlePurchaseCustomTheme = useCallback(async () => {
@@ -429,23 +502,59 @@ export default function GroupThemeScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Feed animation variants</Text>
           <Text style={styles.sectionHint}>Cards stay static unless you unlock an animation for this group. Buy variants one by one, then swap between anything you own whenever you want.</Text>
+          <AnimationVariantPreviewCard
+            theme={activeTheme}
+            groupName={group.name}
+            variantId={previewAnimationVariantId}
+            activeVariantId={activeAnimationVariantId}
+          />
           {GROUP_CARD_ANIMATION_VARIANTS.map((variant) => {
             const isOwned = variant.id === 'none' || ownedAnimationVariantIds.has(variant.id);
             const isActive = activeAnimationVariantId === variant.id;
+            const isPreviewing = previewAnimationVariantId === variant.id;
             const isPending = animationPurchases.some((purchase) => purchase.variant_id === variant.id && purchase.status === 'pending_payment');
             const isBusy = savingPreference || animationCheckoutState.status === 'loading' || animationCheckoutState.status === 'processing';
             const priceLabel = variant.priceCents > 0 ? `$${(variant.priceCents / 100).toFixed(2)}` : 'Included';
+            const metaLabel = isOwned
+              ? (isActive
+                ? 'Active for this group'
+                : isPreviewing
+                  ? 'Previewing now — tap Use to make it live in your feed'
+                  : 'Owned — tap the row to preview, then Use to activate')
+              : isPending
+                ? 'Payment pending'
+                : isPreviewing
+                  ? `Previewing now — unlock for ${priceLabel}`
+                  : `Unlock separately for ${priceLabel}`;
             return (
-              <View key={variant.id} style={[styles.variantRow, isActive && styles.variantRowActive]}>
+              <TouchableOpacity
+                key={variant.id}
+                activeOpacity={0.92}
+                style={[styles.variantRow, isPreviewing && styles.variantRowPreviewing, isActive && styles.variantRowActive]}
+                onPress={() => setPreviewAnimationVariantId(variant.id)}
+              >
                 <View style={{ flex: 1 }}>
                   <View style={styles.variantTitleRow}>
-                    <Text style={styles.variantName}>{variant.name}</Text>
+                    <View style={styles.variantTitleStack}>
+                      <Text style={styles.variantName}>{variant.name}</Text>
+                      {isActive ? (
+                        <View style={styles.variantStatusPill}>
+                          <Ionicons name="checkmark-circle" size={12} color="#0a0a0a" />
+                          <Text style={styles.variantStatusPillText}>Active</Text>
+                        </View>
+                      ) : isPreviewing ? (
+                        <View style={[styles.variantStatusPill, styles.variantStatusPillPreview]}>
+                          <Ionicons name="eye-outline" size={12} color="#ffb27d" />
+                          <Text style={[styles.variantStatusPillText, styles.variantStatusPillTextPreview]}>Preview</Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <View style={styles.variantBadge}>
                       <Text style={styles.variantBadgeText}>{variant.badge}</Text>
                     </View>
                   </View>
                   <Text style={styles.variantDescription}>{variant.description}</Text>
-                  <Text style={styles.variantMeta}>{isOwned ? (isActive ? 'Active for this group' : 'Owned — tap Use any time') : isPending ? 'Payment pending' : `Unlock separately for ${priceLabel}`}</Text>
+                  <Text style={styles.variantMeta}>{metaLabel}</Text>
                 </View>
                 {isOwned ? (
                   <TouchableOpacity style={[styles.secondaryBtn, isActive && styles.secondaryBtnActive]} disabled={isBusy} onPress={() => void handleSelectAnimation(variant.id)}>
@@ -458,7 +567,7 @@ export default function GroupThemeScreen() {
                     <Text style={styles.secondaryBtnText}>Unlock {priceLabel}</Text>
                   </TouchableOpacity>
                 )}
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>
@@ -767,12 +876,70 @@ const styles = StyleSheet.create({
   presetTitle: { color: '#fff', fontSize: 13, fontWeight: '700', marginTop: 10 },
   presetMeta: { color: '#8c8c8c', fontSize: 12, marginTop: 4 },
   emptyText: { color: '#8b8b8b', marginTop: 14, fontSize: 13 },
+  animationPreviewShell: { marginTop: 14, marginBottom: 6, gap: 10 },
+  animationPreviewHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  animationPreviewLabel: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  animationPreviewHelp: { color: '#8b8b8b', fontSize: 12, lineHeight: 17, marginTop: 4, maxWidth: 230 },
+  animationPreviewPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#3f281d',
+    backgroundColor: '#18110d',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  animationPreviewPillActive: { borderColor: '#ff6a2f', backgroundColor: 'rgba(255,106,47,0.14)' },
+  animationPreviewPillText: { color: '#d7b09b', fontSize: 11, fontWeight: '800' },
+  animationPreviewPillTextActive: { color: '#ffe1d4' },
+  animationPreviewCard: {
+    minHeight: 168,
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+    backgroundColor: '#141414',
+  },
+  animationPreviewImage: { ...StyleSheet.absoluteFillObject, opacity: 0.38 },
+  animationPreviewImageOverlay: { ...StyleSheet.absoluteFillObject },
+  animationPreviewContent: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 16, gap: 8, zIndex: 1 },
+  animationPreviewChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  animationPreviewChipText: { fontSize: 11, fontWeight: '700' },
+  animationPreviewTitleText: { fontSize: 16, fontWeight: '800' },
+  animationPreviewBodyText: { fontSize: 13, lineHeight: 18 },
+  animationPreviewMetaText: { fontSize: 12, lineHeight: 17 },
   variantRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: '#252525', backgroundColor: '#151515' },
+  variantRowPreviewing: { borderColor: '#5d3928', backgroundColor: 'rgba(255,106,47,0.05)' },
   variantRowActive: { borderColor: '#ff6a2f', backgroundColor: '#21120c' },
-  variantTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  variantTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  variantTitleStack: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, flex: 1 },
   variantName: { color: '#fff', fontSize: 14, fontWeight: '800' },
   variantBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#24130c', borderWidth: 1, borderColor: '#4f2d1d' },
   variantBadgeText: { color: '#ffb088', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  variantStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#ffb27d',
+  },
+  variantStatusPillPreview: {
+    backgroundColor: 'rgba(255,178,125,0.12)',
+    borderWidth: 1,
+    borderColor: '#5d3928',
+  },
+  variantStatusPillText: { color: '#0a0a0a', fontSize: 11, fontWeight: '800' },
+  variantStatusPillTextPreview: { color: '#ffb27d' },
   variantDescription: { color: '#c7c7c7', fontSize: 12, lineHeight: 17, marginTop: 6 },
   variantMeta: { color: '#8b8b8b', fontSize: 11, lineHeight: 16, marginTop: 6 },
   collectionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
