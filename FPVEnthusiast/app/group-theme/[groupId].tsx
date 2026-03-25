@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
-import { DEFAULT_GROUP_THEME, GROUP_THEME_PRESETS, GroupThemeTokens } from '../../src/constants/groupThemes';
+import { GROUP_THEME_PRESETS, GroupThemeTokens } from '../../src/constants/groupThemes';
 import { createDraftFromPreset, customThemeToTokens, GroupCustomTheme, GroupThemeDraft, useGroupThemes } from '../../src/hooks/useGroupThemes';
 import { useGroupThemeCheckout } from '../../src/hooks/useGroupThemeCheckout';
 
@@ -94,7 +94,6 @@ export default function GroupThemeScreen() {
   const {
     customThemes,
     activePreference,
-    activeTheme,
     loadingThemes,
     savingPreference,
     uploadingImage,
@@ -306,12 +305,6 @@ export default function GroupThemeScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Live preview</Text>
-          <Text style={styles.sectionHint}>This preview shows how the group page and feed card will feel for your account before you switch or buy anything.</Text>
-          <ThemePreview group={group} theme={activeTheme ?? DEFAULT_GROUP_THEME} />
-        </View>
-
-        <View style={styles.card}>
           <Text style={styles.sectionTitle}>Group identity</Text>
           <Text style={styles.sectionHint}>Avatar and banner shape the community identity for everyone. Only owners and admins can update them.</Text>
 
@@ -508,7 +501,8 @@ export default function GroupThemeScreen() {
 function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: GroupThemeTokens }) {
   const heroOverlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.16, 0.46);
   const cardOverlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.08, 0.32);
-  const contentPlateStyle = theme.cardImageUrl
+  const hasCardArt = !!theme.cardImageUrl;
+  const contentPlateStyle = hasCardArt
     ? {
         backgroundColor: `rgba(8,10,16,${Math.min(0.76, cardOverlayOpacity + 0.34)})`,
         borderColor: `rgba(255,255,255,${Math.min(0.16, cardOverlayOpacity * 0.45)})`,
@@ -517,6 +511,9 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
         backgroundColor: 'rgba(255,255,255,0.03)',
         borderColor: 'rgba(255,255,255,0.05)',
       };
+  const previewBodyText = hasCardArt
+    ? 'The uploaded card art now fills the full preview card so the premium theme reads the way it will feel across the surface, with only enough overlay to keep text readable.'
+    : 'Add feed card art to preview the premium frame, surface glow, and readability treatment before you unlock this theme.';
 
   return (
     <View style={styles.previewWrap}>
@@ -540,14 +537,8 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
       <View>
         <Text style={styles.previewSectionLabel}>Feed card treatment</Text>
         <View style={[styles.previewPostCard, { backgroundColor: theme.surfaceColor, borderColor: theme.borderColor }]}> 
-          {theme.cardImageUrl ? <Image source={{ uri: theme.cardImageUrl }} style={styles.previewPostImage} /> : null}
-          {theme.cardImageUrl ? <View style={[styles.previewPostOverlay, { backgroundColor: `rgba(0,0,0,${cardOverlayOpacity})` }]} /> : null}
-          {!theme.cardImageUrl ? (
-            <View style={styles.previewPostPlaceholder}>
-              <Ionicons name="image-outline" size={26} color="#cfcfcf" />
-              <Text style={styles.previewPostPlaceholderText}>Upload card art to preview the full-card treatment.</Text>
-            </View>
-          ) : null}
+          {hasCardArt ? <Image source={{ uri: theme.cardImageUrl ?? undefined }} style={styles.previewPostImage} /> : null}
+          {hasCardArt ? <View style={[styles.previewPostOverlay, { backgroundColor: `rgba(0,0,0,${cardOverlayOpacity})` }]} /> : null}
           <View style={[styles.previewArtBadge, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}> 
             <Ionicons name="sparkles-outline" size={12} color={theme.chipTextColor} />
             <Text style={[styles.previewArtBadgeText, { color: theme.chipTextColor }]}>Full-card art preview</Text>
@@ -564,7 +555,18 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
                   </View>
                 </View>
               </View>
-              <Text style={[styles.previewCaption, { color: theme.textColor }]}>The uploaded card art now fills the full preview card so the premium theme reads the way it will feel across the surface, with only enough overlay to keep text readable.</Text>
+              {!hasCardArt ? (
+                <View style={styles.previewEmptyMediaCard}>
+                  <View style={styles.previewEmptyMediaIconWrap}>
+                    <Ionicons name="albums-outline" size={18} color={theme.chipTextColor} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.previewEmptyMediaTitle, { color: theme.textColor }]}>No feed card art yet</Text>
+                    <Text style={[styles.previewEmptyMediaText, { color: theme.mutedTextColor }]}>Upload card art above and this slot will turn into the animated premium card preview.</Text>
+                  </View>
+                </View>
+              ) : null}
+              <Text style={[styles.previewCaption, { color: theme.textColor }]}>{previewBodyText}</Text>
               <View style={[styles.previewDivider, { backgroundColor: theme.borderColor }]} />
               <View style={styles.previewActions}>
                 <Ionicons name="heart-outline" size={22} color={theme.mutedTextColor} />
@@ -730,10 +732,29 @@ const styles = StyleSheet.create({
   previewPostCard: { borderRadius: 18, overflow: 'hidden', borderWidth: 1, minHeight: 296, justifyContent: 'flex-end' },
   previewPostImage: { ...StyleSheet.absoluteFillObject, opacity: 0.6 },
   previewPostOverlay: { ...StyleSheet.absoluteFillObject },
-  previewPostPlaceholder: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, backgroundColor: 'rgba(255,255,255,0.06)' },
-  previewPostPlaceholderText: { color: '#d4d4d4', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 10 },
   previewPostContent: { padding: 14, paddingTop: 64, zIndex: 1 },
   previewPostContentPlate: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 14, gap: 12 },
+  previewEmptyMediaCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  previewEmptyMediaIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  previewEmptyMediaTitle: { fontSize: 13, fontWeight: '700' },
+  previewEmptyMediaText: { fontSize: 12, lineHeight: 17, marginTop: 2 },
   previewPostHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   previewPostAuthor: { fontSize: 15, fontWeight: '700' },
   previewChip: { marginTop: 8, borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%' },

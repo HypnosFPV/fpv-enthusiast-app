@@ -4,9 +4,10 @@ import {
   View, Text, Image, TouchableOpacity, StyleSheet,
   AppState, Modal, Alert, ActivityIndicator, TextInput,
   Dimensions, Linking, Platform, FlatList, KeyboardAvoidingView,
-  Keyboard, PanResponder, ScrollView, Animated, Pressable,
+  Keyboard, PanResponder, ScrollView, Animated, Pressable, Easing,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
@@ -100,6 +101,77 @@ function injectCmd(ref: React.RefObject<WebView | null>, cmd: string): void {
 }
 
 const PC_TAG_COLORS = ['#ff4500','#00d4ff','#9c27b0','#ff9100','#00e676','#e91e63','#2979FF','#ffcc00'];
+
+function AnimatedGroupBorder({
+  width,
+  height,
+  accentColor,
+  borderColor,
+  active,
+}: {
+  width: number;
+  height: number;
+  accentColor: string;
+  borderColor: string;
+  active: boolean;
+}) {
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const sweepAnim = useRef(new Animated.Value(0)).current;
+  const pulseLoopRef = useRef<any>(null);
+  const sweepLoopRef = useRef<any>(null);
+
+  useEffect(() => {
+    pulseLoopRef.current?.stop?.();
+    sweepLoopRef.current?.stop?.();
+    pulseAnim.stopAnimation();
+    sweepAnim.stopAnimation();
+
+    if (!active || width < 40 || height < 40) {
+      pulseAnim.setValue(0);
+      sweepAnim.setValue(0);
+      return;
+    }
+
+    pulseLoopRef.current = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+        Animated.timing(pulseAnim, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+      ])
+    );
+    sweepLoopRef.current = Animated.loop(
+      Animated.timing(sweepAnim, { toValue: 1, duration: 2600, easing: Easing.linear, useNativeDriver: true })
+    );
+
+    pulseLoopRef.current.start();
+    sweepLoopRef.current.start();
+
+    return () => {
+      pulseLoopRef.current?.stop?.();
+      sweepLoopRef.current?.stop?.();
+      pulseAnim.stopAnimation();
+      sweepAnim.stopAnimation();
+    };
+  }, [active, height, pulseAnim, sweepAnim, width]);
+
+  const edgeOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.92] });
+  const glowOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.16, 0.4] });
+  const edgeThickness = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [2, 3.4] });
+  const sweepOpacity = sweepAnim.interpolate({ inputRange: [0, 0.1, 0.5, 0.9, 1], outputRange: [0, 0.95, 0.35, 0.95, 0] });
+  const sweepTranslateX = sweepAnim.interpolate({ inputRange: [0, 1], outputRange: [-width * 0.3, width * 0.88] });
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.groupAnimWrap, { opacity: edgeOpacity }]}> 
+      <Animated.View style={[styles.groupAnimGlow, { opacity: glowOpacity, shadowColor: accentColor, borderColor }]} />
+      <LinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.groupAnimTopEdge, { height: edgeThickness }]} />
+      <LinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 1, y: 0 }} end={{ x: 0, y: 0 }} style={[styles.groupAnimBottomEdge, { height: edgeThickness }]} />
+      <LinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[styles.groupAnimLeftEdge, { width: edgeThickness }]} />
+      <LinearGradient colors={[accentColor, borderColor, accentColor]} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={[styles.groupAnimRightEdge, { width: edgeThickness }]} />
+      <Animated.View style={[styles.groupAnimSweep, { transform: [{ translateX: sweepTranslateX }], opacity: sweepOpacity }]}> 
+        <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.groupAnimSweepFill} />
+      </Animated.View>
+    </Animated.View>
+  );
+}
 
 interface PostData {
   id: string;
@@ -465,6 +537,8 @@ export default function PostCard(props: Props) {
   const themedGroupChipText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.chipTextColor }) : null, [activeGroupTheme]);
   const themedCaptionStyle = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
   const themedActionsStyle = useMemo(() => activeGroupTheme ? ({ borderTopColor: activeGroupTheme.borderColor }) : null, [activeGroupTheme]);
+  const shouldAnimateGroupCard = !!activeGroupTheme && isGroupPost && !!props.isVisible;
+  const [cardFrame, setCardFrame] = useState({ width: 0, height: 0 });
 
   const commentsPanResponder = useRef(
     PanResponder.create({
@@ -1109,12 +1183,28 @@ export default function PostCard(props: Props) {
 
   // ── Main render ───────────────────────────────────────────────────────────
   return (
-    <View style={[styles.card, activeGroupTheme && styles.themedCard, themedCardStyle]}>
+    <View
+      style={[styles.card, activeGroupTheme && styles.themedCard, themedCardStyle]}
+      onLayout={(event) => {
+        const nextWidth = Math.round(event.nativeEvent.layout.width);
+        const nextHeight = Math.round(event.nativeEvent.layout.height);
+        setCardFrame((prev) => (prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }));
+      }}
+    >
       {activeGroupTheme?.cardImageUrl ? (
         <>
           <Image source={{ uri: activeGroupTheme.cardImageUrl }} style={styles.themedCardImage} resizeMode="cover" />
           <View style={[styles.themedCardOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.08, Math.min(0.32, (activeGroupTheme.overlayStrength ?? 72) / 180))})` }]} />
         </>
+      ) : null}
+      {activeGroupTheme && shouldAnimateGroupCard && cardFrame.width > 0 && cardFrame.height > 0 ? (
+        <AnimatedGroupBorder
+          width={cardFrame.width}
+          height={cardFrame.height}
+          accentColor={activeGroupTheme.accentColor}
+          borderColor={activeGroupTheme.borderColor}
+          active={shouldAnimateGroupCard}
+        />
       ) : null}
       <View style={styles.header}>
         <View style={styles.avatarWrap}>
@@ -1381,6 +1471,33 @@ const styles = StyleSheet.create({
   themedCard: { borderWidth: 1 },
   themedCardImage: { ...StyleSheet.absoluteFillObject, opacity: 0.4 },
   themedCardOverlay: { ...StyleSheet.absoluteFillObject },
+  groupAnimWrap: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 14,
+    zIndex: 2,
+  },
+  groupAnimGlow: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 14,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 12,
+    shadowOpacity: 0.9,
+    elevation: 10,
+  },
+  groupAnimTopEdge: { position: 'absolute', top: 0, left: 0, right: 0, borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+  groupAnimBottomEdge: { position: 'absolute', bottom: 0, left: 0, right: 0, borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
+  groupAnimLeftEdge: { position: 'absolute', top: 0, bottom: 0, left: 0, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
+  groupAnimRightEdge: { position: 'absolute', top: 0, bottom: 0, right: 0, borderTopRightRadius: 14, borderBottomRightRadius: 14 },
+  groupAnimSweep: {
+    position: 'absolute',
+    top: 10,
+    width: 72,
+    height: 10,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  groupAnimSweepFill: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
   avatarWrap: { marginRight: 10 },
   avatar: { width: 38, height: 38, borderRadius: 19 },
