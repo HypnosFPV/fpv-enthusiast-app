@@ -232,6 +232,7 @@ export default function FeedScreen() {
   const [creating, setCreating] = useState(false);
   const [postDestination, setPostDestination] = useState<'public' | 'group'>('public');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [communitiesExpanded, setCommunitiesExpanded] = useState(false);
 
   const postableGroups = useMemo(() => groups.filter(group => {
     const role = group.my_role ?? 'member';
@@ -251,94 +252,99 @@ export default function FeedScreen() {
   const feedHeader = useMemo(() => {
     if (!hasCommunityHeader) return null;
 
+    const summaryBits = [
+      groups.length > 0 ? `${groups.length} ${groups.length === 1 ? 'group' : 'groups'}` : null,
+      pendingInvites.length > 0 ? `${pendingInvites.length} ${pendingInvites.length === 1 ? 'invite' : 'invites'}` : null,
+      groups.length === 0 && discoverableGroups.length > 0 ? `${discoverableGroups.length} to browse` : null,
+    ].filter(Boolean);
+
     return (
       <View style={styles.feedHeaderWrap}>
         <View style={styles.communitiesCard}>
-          <View style={styles.communitiesHeader}>
-            <View style={styles.communitiesHeaderTextWrap}>
+          <TouchableOpacity
+            style={styles.communitiesBanner}
+            activeOpacity={0.84}
+            onPress={() => setCommunitiesExpanded(prev => !prev)}
+          >
+            <View style={styles.communitiesBannerTextWrap}>
               <Text style={styles.communitiesTitle}>Communities</Text>
+              <Text style={styles.communitiesBannerMeta} numberOfLines={1}>
+                {summaryBits.join(' • ') || 'Browse communities'}
+              </Text>
+            </View>
+            <View style={styles.communitiesBannerAction}>
+              <Ionicons name={communitiesExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#9cc8ff" />
+            </View>
+          </TouchableOpacity>
+
+          {communitiesExpanded ? (
+            <View style={styles.communitiesExpandedBody}>
               <Text style={styles.communitiesSubtitle}>
                 {groups.length > 0
                   ? 'Quick access to your groups without pushing the main feed too far down.'
                   : 'Browse groups and jump into community conversations when you are ready.'}
               </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.communitiesSearchBtn}
-              activeOpacity={0.82}
-              onPress={() => router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
-            >
-              <Ionicons name="search-outline" size={15} color="#9cc8ff" />
-              <Text style={styles.communitiesSearchBtnText}>Browse</Text>
-            </TouchableOpacity>
-          </View>
 
-          <View style={styles.communitiesMetaRow}>
-            <View style={styles.communitiesMetaPill}>
-              <Text style={styles.communitiesMetaPillText}>{groups.length} {groups.length === 1 ? 'group' : 'groups'}</Text>
-            </View>
-            {pendingInvites.length > 0 ? (
-              <View style={styles.communitiesMetaPill}>
-                <Text style={styles.communitiesMetaPillText}>{pendingInvites.length} {pendingInvites.length === 1 ? 'invite' : 'invites'}</Text>
-              </View>
-            ) : null}
-            {discoverableGroups.length > 0 ? (
-              <View style={styles.communitiesMetaPill}>
-                <Text style={styles.communitiesMetaPillText}>{discoverableGroups.length} to browse</Text>
-              </View>
-            ) : null}
-          </View>
+              {joinedCommunityPreview.length > 0 ? (
+                <View style={styles.groupRail}>
+                  {joinedCommunityPreview.map(group => (
+                    <TouchableOpacity
+                      key={group.id}
+                      style={styles.groupRailCard}
+                      activeOpacity={0.84}
+                      onPress={() => router.push(`/group/${group.id}` as any)}
+                    >
+                      <View style={styles.groupRailAvatar}>
+                        <Ionicons name="people-outline" size={15} color="#ff9b68" />
+                      </View>
+                      <View style={styles.groupRailInfo}>
+                        <Text style={styles.groupRailName} numberOfLines={1}>{group.name}</Text>
+                        <Text style={styles.groupRailMeta} numberOfLines={1}>
+                          {(group.member_count ?? 0)} members • {group.privacy === 'invite_only' ? 'invite only' : group.privacy}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color="#6f7b8b" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
 
-          {joinedCommunityPreview.length > 0 ? (
-            <View style={styles.groupRail}>
-              {joinedCommunityPreview.map(group => (
+              <View style={styles.communitiesQuickRow}>
                 <TouchableOpacity
-                  key={group.id}
-                  style={styles.groupRailCard}
-                  activeOpacity={0.84}
-                  onPress={() => router.push(`/group/${group.id}` as any)}
+                  style={styles.communitiesSearchBtn}
+                  activeOpacity={0.82}
+                  onPress={() => router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
                 >
-                  <View style={styles.groupRailAvatar}>
-                    <Ionicons name="people-outline" size={15} color="#ff9b68" />
-                  </View>
-                  <View style={styles.groupRailInfo}>
-                    <Text style={styles.groupRailName} numberOfLines={1}>{group.name}</Text>
-                    <Text style={styles.groupRailMeta} numberOfLines={1}>
-                      {(group.member_count ?? 0)} members • {group.privacy === 'invite_only' ? 'invite only' : group.privacy}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={16} color="#6f7b8b" />
+                  <Ionicons name="search-outline" size={15} color="#9cc8ff" />
+                  <Text style={styles.communitiesSearchBtnText}>Browse</Text>
                 </TouchableOpacity>
-              ))}
+                <TouchableOpacity
+                  style={styles.communityQuickBtn}
+                  activeOpacity={0.82}
+                  onPress={() => groups.length > 0
+                    ? router.push('/(tabs)/chat')
+                    : router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
+                >
+                  <Ionicons name="people-outline" size={16} color="#ffb088" />
+                  <Text style={styles.communityQuickBtnText}>{groups.length > 0 ? 'Open groups' : 'Find groups'}</Text>
+                </TouchableOpacity>
+                {pendingInvites.length > 0 ? (
+                  <TouchableOpacity
+                    style={styles.communityQuickBtn}
+                    activeOpacity={0.82}
+                    onPress={() => router.push('/(tabs)/chat')}
+                  >
+                    <Ionicons name="mail-open-outline" size={16} color="#ffb088" />
+                    <Text style={styles.communityQuickBtnText}>Invites</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
             </View>
           ) : null}
-
-          <View style={styles.communitiesQuickRow}>
-            <TouchableOpacity
-              style={styles.communityQuickBtn}
-              activeOpacity={0.82}
-              onPress={() => groups.length > 0
-                ? router.push('/(tabs)/chat')
-                : router.push({ pathname: '/(tabs)/search', params: { tab: 'groups' } } as any)}
-            >
-              <Ionicons name="people-outline" size={16} color="#ffb088" />
-              <Text style={styles.communityQuickBtnText}>{groups.length > 0 ? 'Open groups' : 'Find groups'}</Text>
-            </TouchableOpacity>
-            {pendingInvites.length > 0 ? (
-              <TouchableOpacity
-                style={styles.communityQuickBtn}
-                activeOpacity={0.82}
-                onPress={() => router.push('/(tabs)/chat')}
-              >
-                <Ionicons name="mail-open-outline" size={16} color="#ffb088" />
-                <Text style={styles.communityQuickBtnText}>Invites</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
         </View>
       </View>
     );
-  }, [discoverableGroups.length, groups, hasCommunityHeader, joinedCommunityPreview, pendingInvites.length, router]);
+  }, [communitiesExpanded, discoverableGroups.length, groups, hasCommunityHeader, joinedCommunityPreview, pendingInvites.length, router]);
 
   useEffect(() => {
     if (postDestination === 'group' && !selectedGroupId) {
@@ -1446,25 +1452,27 @@ const styles = StyleSheet.create({
     borderColor: '#1f2630',
     gap: 10,
   },
-  communitiesHeader: {
+  communitiesBanner: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
-  communitiesHeaderTextWrap: { flex: 1 },
+  communitiesBannerTextWrap: { flex: 1, minWidth: 0 },
   communitiesTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  communitiesSubtitle: { color: '#7d8696', fontSize: 12, lineHeight: 17, marginTop: 3 },
-  communitiesMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  communitiesMetaPill: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: '#151922',
+  communitiesBannerMeta: { color: '#9da8ba', fontSize: 12, lineHeight: 17, marginTop: 3 },
+  communitiesBannerAction: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#132033',
     borderWidth: 1,
-    borderColor: '#262f3d',
+    borderColor: '#29496b',
   },
-  communitiesMetaPillText: { color: '#9da8ba', fontSize: 11, fontWeight: '700' },
+  communitiesExpandedBody: { gap: 10 },
+  communitiesSubtitle: { color: '#7d8696', fontSize: 12, lineHeight: 17 },
   communitiesSearchBtn: {
     flexDirection: 'row',
     alignItems: 'center',
