@@ -45,7 +45,7 @@ export const GROUP_CARD_ANIMATION_VARIANTS: GroupCardAnimationVariant[] = [
     tier: 'paid',
     priceCents: 99,
     badge: 'Starter',
-    description: 'The current subtle pulse and top-edge sweep. Clean, lightweight, and ideal as the entry tier.',
+    description: 'A clean starter effect with a soft border pulse and one fast highlight sweep across the top edge.',
   },
   {
     id: 'standard',
@@ -53,7 +53,7 @@ export const GROUP_CARD_ANIMATION_VARIANTS: GroupCardAnimationVariant[] = [
     tier: 'paid',
     priceCents: 199,
     badge: 'Popular',
-    description: 'Adds a stronger pulse and a second sweep so the card feels more obviously premium in feed.',
+    description: 'A more noticeable full-perimeter chase with brighter edge energy so the card reads premium in the feed.',
   },
   {
     id: 'premium',
@@ -61,7 +61,7 @@ export const GROUP_CARD_ANIMATION_VARIANTS: GroupCardAnimationVariant[] = [
     tier: 'paid',
     priceCents: 299,
     badge: 'Top tier',
-    description: 'The richest version with stronger perimeter activity and side highlights for the most premium look.',
+    description: 'An epic dual-comet aura with corner flares, stronger glow, and a cinematic sheen that makes the card pop immediately.',
   },
 ];
 
