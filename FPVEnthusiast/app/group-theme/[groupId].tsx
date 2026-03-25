@@ -508,6 +508,15 @@ export default function GroupThemeScreen() {
 function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: GroupThemeTokens }) {
   const heroOverlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.16, 0.46);
   const cardOverlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.08, 0.32);
+  const contentPlateStyle = theme.cardImageUrl
+    ? {
+        backgroundColor: `rgba(8,10,16,${Math.min(0.76, cardOverlayOpacity + 0.34)})`,
+        borderColor: `rgba(255,255,255,${Math.min(0.16, cardOverlayOpacity * 0.45)})`,
+      }
+    : {
+        backgroundColor: 'rgba(255,255,255,0.03)',
+        borderColor: 'rgba(255,255,255,0.05)',
+      };
 
   return (
     <View style={styles.previewWrap}>
@@ -544,21 +553,23 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
             <Text style={[styles.previewArtBadgeText, { color: theme.chipTextColor }]}>Full-card art preview</Text>
           </View>
           <View style={styles.previewPostContent}>
-            <View style={styles.previewPostHeader}>
-              <Avatar uri={group.avatar_url} size={34} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.previewPostAuthor, { color: theme.textColor }]}>HypnosBot</Text>
-                <View style={[styles.previewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
-                  <Ionicons name="people-outline" size={11} color={theme.chipTextColor} />
-                  <Text style={[styles.previewChipText, { color: theme.chipTextColor }]} numberOfLines={1}>View group • {group.name}</Text>
+            <View style={[styles.previewPostContentPlate, contentPlateStyle]}>
+              <View style={styles.previewPostHeader}>
+                <Avatar uri={group.avatar_url} size={34} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.previewPostAuthor, { color: theme.textColor }]}>HypnosBot</Text>
+                  <View style={[styles.previewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
+                    <Ionicons name="people-outline" size={11} color={theme.chipTextColor} />
+                    <Text style={[styles.previewChipText, { color: theme.chipTextColor }]} numberOfLines={1}>View group • {group.name}</Text>
+                  </View>
                 </View>
               </View>
-            </View>
-            <Text style={[styles.previewCaption, { color: theme.textColor }]}>The uploaded card art now fills the full preview card so the premium theme reads the way it will feel across the surface, with only enough overlay to keep text readable.</Text>
-            <View style={[styles.previewDivider, { backgroundColor: theme.borderColor }]} />
-            <View style={styles.previewActions}>
-              <Ionicons name="heart-outline" size={22} color={theme.mutedTextColor} />
-              <Ionicons name="chatbubble-outline" size={20} color={theme.accentColor} />
+              <Text style={[styles.previewCaption, { color: theme.textColor }]}>The uploaded card art now fills the full preview card so the premium theme reads the way it will feel across the surface, with only enough overlay to keep text readable.</Text>
+              <View style={[styles.previewDivider, { backgroundColor: theme.borderColor }]} />
+              <View style={styles.previewActions}>
+                <Ionicons name="heart-outline" size={22} color={theme.mutedTextColor} />
+                <Ionicons name="chatbubble-outline" size={20} color={theme.accentColor} />
+              </View>
             </View>
           </View>
         </View>
@@ -708,28 +719,29 @@ const styles = StyleSheet.create({
   assetPreviewThumb: { width: '100%', height: 92, borderRadius: 12, marginTop: 10, backgroundColor: '#0f0f0f' },
   assetPreviewPlaceholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#2d2d2d' },
   assetPreviewMeta: { color: '#8b8b8b', fontSize: 11, lineHeight: 16, marginTop: 8 },
-  previewWrap: { marginTop: 16, gap: 14 },
+  previewWrap: { marginTop: 18, gap: 16 },
   previewSectionLabel: { color: '#a6a6a6', fontSize: 12, fontWeight: '700', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.6 },
-  previewHero: { height: 148, borderRadius: 18, overflow: 'hidden', borderWidth: 1 },
+  previewHero: { height: 156, borderRadius: 18, overflow: 'hidden', borderWidth: 1 },
   previewHeroBanner: { ...StyleSheet.absoluteFillObject },
   previewHeroOverlay: { ...StyleSheet.absoluteFillObject },
   previewHeroContent: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', gap: 12, padding: 16 },
   previewHeroTitle: { fontSize: 18, fontWeight: '800' },
   previewHeroMeta: { fontSize: 12, marginTop: 2 },
-  previewPostCard: { borderRadius: 18, overflow: 'hidden', borderWidth: 1, minHeight: 240, justifyContent: 'flex-end' },
-  previewPostImage: { ...StyleSheet.absoluteFillObject, opacity: 0.54 },
+  previewPostCard: { borderRadius: 18, overflow: 'hidden', borderWidth: 1, minHeight: 296, justifyContent: 'flex-end' },
+  previewPostImage: { ...StyleSheet.absoluteFillObject, opacity: 0.6 },
   previewPostOverlay: { ...StyleSheet.absoluteFillObject },
-  previewPostPlaceholder: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22, backgroundColor: 'rgba(255,255,255,0.06)' },
+  previewPostPlaceholder: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, backgroundColor: 'rgba(255,255,255,0.06)' },
   previewPostPlaceholderText: { color: '#d4d4d4', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 10 },
-  previewPostContent: { padding: 14, zIndex: 1 },
-  previewPostHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  previewPostContent: { padding: 14, paddingTop: 64, zIndex: 1 },
+  previewPostContentPlate: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 14, gap: 12 },
+  previewPostHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   previewPostAuthor: { fontSize: 15, fontWeight: '700' },
-  previewChip: { marginTop: 6, borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%' },
+  previewChip: { marginTop: 8, borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%' },
   previewChipText: { fontSize: 11, fontWeight: '700', flexShrink: 1 },
   previewArtBadge: {
     position: 'absolute',
-    top: 12,
-    left: 12,
+    top: 14,
+    left: 14,
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 10,
@@ -737,11 +749,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    zIndex: 2,
   },
   previewArtBadgeText: { fontSize: 11, fontWeight: '800' },
-  previewCaption: { marginTop: 12, fontSize: 13, lineHeight: 18 },
-  previewDivider: { marginTop: 12, height: StyleSheet.hairlineWidth, width: '100%' },
-  previewActions: { flexDirection: 'row', gap: 18, alignItems: 'center', marginTop: 12 },
+  previewCaption: { fontSize: 13, lineHeight: 19 },
+  previewDivider: { height: StyleSheet.hairlineWidth, width: '100%' },
+  previewActions: { flexDirection: 'row', gap: 18, alignItems: 'center' },
   primaryBtn: { marginTop: 18, borderRadius: 14, backgroundColor: '#ff6a2f', paddingHorizontal: 14, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   purchaseHint: { color: '#8b8b8b', fontSize: 12, lineHeight: 17, marginTop: 10 },
