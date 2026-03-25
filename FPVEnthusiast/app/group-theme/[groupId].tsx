@@ -512,8 +512,8 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
         borderColor: 'rgba(255,255,255,0.05)',
       };
   const previewBodyText = hasCardArt
-    ? 'The uploaded card art now fills the full preview card so the premium theme reads the way it will feel across the surface, with only enough overlay to keep text readable.'
-    : 'Add feed card art to preview the premium frame, surface glow, and readability treatment before you unlock this theme.';
+    ? 'Pinned a new look for Admin test — this is how the premium card treatment will read in the feed with your uploaded art, overlay, and surface glow applied.'
+    : '';
 
   return (
     <View style={styles.previewWrap}>
@@ -541,7 +541,7 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
           {hasCardArt ? <View style={[styles.previewPostOverlay, { backgroundColor: `rgba(0,0,0,${cardOverlayOpacity})` }]} /> : null}
           <View style={[styles.previewArtBadge, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}> 
             <Ionicons name="sparkles-outline" size={12} color={theme.chipTextColor} />
-            <Text style={[styles.previewArtBadgeText, { color: theme.chipTextColor }]}>Full-card art preview</Text>
+            <Text style={[styles.previewArtBadgeText, { color: theme.chipTextColor }]}>{hasCardArt ? 'Full-card art preview' : 'Premium frame preview'}</Text>
           </View>
           <View style={styles.previewPostContent}>
             <View style={[styles.previewPostContentPlate, contentPlateStyle]}>
@@ -549,6 +549,7 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
                 <Avatar uri={group.avatar_url} size={34} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.previewPostAuthor, { color: theme.textColor }]}>HypnosBot</Text>
+                  <Text style={[styles.previewPostMeta, { color: theme.mutedTextColor }]}>just now</Text>
                   <View style={[styles.previewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
                     <Ionicons name="people-outline" size={11} color={theme.chipTextColor} />
                     <Text style={[styles.previewChipText, { color: theme.chipTextColor }]} numberOfLines={1}>View group • {group.name}</Text>
@@ -557,16 +558,17 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
               </View>
               {!hasCardArt ? (
                 <View style={styles.previewEmptyMediaCard}>
-                  <View style={styles.previewEmptyMediaIconWrap}>
-                    <Ionicons name="albums-outline" size={18} color={theme.chipTextColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.previewEmptyMediaTitle, { color: theme.textColor }]}>No feed card art yet</Text>
-                    <Text style={[styles.previewEmptyMediaText, { color: theme.mutedTextColor }]}>Upload card art above and this slot will turn into the animated premium card preview.</Text>
+                  <View style={styles.previewEmptyMediaCenter}>
+                    <View style={styles.previewEmptyMediaIconWrap}>
+                      <Ionicons name="albums-outline" size={20} color={theme.chipTextColor} />
+                    </View>
+                    <Text style={[styles.previewEmptyMediaTitle, { color: theme.textColor }]}>Card art preview appears here</Text>
+                    <Text style={[styles.previewEmptyMediaText, { color: theme.mutedTextColor }]}>Upload artwork above to see the animated premium treatment on a real post surface.</Text>
                   </View>
                 </View>
-              ) : null}
-              <Text style={[styles.previewCaption, { color: theme.textColor }]}>{previewBodyText}</Text>
+              ) : (
+                <Text style={[styles.previewCaption, { color: theme.textColor }]}>{previewBodyText}</Text>
+              )}
               <View style={[styles.previewDivider, { backgroundColor: theme.borderColor }]} />
               <View style={styles.previewActions}>
                 <Ionicons name="heart-outline" size={22} color={theme.mutedTextColor} />
@@ -739,24 +741,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
     backgroundColor: 'rgba(255,255,255,0.04)',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    flexDirection: 'row',
+    minHeight: 132,
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
   },
+  previewEmptyMediaCenter: { width: '100%', alignItems: 'center', justifyContent: 'center' },
   previewEmptyMediaIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.05)',
+    marginBottom: 10,
   },
-  previewEmptyMediaTitle: { fontSize: 13, fontWeight: '700' },
-  previewEmptyMediaText: { fontSize: 12, lineHeight: 17, marginTop: 2 },
+  previewEmptyMediaTitle: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  previewEmptyMediaText: { fontSize: 12, lineHeight: 17, marginTop: 6, textAlign: 'center' },
   previewPostHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   previewPostAuthor: { fontSize: 15, fontWeight: '700' },
+  previewPostMeta: { fontSize: 11, marginTop: 2 },
   previewChip: { marginTop: 8, borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', maxWidth: '100%' },
   previewChipText: { fontSize: 11, fontWeight: '700', flexShrink: 1 },
   previewArtBadge: {
