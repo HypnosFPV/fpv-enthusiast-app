@@ -4,8 +4,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   BlurMask,
   Canvas,
+  Circle,
   Line,
   LinearGradient as SkiaLinearGradient,
+  RadialGradient,
+  Rect,
   RoundedRect,
   vec,
 } from '@shopify/react-native-skia';
@@ -267,14 +270,14 @@ export default function GroupCardAnimationBorder({
 
   const premiumTone = useMemo(
     () => ({
-      glowFar: mixColors(accentColor, '#ffffff', 0.18),
-      glowMid: mixColors(accentColor, '#ffffff', 0.34),
-      glowHot: mixColors(accentColor, '#ffffff', 0.62),
-      frameDeep: mixColors(borderColor, '#000000', 0.28),
-      frameBase: mixColors(accentColor, borderColor, 0.18),
-      frameBright: mixColors(accentColor, '#ffffff', 0.82),
-      accentBright: mixColors(accentColor, '#ffffff', 0.92),
-      accentBase: mixColors(accentColor, '#ffffff', 0.64),
+      glowFar: mixColors(accentColor, '#ffffff', 0.08),
+      glowMid: mixColors(accentColor, '#ffffff', 0.2),
+      glowHot: mixColors(accentColor, '#ffffff', 0.5),
+      frameDeep: mixColors(borderColor, '#000000', 0.46),
+      frameBase: mixColors(accentColor, borderColor, 0.22),
+      frameBright: mixColors(accentColor, '#ffffff', 0.9),
+      accentBright: mixColors(accentColor, '#ffffff', 0.96),
+      accentBase: mixColors(accentColor, '#ffffff', 0.78),
     }),
     [accentColor, borderColor],
   );
@@ -381,15 +384,20 @@ export default function GroupCardAnimationBorder({
   );
 
   if (isPremium) {
-    const canvasWidth = width + outerSpread * 2;
-    const canvasHeight = height + outerSpread * 2;
     const frameX = outerSpread;
     const frameY = outerSpread;
     const frameR = cornerRadius + 1;
 
-    const topLineInset = 18;
-    const sideLineInset = 16;
-    const bottomLineInset = 14;
+    const topLineInset = 20;
+    const sideLineInset = 18;
+    const bottomLineInset = 16;
+    const topGlowHeight = 18;
+    const sideGlowWidth = 14;
+    const cornerBloomRadius = Math.max(cornerRadius + 10, 24);
+
+    const transparentFar = withAlpha(premiumTone.glowFar, 0);
+    const transparentMid = withAlpha(premiumTone.glowMid, 0);
+    const transparentHot = withAlpha(premiumTone.glowHot, 0);
 
     return (
       <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap, dynamicStyles.premiumCanvas]}>
@@ -407,33 +415,36 @@ export default function GroupCardAnimationBorder({
               width={width}
               height={height}
               r={frameR}
-              color={withAlpha(premiumTone.glowFar, 0.34)}
-              style="stroke"
-              strokeWidth={5.5}
+              color={withAlpha(premiumTone.glowFar, 0.14)}
             >
-              <BlurMask blur={28} style="outer" />
+              <BlurMask blur={34} style="outer" />
             </RoundedRect>
-            <RoundedRect
-              x={frameX}
-              y={frameY}
-              width={width}
-              height={height}
-              r={frameR}
-              color={withAlpha(premiumTone.glowMid, 0.2)}
-              style="stroke"
-              strokeWidth={8.5}
-            >
-              <BlurMask blur={36} style="outer" />
-            </RoundedRect>
-            <Line
-              p1={vec(frameX + topLineInset, frameY + 1)}
-              p2={vec(frameX + width - topLineInset, frameY + 1)}
-              color={withAlpha(premiumTone.glowHot, 0.22)}
-              style="stroke"
-              strokeWidth={4.5}
-            >
-              <BlurMask blur={18} style="outer" />
-            </Line>
+
+            <Rect x={frameX + 26} y={frameY - 4} width={Math.max(width - 52, 24)} height={topGlowHeight}>
+              <SkiaLinearGradient
+                start={vec(frameX, frameY - 4)}
+                end={vec(frameX, frameY + topGlowHeight)}
+                colors={[withAlpha(premiumTone.glowHot, 0.34), withAlpha(premiumTone.glowMid, 0.12), transparentMid]}
+              />
+              <BlurMask blur={16} />
+            </Rect>
+
+            <Circle cx={frameX + cornerBloomRadius - 4} cy={frameY + cornerBloomRadius - 5} r={cornerBloomRadius}>
+              <RadialGradient
+                c={vec(frameX + cornerBloomRadius - 4, frameY + cornerBloomRadius - 5)}
+                r={cornerBloomRadius}
+                colors={[withAlpha(premiumTone.glowHot, 0.36), withAlpha(premiumTone.glowMid, 0.1), transparentFar]}
+              />
+              <BlurMask blur={14} />
+            </Circle>
+            <Circle cx={frameX + width - cornerBloomRadius + 4} cy={frameY + cornerBloomRadius - 5} r={cornerBloomRadius}>
+              <RadialGradient
+                c={vec(frameX + width - cornerBloomRadius + 4, frameY + cornerBloomRadius - 5)}
+                r={cornerBloomRadius}
+                colors={[withAlpha(premiumTone.glowHot, 0.36), withAlpha(premiumTone.glowMid, 0.1), transparentFar]}
+              />
+              <BlurMask blur={14} />
+            </Circle>
           </Canvas>
         </Animated.View>
 
@@ -451,57 +462,51 @@ export default function GroupCardAnimationBorder({
               width={width}
               height={height}
               r={frameR}
-              color={withAlpha(premiumTone.glowHot, 0.28)}
-              style="stroke"
-              strokeWidth={2.8}
+              color={withAlpha(premiumTone.glowMid, 0.12)}
             >
-              <BlurMask blur={16} style="outer" />
+              <BlurMask blur={18} style="outer" />
             </RoundedRect>
 
-            <Line
-              p1={vec(frameX + topLineInset, frameY + 1)}
-              p2={vec(frameX + width - topLineInset, frameY + 1)}
-              color={withAlpha(premiumTone.glowHot, 0.5)}
-              style="stroke"
-              strokeWidth={2.4}
-            >
-              <BlurMask blur={10} style="outer" />
-            </Line>
+            <Rect x={frameX + 24} y={frameY - 2} width={Math.max(width - 48, 24)} height={10}>
+              <SkiaLinearGradient
+                start={vec(frameX + width / 2, frameY - 2)}
+                end={vec(frameX + width / 2, frameY + 8)}
+                colors={[withAlpha(premiumTone.glowHot, 0.52), withAlpha(premiumTone.glowMid, 0.18), transparentHot]}
+              />
+              <BlurMask blur={8} />
+            </Rect>
 
-            <Line
-              p1={vec(frameX + 1, frameY + sideLineInset)}
-              p2={vec(frameX + 1, frameY + height - sideLineInset)}
-              color={withAlpha(premiumTone.glowMid, 0.34)}
-              style="stroke"
-              strokeWidth={2.1}
-            >
-              <BlurMask blur={10} style="outer" />
-            </Line>
-            <Line
-              p1={vec(frameX + width - 1, frameY + sideLineInset)}
-              p2={vec(frameX + width - 1, frameY + height - sideLineInset)}
-              color={withAlpha(premiumTone.glowMid, 0.34)}
-              style="stroke"
-              strokeWidth={2.1}
-            >
-              <BlurMask blur={10} style="outer" />
-            </Line>
+            <Rect x={frameX - 3} y={frameY + sideLineInset} width={sideGlowWidth} height={Math.max(height - sideLineInset * 2, 16)}>
+              <SkiaLinearGradient
+                start={vec(frameX - 3, frameY + height / 2)}
+                end={vec(frameX + sideGlowWidth, frameY + height / 2)}
+                colors={[withAlpha(premiumTone.glowHot, 0.18), withAlpha(premiumTone.glowMid, 0.12), transparentMid]}
+              />
+              <BlurMask blur={8} />
+            </Rect>
+            <Rect x={frameX + width - sideGlowWidth + 3} y={frameY + sideLineInset} width={sideGlowWidth} height={Math.max(height - sideLineInset * 2, 16)}>
+              <SkiaLinearGradient
+                start={vec(frameX + width + 3, frameY + height / 2)}
+                end={vec(frameX + width - sideGlowWidth, frameY + height / 2)}
+                colors={[withAlpha(premiumTone.glowHot, 0.18), withAlpha(premiumTone.glowMid, 0.12), transparentMid]}
+              />
+              <BlurMask blur={8} />
+            </Rect>
 
-            <Line
-              p1={vec(frameX + bottomLineInset, frameY + height - 1)}
-              p2={vec(frameX + width - bottomLineInset, frameY + height - 1)}
-              color={withAlpha(premiumTone.glowMid, 0.24)}
-              style="stroke"
-              strokeWidth={1.8}
-            >
-              <BlurMask blur={8} style="outer" />
-            </Line>
+            <Circle cx={frameX + 18} cy={frameY + 18} r={18}>
+              <RadialGradient c={vec(frameX + 18, frameY + 18)} r={18} colors={[withAlpha(premiumTone.glowHot, 0.54), withAlpha(premiumTone.glowMid, 0.14), transparentHot]} />
+              <BlurMask blur={6} />
+            </Circle>
+            <Circle cx={frameX + width - 18} cy={frameY + 18} r={18}>
+              <RadialGradient c={vec(frameX + width - 18, frameY + 18)} r={18} colors={[withAlpha(premiumTone.glowHot, 0.54), withAlpha(premiumTone.glowMid, 0.14), transparentHot]} />
+              <BlurMask blur={6} />
+            </Circle>
           </Canvas>
         </Animated.View>
 
         <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumNearOpacity }]}>
           <Canvas style={styles.fill}>
-            <RoundedRect x={frameX} y={frameY} width={width} height={height} r={frameR} style="stroke" strokeWidth={1.45}>
+            <RoundedRect x={frameX} y={frameY} width={width} height={height} r={frameR} style="stroke" strokeWidth={1.35}>
               <SkiaLinearGradient
                 start={vec(frameX, frameY)}
                 end={vec(frameX + width, frameY)}
@@ -515,49 +520,47 @@ export default function GroupCardAnimationBorder({
               />
             </RoundedRect>
 
+            <RoundedRect
+              x={frameX + 0.5}
+              y={frameY + 0.5}
+              width={width - 1}
+              height={height - 1}
+              r={Math.max(frameR - 0.5, 1)}
+              color={withAlpha(premiumTone.accentBright, 0.22)}
+              style="stroke"
+              strokeWidth={0.8}
+            />
+
             <Line
-              p1={vec(frameX + topLineInset, frameY)}
-              p2={vec(frameX + width - topLineInset, frameY)}
+              p1={vec(frameX + topLineInset, frameY + 0.5)}
+              p2={vec(frameX + width - topLineInset, frameY + 0.5)}
               color={premiumTone.accentBright}
               style="stroke"
-              strokeWidth={1.35}
+              strokeWidth={1.2}
             />
             <Line
-              p1={vec(frameX, frameY + sideLineInset)}
-              p2={vec(frameX, frameY + height - sideLineInset)}
-              color={premiumTone.accentBase}
+              p1={vec(frameX + bottomLineInset, frameY + height - 0.5)}
+              p2={vec(frameX + width - bottomLineInset, frameY + height - 0.5)}
+              color={withAlpha(premiumTone.accentBase, 0.42)}
               style="stroke"
-              strokeWidth={1.05}
-            />
-            <Line
-              p1={vec(frameX + width, frameY + sideLineInset)}
-              p2={vec(frameX + width, frameY + height - sideLineInset)}
-              color={premiumTone.accentBase}
-              style="stroke"
-              strokeWidth={1.05}
-            />
-            <Line
-              p1={vec(frameX + bottomLineInset, frameY + height)}
-              p2={vec(frameX + width - bottomLineInset, frameY + height)}
-              color={withAlpha(premiumTone.accentBase, 0.72)}
-              style="stroke"
-              strokeWidth={0.95}
+              strokeWidth={0.9}
             />
 
-            <Line p1={vec(frameX + 12, frameY)} p2={vec(frameX + 30, frameY)} color={premiumTone.accentBright} style="stroke" strokeWidth={1.1} />
-            <Line p1={vec(frameX, frameY + 12)} p2={vec(frameX, frameY + 30)} color={premiumTone.accentBright} style="stroke" strokeWidth={1.1} />
-            <Line p1={vec(frameX + width - 30, frameY)} p2={vec(frameX + width - 12, frameY)} color={premiumTone.accentBright} style="stroke" strokeWidth={1.1} />
-            <Line p1={vec(frameX + width, frameY + 12)} p2={vec(frameX + width, frameY + 30)} color={premiumTone.accentBright} style="stroke" strokeWidth={1.1} />
+            <Line p1={vec(frameX + 12, frameY)} p2={vec(frameX + 30, frameY)} color={premiumTone.accentBright} style="stroke" strokeWidth={1.05} />
+            <Line p1={vec(frameX, frameY + 12)} p2={vec(frameX, frameY + 30)} color={premiumTone.accentBright} style="stroke" strokeWidth={1.05} />
+            <Line p1={vec(frameX + width - 30, frameY)} p2={vec(frameX + width - 12, frameY)} color={premiumTone.accentBright} style="stroke" strokeWidth={1.05} />
+            <Line p1={vec(frameX + width, frameY + 12)} p2={vec(frameX + width, frameY + 30)} color={premiumTone.accentBright} style="stroke" strokeWidth={1.05} />
 
-            <Line p1={vec(frameX + 12, frameY + height)} p2={vec(frameX + 24, frameY + height)} color={premiumTone.accentBase} style="stroke" strokeWidth={1.0} />
-            <Line p1={vec(frameX, frameY + height - 24)} p2={vec(frameX, frameY + height - 12)} color={premiumTone.accentBase} style="stroke" strokeWidth={1.0} />
-            <Line p1={vec(frameX + width - 24, frameY + height)} p2={vec(frameX + width - 12, frameY + height)} color={premiumTone.accentBase} style="stroke" strokeWidth={1.0} />
-            <Line p1={vec(frameX + width, frameY + height - 24)} p2={vec(frameX + width, frameY + height - 12)} color={premiumTone.accentBase} style="stroke" strokeWidth={1.0} />
+            <Line p1={vec(frameX + 12, frameY + height)} p2={vec(frameX + 24, frameY + height)} color={withAlpha(premiumTone.accentBase, 0.5)} style="stroke" strokeWidth={0.9} />
+            <Line p1={vec(frameX, frameY + height - 24)} p2={vec(frameX, frameY + height - 12)} color={withAlpha(premiumTone.accentBase, 0.5)} style="stroke" strokeWidth={0.9} />
+            <Line p1={vec(frameX + width - 24, frameY + height)} p2={vec(frameX + width - 12, frameY + height)} color={withAlpha(premiumTone.accentBase, 0.5)} style="stroke" strokeWidth={0.9} />
+            <Line p1={vec(frameX + width, frameY + height - 24)} p2={vec(frameX + width, frameY + height - 12)} color={withAlpha(premiumTone.accentBase, 0.5)} style="stroke" strokeWidth={0.9} />
           </Canvas>
         </Animated.View>
       </Animated.View>
     );
   }
+
 
   if (isBasic) {
     return (
