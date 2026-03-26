@@ -1,7 +1,14 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Defs, Line, LinearGradient as SvgLinearGradient, Rect, Stop } from 'react-native-svg';
+import Svg, {
+  Defs,
+  Line,
+  LinearGradient as SvgLinearGradient,
+  RadialGradient as SvgRadialGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 import type { GroupCardAnimationVariantId } from '../constants/groupThemes';
 
 interface Props {
@@ -41,8 +48,8 @@ function mixColors(colorA: string, colorB: string, weight = 0.5) {
   const t = clamp(weight, 0, 1);
   const r = Math.round(a.r + (b.r - a.r) * t);
   const g = Math.round(a.g + (b.g - a.g) * t);
-  const bValue = Math.round(a.b + (b.b - a.b) * t);
-  return `rgb(${r}, ${g}, ${bValue})`;
+  const mixedBlue = Math.round(a.b + (b.b - a.b) * t);
+  return `rgb(${r}, ${g}, ${mixedBlue})`;
 }
 
 function withAlpha(color: string, alpha: number) {
@@ -104,13 +111,13 @@ export default function GroupCardAnimationBorder({
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const orbitLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
-  const premiumGradientId = useRef(`premium-stroke-${Math.random().toString(36).slice(2, 9)}`).current;
+  const premiumIdBase = useRef(`premium-${Math.random().toString(36).slice(2, 9)}`).current;
 
   const isBasic = variant === 'basic';
   const isStandard = variant === 'standard';
   const isPremium = variant === 'premium';
 
-  const outerSpread = isPremium ? 26 : isStandard ? 8 : 3;
+  const outerSpread = isPremium ? 28 : isStandard ? 8 : 3;
   const frameInset = Math.max(Math.round(cornerRadius * 0.72), 10);
   const verticalInset = Math.max(Math.round(cornerRadius * 0.82), 12);
 
@@ -145,13 +152,13 @@ export default function GroupCardAnimationBorder({
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: isPremium ? 3600 : isStandard ? 3000 : 2600,
+          duration: isPremium ? 3400 : isStandard ? 3000 : 2600,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
           toValue: 0,
-          duration: isPremium ? 3600 : isStandard ? 3000 : 2600,
+          duration: isPremium ? 3400 : isStandard ? 3000 : 2600,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
@@ -223,33 +230,33 @@ export default function GroupCardAnimationBorder({
     outputRange: [0.08, 0.16],
   });
 
-  const premiumBackAuraOpacity = pulseAnim.interpolate({
+  const premiumFarOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.08, 0.14],
+    outputRange: [0.16, 0.28],
   });
-  const premiumMainAuraOpacity = pulseAnim.interpolate({
+  const premiumMainOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.14, 0.24],
+    outputRange: [0.28, 0.44],
   });
-  const premiumNearAuraOpacity = pulseAnim.interpolate({
+  const premiumNearOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.18, 0.32],
+    outputRange: [0.34, 0.52],
   });
   const premiumFrameOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.82, 1],
+    outputRange: [0.86, 1],
   });
   const premiumAccentOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.34, 0.54],
+    outputRange: [0.52, 0.82],
   });
-  const premiumAuraScaleLarge = pulseAnim.interpolate({
+  const premiumFarScale = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.992, 1.022],
+    outputRange: [0.99, 1.028],
   });
-  const premiumAuraScaleSmall = pulseAnim.interpolate({
+  const premiumNearScale = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.996, 1.012],
+    outputRange: [0.996, 1.014],
   });
 
   const basicTopX = orbitAnim.interpolate({
@@ -270,15 +277,18 @@ export default function GroupCardAnimationBorder({
 
   const premiumTone = useMemo(
     () => ({
-      outerGlow: withAlpha(accentColor, 0.18),
-      outerGlowSoft: withAlpha(mixColors(accentColor, '#ffffff', 0.18), 0.14),
-      midGlow: withAlpha(mixColors(accentColor, borderColor, 0.32), 0.24),
-      nearGlow: withAlpha(mixColors(accentColor, '#ffffff', 0.42), 0.32),
-      frameDeep: mixColors(borderColor, '#000000', 0.12),
-      frameBase: mixColors(accentColor, borderColor, 0.22),
-      frameBright: mixColors(accentColor, '#ffffff', 0.62),
-      accentBright: mixColors(accentColor, '#ffffff', 0.76),
-      accentSoft: mixColors(accentColor, '#ffffff', 0.38),
+      glowHot: mixColors(accentColor, '#ffffff', 0.72),
+      glowStrong: mixColors(accentColor, '#ffffff', 0.38),
+      glowMid: mixColors(accentColor, borderColor, 0.16),
+      glowDeep: mixColors(borderColor, '#000000', 0.22),
+      frameBright: mixColors(accentColor, '#ffffff', 0.82),
+      frameBase: mixColors(accentColor, borderColor, 0.14),
+      frameDeep: mixColors(borderColor, '#000000', 0.26),
+      accentBright: mixColors(accentColor, '#ffffff', 0.9),
+      accentBase: mixColors(accentColor, '#ffffff', 0.52),
+      outerGlowFar: withAlpha(mixColors(accentColor, '#ffffff', 0.22), 0.12),
+      outerGlowMain: withAlpha(mixColors(accentColor, '#ffffff', 0.28), 0.24),
+      outerGlowNear: withAlpha(mixColors(accentColor, '#ffffff', 0.42), 0.38),
     }),
     [accentColor, borderColor],
   );
@@ -394,39 +404,47 @@ export default function GroupCardAnimationBorder({
     const frameH = Math.max(height - 1, 0);
     const frameR = cornerRadius + 1;
 
-    const outerFarX = outerSpread - 14;
-    const outerFarY = outerSpread - 14;
-    const outerFarW = width + 28;
-    const outerFarH = height + 28;
-    const outerFarR = cornerRadius + 14;
+    const outerFrameX = outerSpread - 2;
+    const outerFrameY = outerSpread - 2;
+    const outerFrameW = width + 4;
+    const outerFrameH = height + 4;
+    const outerFrameR = cornerRadius + 3;
 
-    const outerX = outerSpread - 10;
-    const outerY = outerSpread - 10;
-    const outerW = width + 20;
-    const outerH = height + 20;
-    const outerR = cornerRadius + 10;
+    const topGlowX = outerSpread + frameInset - 10;
+    const topGlowY = outerSpread - 26;
+    const topGlowW = Math.max(width - frameInset * 2 + 20, 40);
+    const topGlowH = 36;
 
-    const midX = outerSpread - 6;
-    const midY = outerSpread - 6;
-    const midW = width + 12;
-    const midH = height + 12;
-    const midR = cornerRadius + 7;
+    const bottomGlowX = outerSpread + frameInset + 8;
+    const bottomGlowY = outerSpread + height - 6;
+    const bottomGlowW = Math.max(width - frameInset * 2 - 16, 40);
+    const bottomGlowH = 28;
 
-    const nearX = outerSpread - 2;
-    const nearY = outerSpread - 2;
-    const nearW = width + 4;
-    const nearH = height + 4;
-    const nearR = cornerRadius + 3;
+    const sideGlowY = outerSpread + verticalInset - 6;
+    const sideGlowH = Math.max(height - verticalInset * 2 + 12, 34);
+    const leftGlowX = outerSpread - 26;
+    const rightGlowX = outerSpread + width - 8;
+    const sideGlowW = 34;
+
+    const cornerSize = 58;
+    const topLeftCornerX = outerSpread - 24;
+    const topLeftCornerY = outerSpread - 24;
+    const topRightCornerX = outerSpread + width - 34;
+    const topRightCornerY = outerSpread - 24;
+    const bottomLeftCornerX = outerSpread - 24;
+    const bottomLeftCornerY = outerSpread + height - 34;
+    const bottomRightCornerX = outerSpread + width - 34;
+    const bottomRightCornerY = outerSpread + height - 34;
 
     const topLeftHX1 = frameX + 12;
-    const topLeftHX2 = frameX + 30;
+    const topLeftHX2 = frameX + 32;
     const topLeftVY1 = frameY + 12;
-    const topLeftVY2 = frameY + 30;
+    const topLeftVY2 = frameY + 32;
 
-    const topRightHX1 = frameX + frameW - 30;
+    const topRightHX1 = frameX + frameW - 32;
     const topRightHX2 = frameX + frameW - 12;
     const topRightVY1 = frameY + 12;
-    const topRightVY2 = frameY + 30;
+    const topRightVY2 = frameY + 32;
 
     const bottomLeftHX1 = frameX + 12;
     const bottomLeftHX2 = frameX + 24;
@@ -444,54 +462,108 @@ export default function GroupCardAnimationBorder({
           style={[
             styles.premiumLayer,
             dynamicStyles.premiumLayer,
-            {
-              opacity: premiumBackAuraOpacity,
-              transform: [{ scale: premiumAuraScaleLarge }],
-            },
+            { opacity: premiumFarOpacity, transform: [{ scale: premiumFarScale }] },
           ]}
         >
-          <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Rect x={outerFarX} y={outerFarY} width={outerFarW} height={outerFarH} rx={outerFarR} ry={outerFarR} stroke={premiumTone.outerGlowSoft} strokeWidth={24} fill="none" />
-            <Rect x={outerX} y={outerY} width={outerW} height={outerH} rx={outerR} ry={outerR} stroke={premiumTone.outerGlow} strokeWidth={18} fill="none" />
-          </Svg>
-        </Animated.View>
-
-        <Animated.View
-          style={[
-            styles.premiumLayer,
-            dynamicStyles.premiumLayer,
-            {
-              opacity: premiumMainAuraOpacity,
-              transform: [{ scale: premiumAuraScaleLarge }],
-            },
-          ]}
-        >
-          <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Rect x={outerX} y={outerY} width={outerW} height={outerH} rx={outerR} ry={outerR} stroke={premiumTone.midGlow} strokeWidth={14} fill="none" />
-            <Rect x={midX} y={midY} width={midW} height={midH} rx={midR} ry={midR} stroke={premiumTone.nearGlow} strokeWidth={8} fill="none" />
-          </Svg>
-        </Animated.View>
-
-        <Animated.View
-          style={[
-            styles.premiumLayer,
-            dynamicStyles.premiumLayer,
-            {
-              opacity: premiumNearAuraOpacity,
-              transform: [{ scale: premiumAuraScaleSmall }],
-            },
-          ]}
-        >
-          <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Rect x={midX} y={midY} width={midW} height={midH} rx={midR} ry={midR} stroke={premiumTone.accentSoft} strokeWidth={4.5} fill="none" />
-            <Rect x={nearX} y={nearY} width={nearW} height={nearH} rx={nearR} ry={nearR} stroke={premiumTone.frameBase} strokeWidth={2.2} fill="none" />
-          </Svg>
-        </Animated.View>
-
-        <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumFrameOpacity }]}>
           <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
             <Defs>
-              <SvgLinearGradient id={premiumGradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+              <SvgLinearGradient id={`${premiumIdBase}-top-far`} x1="0%" y1="0%" x2="0%" y2="100%">
+                <Stop offset="0%" stopColor={withAlpha(premiumTone.glowStrong, 0)} />
+                <Stop offset="64%" stopColor={withAlpha(premiumTone.glowStrong, 0.08)} />
+                <Stop offset="100%" stopColor={premiumTone.outerGlowFar} />
+              </SvgLinearGradient>
+              <SvgLinearGradient id={`${premiumIdBase}-bottom-far`} x1="0%" y1="0%" x2="0%" y2="100%">
+                <Stop offset="0%" stopColor={premiumTone.outerGlowFar} />
+                <Stop offset="46%" stopColor={withAlpha(premiumTone.glowStrong, 0.06)} />
+                <Stop offset="100%" stopColor={withAlpha(premiumTone.glowStrong, 0)} />
+              </SvgLinearGradient>
+              <SvgLinearGradient id={`${premiumIdBase}-left-far`} x1="0%" y1="0%" x2="100%" y2="0%">
+                <Stop offset="0%" stopColor={withAlpha(premiumTone.glowStrong, 0)} />
+                <Stop offset="60%" stopColor={withAlpha(premiumTone.glowStrong, 0.08)} />
+                <Stop offset="100%" stopColor={premiumTone.outerGlowFar} />
+              </SvgLinearGradient>
+              <SvgLinearGradient id={`${premiumIdBase}-right-far`} x1="0%" y1="0%" x2="100%" y2="0%">
+                <Stop offset="0%" stopColor={premiumTone.outerGlowFar} />
+                <Stop offset="40%" stopColor={withAlpha(premiumTone.glowStrong, 0.08)} />
+                <Stop offset="100%" stopColor={withAlpha(premiumTone.glowStrong, 0)} />
+              </SvgLinearGradient>
+              <SvgRadialGradient id={`${premiumIdBase}-corner-tl-far`} cx="74%" cy="74%" r="82%">
+                <Stop offset="0%" stopColor={premiumTone.outerGlowMain} />
+                <Stop offset="42%" stopColor={withAlpha(premiumTone.glowStrong, 0.16)} />
+                <Stop offset="100%" stopColor={withAlpha(premiumTone.glowStrong, 0)} />
+              </SvgRadialGradient>
+              <SvgRadialGradient id={`${premiumIdBase}-corner-tr-far`} cx="26%" cy="74%" r="82%">
+                <Stop offset="0%" stopColor={premiumTone.outerGlowMain} />
+                <Stop offset="42%" stopColor={withAlpha(premiumTone.glowStrong, 0.16)} />
+                <Stop offset="100%" stopColor={withAlpha(premiumTone.glowStrong, 0)} />
+              </SvgRadialGradient>
+              <SvgRadialGradient id={`${premiumIdBase}-corner-bl-far`} cx="74%" cy="26%" r="82%">
+                <Stop offset="0%" stopColor={premiumTone.outerGlowMain} />
+                <Stop offset="42%" stopColor={withAlpha(premiumTone.glowStrong, 0.12)} />
+                <Stop offset="100%" stopColor={withAlpha(premiumTone.glowStrong, 0)} />
+              </SvgRadialGradient>
+              <SvgRadialGradient id={`${premiumIdBase}-corner-br-far`} cx="26%" cy="26%" r="82%">
+                <Stop offset="0%" stopColor={premiumTone.outerGlowMain} />
+                <Stop offset="42%" stopColor={withAlpha(premiumTone.glowStrong, 0.12)} />
+                <Stop offset="100%" stopColor={withAlpha(premiumTone.glowStrong, 0)} />
+              </SvgRadialGradient>
+            </Defs>
+
+            <Rect x={topGlowX} y={topGlowY} width={topGlowW} height={topGlowH} rx={18} ry={18} fill={`url(#${premiumIdBase}-top-far)`} />
+            <Rect x={bottomGlowX} y={bottomGlowY} width={bottomGlowW} height={bottomGlowH} rx={16} ry={16} fill={`url(#${premiumIdBase}-bottom-far)`} />
+            <Rect x={leftGlowX} y={sideGlowY} width={sideGlowW} height={sideGlowH} rx={18} ry={18} fill={`url(#${premiumIdBase}-left-far)`} />
+            <Rect x={rightGlowX} y={sideGlowY} width={sideGlowW} height={sideGlowH} rx={18} ry={18} fill={`url(#${premiumIdBase}-right-far)`} />
+
+            <Rect x={topLeftCornerX} y={topLeftCornerY} width={cornerSize} height={cornerSize} rx={29} ry={29} fill={`url(#${premiumIdBase}-corner-tl-far)`} />
+            <Rect x={topRightCornerX} y={topRightCornerY} width={cornerSize} height={cornerSize} rx={29} ry={29} fill={`url(#${premiumIdBase}-corner-tr-far)`} />
+            <Rect x={bottomLeftCornerX} y={bottomLeftCornerY} width={cornerSize} height={cornerSize} rx={29} ry={29} fill={`url(#${premiumIdBase}-corner-bl-far)`} />
+            <Rect x={bottomRightCornerX} y={bottomRightCornerY} width={cornerSize} height={cornerSize} rx={29} ry={29} fill={`url(#${premiumIdBase}-corner-br-far)`} />
+          </Svg>
+        </Animated.View>
+
+        <Animated.View
+          style={[
+            styles.premiumLayer,
+            dynamicStyles.premiumLayer,
+            { opacity: premiumMainOpacity, transform: [{ scale: premiumNearScale }] },
+          ]}
+        >
+          <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
+            <Defs>
+              <SvgLinearGradient id={`${premiumIdBase}-top-main`} x1="0%" y1="0%" x2="0%" y2="100%">
+                <Stop offset="0%" stopColor={withAlpha(premiumTone.glowHot, 0)} />
+                <Stop offset="48%" stopColor={withAlpha(premiumTone.glowStrong, 0.16)} />
+                <Stop offset="100%" stopColor={premiumTone.outerGlowNear} />
+              </SvgLinearGradient>
+              <SvgLinearGradient id={`${premiumIdBase}-bottom-main`} x1="0%" y1="0%" x2="0%" y2="100%">
+                <Stop offset="0%" stopColor={premiumTone.outerGlowMain} />
+                <Stop offset="52%" stopColor={withAlpha(premiumTone.glowStrong, 0.12)} />
+                <Stop offset="100%" stopColor={withAlpha(premiumTone.glowHot, 0)} />
+              </SvgLinearGradient>
+              <SvgLinearGradient id={`${premiumIdBase}-left-main`} x1="0%" y1="0%" x2="100%" y2="0%">
+                <Stop offset="0%" stopColor={withAlpha(premiumTone.glowHot, 0)} />
+                <Stop offset="44%" stopColor={withAlpha(premiumTone.glowStrong, 0.14)} />
+                <Stop offset="100%" stopColor={premiumTone.outerGlowNear} />
+              </SvgLinearGradient>
+              <SvgLinearGradient id={`${premiumIdBase}-right-main`} x1="0%" y1="0%" x2="100%" y2="0%">
+                <Stop offset="0%" stopColor={premiumTone.outerGlowNear} />
+                <Stop offset="56%" stopColor={withAlpha(premiumTone.glowStrong, 0.14)} />
+                <Stop offset="100%" stopColor={withAlpha(premiumTone.glowHot, 0)} />
+              </SvgLinearGradient>
+            </Defs>
+
+            <Rect x={topGlowX + 2} y={topGlowY + 10} width={topGlowW - 4} height={24} rx={14} ry={14} fill={`url(#${premiumIdBase}-top-main)`} />
+            <Rect x={bottomGlowX + 6} y={bottomGlowY - 6} width={bottomGlowW - 12} height={22} rx={12} ry={12} fill={`url(#${premiumIdBase}-bottom-main)`} />
+            <Rect x={leftGlowX + 10} y={sideGlowY + 4} width={22} height={sideGlowH - 8} rx={12} ry={12} fill={`url(#${premiumIdBase}-left-main)`} />
+            <Rect x={rightGlowX + 2} y={sideGlowY + 4} width={22} height={sideGlowH - 8} rx={12} ry={12} fill={`url(#${premiumIdBase}-right-main)`} />
+            <Rect x={outerFrameX} y={outerFrameY} width={outerFrameW} height={outerFrameH} rx={outerFrameR} ry={outerFrameR} stroke={withAlpha(premiumTone.glowStrong, 0.4)} strokeWidth={2.1} fill="none" />
+          </Svg>
+        </Animated.View>
+
+        <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumNearOpacity }]}>
+          <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
+            <Defs>
+              <SvgLinearGradient id={`${premiumIdBase}-frame`} x1="0%" y1="0%" x2="100%" y2="0%">
                 <Stop offset="0%" stopColor={premiumTone.frameDeep} />
                 <Stop offset="18%" stopColor={premiumTone.frameBase} />
                 <Stop offset="52%" stopColor={premiumTone.frameBright} />
@@ -499,33 +571,24 @@ export default function GroupCardAnimationBorder({
                 <Stop offset="100%" stopColor={premiumTone.frameDeep} />
               </SvgLinearGradient>
             </Defs>
-            <Rect
-              x={frameX}
-              y={frameY}
-              width={frameW}
-              height={frameH}
-              rx={frameR}
-              ry={frameR}
-              stroke={`url(#${premiumGradientId})`}
-              strokeWidth={1.35}
-              fill="none"
-            />
+            <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} stroke={`url(#${premiumIdBase}-frame)`} strokeWidth={1.5} fill="none" />
+            <Rect x={outerFrameX} y={outerFrameY} width={outerFrameW} height={outerFrameH} rx={outerFrameR} ry={outerFrameR} stroke={withAlpha(premiumTone.frameBase, 0.42)} strokeWidth={0.9} fill="none" />
           </Svg>
         </Animated.View>
 
         <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumAccentOpacity }]}>
           <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Line x1={topLeftHX1} y1={frameY} x2={topLeftHX2} y2={frameY} stroke={premiumTone.accentBright} strokeWidth={1.1} strokeLinecap="round" />
-            <Line x1={frameX} y1={topLeftVY1} x2={frameX} y2={topLeftVY2} stroke={premiumTone.accentBright} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={topLeftHX1} y1={frameY} x2={topLeftHX2} y2={frameY} stroke={premiumTone.accentBright} strokeWidth={1.2} strokeLinecap="round" />
+            <Line x1={frameX} y1={topLeftVY1} x2={frameX} y2={topLeftVY2} stroke={premiumTone.accentBright} strokeWidth={1.2} strokeLinecap="round" />
 
-            <Line x1={topRightHX1} y1={frameY} x2={topRightHX2} y2={frameY} stroke={premiumTone.accentBright} strokeWidth={1.1} strokeLinecap="round" />
-            <Line x1={frameX + frameW} y1={topRightVY1} x2={frameX + frameW} y2={topRightVY2} stroke={premiumTone.accentBright} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={topRightHX1} y1={frameY} x2={topRightHX2} y2={frameY} stroke={premiumTone.accentBright} strokeWidth={1.2} strokeLinecap="round" />
+            <Line x1={frameX + frameW} y1={topRightVY1} x2={frameX + frameW} y2={topRightVY2} stroke={premiumTone.accentBright} strokeWidth={1.2} strokeLinecap="round" />
 
-            <Line x1={bottomLeftHX1} y1={frameY + frameH} x2={bottomLeftHX2} y2={frameY + frameH} stroke={premiumTone.accentSoft} strokeWidth={1.1} strokeLinecap="round" />
-            <Line x1={frameX} y1={bottomLeftVY1} x2={frameX} y2={bottomLeftVY2} stroke={premiumTone.accentSoft} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={bottomLeftHX1} y1={frameY + frameH} x2={bottomLeftHX2} y2={frameY + frameH} stroke={premiumTone.accentBase} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={frameX} y1={bottomLeftVY1} x2={frameX} y2={bottomLeftVY2} stroke={premiumTone.accentBase} strokeWidth={1.1} strokeLinecap="round" />
 
-            <Line x1={bottomRightHX1} y1={frameY + frameH} x2={bottomRightHX2} y2={frameY + frameH} stroke={premiumTone.accentSoft} strokeWidth={1.1} strokeLinecap="round" />
-            <Line x1={frameX + frameW} y1={bottomRightVY1} x2={frameX + frameW} y2={bottomRightVY2} stroke={premiumTone.accentSoft} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={bottomRightHX1} y1={frameY + frameH} x2={bottomRightHX2} y2={frameY + frameH} stroke={premiumTone.accentBase} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={frameX + frameW} y1={bottomRightVY1} x2={frameX + frameW} y2={bottomRightVY2} stroke={premiumTone.accentBase} strokeWidth={1.1} strokeLinecap="round" />
           </Svg>
         </Animated.View>
       </Animated.View>
