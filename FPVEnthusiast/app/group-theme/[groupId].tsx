@@ -159,6 +159,8 @@ export default function GroupThemeScreen() {
   const [savingBranding, setSavingBranding] = useState(false);
   const [draft, setDraft] = useState<GroupThemeDraft>(() => createDraftFromPreset('midnight'));
   const [previewAnimationVariantId, setPreviewAnimationVariantId] = useState<GroupCardAnimationVariantId>('none');
+  const [recentlyUnlockedCustomThemeId, setRecentlyUnlockedCustomThemeId] = useState<string | null>(null);
+  const [customCollectionOffsetY, setCustomCollectionOffsetY] = useState(0);
 
   const {
     customThemes,
@@ -227,6 +229,19 @@ export default function GroupThemeScreen() {
     () => customThemes.find((theme) => theme.status === 'pending_payment') ?? null,
     [customThemes],
   );
+  const sortedCustomThemes = useMemo(() => {
+    const rank = (theme: GroupCustomTheme) => {
+      if (theme.id === recentlyUnlockedCustomThemeId) return 0;
+      if (activePreference?.active_theme_type === 'custom' && activePreference.active_theme_id === theme.id) return 1;
+      if (theme.status === 'paid') return 2;
+      return 3;
+    };
+    return [...customThemes].sort((a, b) => {
+      const rankDiff = rank(a) - rank(b);
+      if (rankDiff !== 0) return rankDiff;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, customThemes, recentlyUnlockedCustomThemeId]);
 
   useEffect(() => {
     setPreviewAnimationVariantId(activeAnimationVariantId);
@@ -365,13 +380,22 @@ export default function GroupThemeScreen() {
     const unlocked = await waitForThemePurchase(completed.customThemeId);
     resetCheckout();
     if (!unlocked) {
+      setRecentlyUnlockedCustomThemeId(completed.customThemeId);
+      if (customCollectionOffsetY > 0) {
+        scrollRef.current?.scrollTo({ y: Math.max(customCollectionOffsetY - 24, 0), animated: true });
+      }
       Alert.alert('Checkout processing', 'Your payment sheet completed, but the theme is still waiting on final confirmation. It should stay in your collection as Pending for this group and switch over automatically once the webhook finishes. If it still does not move after about a minute, tap Refresh appearance data.');
       return;
     }
 
-    Alert.alert('Theme unlocked', 'Your custom theme was added to this group and activated for your view.');
+    await saveThemePreference('custom', completed.customThemeId);
+    setRecentlyUnlockedCustomThemeId(completed.customThemeId);
+    if (customCollectionOffsetY > 0) {
+      scrollRef.current?.scrollTo({ y: Math.max(customCollectionOffsetY - 24, 0), animated: true });
+    }
+    Alert.alert('Theme unlocked', 'Your custom theme is now unlocked and active for this group. We also jumped you to the custom theme collection so the active selection is easier to see.');
     setDraft(createDraftFromPreset(activePreference?.active_theme_type === 'preset' ? activePreference.active_theme_id : 'midnight'));
-  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, draft, groupId, initCheckout, resetCheckout, waitForThemePurchase]);
+  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, customCollectionOffsetY, draft, groupId, initCheckout, resetCheckout, saveThemePreference, waitForThemePurchase]);
 
   if (loadingGroup || !group) {
     return (
@@ -494,29 +518,41 @@ export default function GroupThemeScreen() {
           </ScrollView>
         </View>
 
-        <View style={styles.card}>
+        <View style={styles.card} onLayout={(event) => setCustomCollectionOffsetY(event.nativeEvent.layout.y)}>
           <Text style={styles.sectionTitle}>Your custom theme collection</Text>
-          <Text style={styles.sectionHint}>Custom themes are purchased per group and stay locked to this community for your account. Using one replaces the active preset for this group instead of layering on top of it.</Text>
+          <Text style={styles.sectionHint}>Custom themes are purchased per group and stay locked to this community for your account. Using one replaces the active preset for this group instead of layering on top of it. New unlocks land here first.</Text>
+          {recentlyUnlockedCustomThemeId ? (
+            <View style={styles.collectionHelperBanner}>
+              <Ionicons name="sparkles-outline" size={16} color="#ffb48d" />
+              <Text style={styles.collectionHelperBannerText}>Your newest unlocked custom theme is pinned to the top below. If it is not already marked Active, tap Apply now.</Text>
+            </View>
+          ) : null}
           {loadingThemes ? (
             <ActivityIndicator color="#ff6a2f" size="small" />
-          ) : customThemes.length === 0 ? (
+          ) : sortedCustomThemes.length === 0 ? (
             <Text style={styles.emptyText}>No custom themes yet for this group.</Text>
           ) : (
-            customThemes.map((theme) => {
+            sortedCustomThemes.map((theme) => {
               const tokens = customThemeToTokens(theme);
               const isActive = activePreference?.active_theme_type === 'custom' && activePreference.active_theme_id === theme.id;
+              const isRecentlyUnlocked = theme.id === recentlyUnlockedCustomThemeId;
               return (
-                <View key={theme.id} style={styles.collectionRow}>
+                <View key={theme.id} style={[styles.collectionRow, (isActive || isRecentlyUnlocked) && styles.collectionRowHighlighted]}>
                   <View style={[styles.collectionSwatch, { backgroundColor: tokens.surfaceColor, borderColor: tokens.borderColor }]}>
                     <View style={[styles.collectionSwatchAccent, { backgroundColor: tokens.accentColor }]} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.collectionTitle}>{theme.name}</Text>
-                    <Text style={styles.collectionMeta}>{theme.status === 'paid' ? (isActive ? 'Active in this group' : 'Purchased for this group') : 'Payment pending'}</Text>
+                    <View style={styles.collectionTitleRow}>
+                      <Text style={styles.collectionTitle}>{theme.name}</Text>
+                      {isRecentlyUnlocked && !isActive ? (
+                        <View style={styles.collectionNewPill}><Text style={styles.collectionNewPillText}>New unlock</Text></View>
+                      ) : null}
+                    </View>
+                    <Text style={styles.collectionMeta}>{theme.status === 'paid' ? (isActive ? 'Active in this group now' : isRecentlyUnlocked ? 'Unlocked successfully — tap Apply now if you want this live on the group.' : 'Purchased for this group') : 'Payment pending'}</Text>
                   </View>
                   {theme.status === 'paid' ? (
-                    <TouchableOpacity style={styles.secondaryBtn} disabled={savingPreference} onPress={() => void handleApplyCustom(theme.id)}>
-                      <Text style={styles.secondaryBtnText}>{isActive ? 'Active' : 'Use'}</Text>
+                    <TouchableOpacity style={[styles.secondaryBtn, (isActive || isRecentlyUnlocked) && styles.secondaryBtnActive]} disabled={savingPreference} onPress={() => void handleApplyCustom(theme.id)}>
+                      <Text style={[styles.secondaryBtnText, (isActive || isRecentlyUnlocked) && styles.secondaryBtnTextActive]}>{isActive ? 'Active' : isRecentlyUnlocked ? 'Apply now' : 'Use'}</Text>
                     </TouchableOpacity>
                   ) : (
                     <View style={styles.pendingPill}><Text style={styles.pendingPillText}>Pending</Text></View>
@@ -980,11 +1016,17 @@ const styles = StyleSheet.create({
   variantStatusPillTextPreview: { color: '#ffb27d' },
   variantDescription: { color: '#c7c7c7', fontSize: 12, lineHeight: 17, marginTop: 6 },
   variantMeta: { color: '#8b8b8b', fontSize: 11, lineHeight: 16, marginTop: 6 },
-  collectionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
+  collectionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14, padding: 14, borderRadius: 16, borderWidth: 1, borderColor: '#252525', backgroundColor: '#151515' },
+  collectionRowHighlighted: { borderColor: '#ff6a2f', backgroundColor: '#21120c' },
   collectionSwatch: { width: 56, height: 56, borderRadius: 14, borderWidth: 1, justifyContent: 'flex-end', padding: 8 },
   collectionSwatchAccent: { width: 28, height: 6, borderRadius: 999 },
+  collectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   collectionTitle: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  collectionMeta: { color: '#8b8b8b', fontSize: 12, marginTop: 4 },
+  collectionMeta: { color: '#8b8b8b', fontSize: 12, marginTop: 4, lineHeight: 17 },
+  collectionHelperBanner: { marginTop: 14, borderRadius: 14, borderWidth: 1, borderColor: '#5d3928', backgroundColor: 'rgba(255,106,47,0.08)', paddingHorizontal: 12, paddingVertical: 11, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  collectionHelperBannerText: { color: '#ffccba', fontSize: 12, lineHeight: 17, flex: 1 },
+  collectionNewPill: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: 'rgba(255,178,125,0.12)', borderWidth: 1, borderColor: '#5d3928' },
+  collectionNewPillText: { color: '#ffb27d', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
   pendingPill: { backgroundColor: '#261910', borderColor: '#6a351d', borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   pendingPillText: { color: '#ffb48d', fontSize: 12, fontWeight: '700' },
   seedChip: { backgroundColor: '#171717', borderRadius: 999, borderWidth: 1, borderColor: '#262626', paddingHorizontal: 12, paddingVertical: 9 },
