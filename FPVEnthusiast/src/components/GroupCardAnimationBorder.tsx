@@ -37,8 +37,8 @@ function buildSegmentTranslate(anim: Animated.Value, segmentStart: number, dista
 }
 
 function buildSegmentOpacity(anim: Animated.Value, segmentStart: number, peakOpacity: number) {
-  const fadeIn = segmentStart + 0.08;
-  const fadeOut = segmentStart + 0.88;
+  const fadeIn = segmentStart + 0.1;
+  const fadeOut = segmentStart + 0.84;
 
   if (segmentStart === 0) {
     return anim.interpolate({
@@ -66,97 +66,147 @@ export default function GroupCardAnimationBorder({
 }: Props) {
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const orbitAnim = useRef(new Animated.Value(0)).current;
+  const shimmerAnim = useRef(new Animated.Value(0)).current;
 
   const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
   const orbitLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const shimmerLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   const isBasic = variant === 'basic';
   const isStandard = variant === 'standard';
   const isPremium = variant === 'premium';
 
-  const outerSpread = isPremium ? 16 : isStandard ? 7 : 3;
-  const frameInset = Math.max(Math.round(cornerRadius * 0.68), 10);
-  const verticalInset = Math.max(Math.round(cornerRadius * 0.78), 12);
+  const outerSpread = isPremium ? 34 : isStandard ? 8 : 3;
+  const frameInset = Math.max(Math.round(cornerRadius * 0.72), 10);
+  const verticalInset = Math.max(Math.round(cornerRadius * 0.82), 12);
 
-  const topLineThickness = isPremium ? 1.25 : isStandard ? 1.15 : 1;
-  const sideLineThickness = isPremium ? 1.15 : 1.05;
-  const trackThickness = isPremium ? 7 : isStandard ? 6 : 4;
-  const cometThickness = isPremium ? 1.9 : isStandard ? 2.1 : 1.8;
+  const basicTrackThickness = 4;
+  const standardTrackThickness = 7;
+  const standardLineThickness = 1.12;
+  const premiumFrameThickness = 1.05;
 
-  const horizontalTrackLength = Math.max(width - frameInset * 2, 40);
-  const verticalTrackLength = Math.max(height - verticalInset * 2, 40);
+  const horizontalTrackLength = Math.max(width - frameInset * 2, 44);
+  const verticalTrackLength = Math.max(height - verticalInset * 2, 44);
 
-  const basicCometWidth = clamp(horizontalTrackLength * 0.22, 46, 84);
-  const standardHorizontalCometWidth = clamp(horizontalTrackLength * 0.16, 42, 68);
-  const premiumHorizontalCometWidth = clamp(horizontalTrackLength * 0.12, 28, 52);
-  const standardVerticalCometHeight = clamp(verticalTrackLength * 0.17, 40, 62);
-  const premiumVerticalCometHeight = clamp(verticalTrackLength * 0.1, 22, 36);
+  const basicCometWidth = clamp(horizontalTrackLength * 0.22, 48, 86);
+  const standardHorizontalCometWidth = clamp(horizontalTrackLength * 0.16, 44, 70);
+  const standardVerticalCometHeight = clamp(verticalTrackLength * 0.18, 42, 64);
 
   useEffect(() => {
     pulseLoopRef.current?.stop?.();
     orbitLoopRef.current?.stop?.();
+    shimmerLoopRef.current?.stop?.();
 
     pulseAnim.stopAnimation();
     orbitAnim.stopAnimation();
+    shimmerAnim.stopAnimation();
 
     if (!active || width < 40 || height < 40 || variant === 'none') {
       pulseAnim.setValue(0);
       orbitAnim.setValue(0);
+      shimmerAnim.setValue(0);
       return;
     }
 
     pulseAnim.setValue(0);
     orbitAnim.setValue(0);
+    shimmerAnim.setValue(0);
 
     pulseLoopRef.current = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: isPremium ? 3600 : isStandard ? 2800 : 2600,
+          duration: isPremium ? 4600 : isStandard ? 3000 : 2600,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {
           toValue: 0,
-          duration: isPremium ? 3600 : isStandard ? 2800 : 2600,
+          duration: isPremium ? 4600 : isStandard ? 3000 : 2600,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
       ]),
     );
 
-    orbitLoopRef.current = Animated.loop(
-      Animated.sequence([
-        Animated.timing(orbitAnim, {
-          toValue: isBasic ? 1 : 4,
-          duration: isPremium ? 9800 : isStandard ? 7000 : 4200,
-          easing: isBasic ? Easing.inOut(Easing.cubic) : Easing.linear,
-          useNativeDriver: true,
-        }),
-        Animated.timing(orbitAnim, {
-          toValue: 0,
-          duration: 0,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
+    if (isBasic) {
+      orbitLoopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(orbitAnim, {
+            toValue: 1,
+            duration: 4000,
+            easing: Easing.inOut(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbitAnim, {
+            toValue: 0,
+            duration: 4000,
+            easing: Easing.inOut(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+    } else if (isStandard) {
+      orbitLoopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(orbitAnim, {
+            toValue: 4,
+            duration: 7600,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbitAnim, {
+            toValue: 0,
+            duration: 0,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+    }
+
+    if (isPremium) {
+      shimmerLoopRef.current = Animated.loop(
+        Animated.sequence([
+          Animated.timing(shimmerAnim, {
+            toValue: 1,
+            duration: 6200,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(shimmerAnim, {
+            toValue: 0,
+            duration: 6200,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+    }
 
     pulseLoopRef.current.start();
-    orbitLoopRef.current.start();
+    orbitLoopRef.current?.start?.();
+    shimmerLoopRef.current?.start?.();
 
     return () => {
       pulseLoopRef.current?.stop?.();
       orbitLoopRef.current?.stop?.();
+      shimmerLoopRef.current?.stop?.();
       pulseAnim.stopAnimation();
       orbitAnim.stopAnimation();
+      shimmerAnim.stopAnimation();
     };
-  }, [active, height, isBasic, isPremium, isStandard, orbitAnim, pulseAnim, variant, width]);
+  }, [active, height, isBasic, isPremium, isStandard, orbitAnim, pulseAnim, shimmerAnim, variant, width]);
 
   const basicRailOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.16, 0.28],
+    outputRange: [0.14, 0.24],
   });
+  const basicSweepOpacity = pulseAnim.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.45, 0.7, 0.5],
+  });
+
   const standardRailOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0.34, 0.56],
@@ -165,25 +215,67 @@ export default function GroupCardAnimationBorder({
     inputRange: [0, 1],
     outputRange: [0.08, 0.16],
   });
-  const premiumOuterAuraOpacity = pulseAnim.interpolate({
+
+  const premiumFrameOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.22, 0.36],
+    outputRange: [0.78, 0.96],
   });
-  const premiumInnerAuraOpacity = pulseAnim.interpolate({
+  const premiumOuterRingOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.18, 0.3],
+    outputRange: [0.18, 0.28],
   });
-  const premiumRailOpacity = pulseAnim.interpolate({
+  const premiumNearRingOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.58, 0.72],
+    outputRange: [0.22, 0.34],
+  });
+  const premiumTopHaloOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.12, 0.2],
+  });
+  const premiumSideHaloOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.08, 0.14],
+  });
+  const premiumBottomHaloOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.05, 0.09],
   });
   const premiumCornerOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.42, 0.68],
+    outputRange: [0.18, 0.3],
   });
-  const premiumAuraScale = pulseAnim.interpolate({
+  const premiumTopHaloScale = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [1.01, 1.03],
+    outputRange: [0.97, 1.04],
+  });
+  const premiumSideHaloScale = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.98, 1.03],
+  });
+  const premiumCornerScale = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.94, 1.08],
+  });
+
+  const premiumLeftGlintOpacity = shimmerAnim.interpolate({
+    inputRange: [0, 0.1, 0.24, 0.42, 1],
+    outputRange: [0.04, 0.08, 0.28, 0.06, 0.04],
+    extrapolate: 'clamp',
+  });
+  const premiumRightGlintOpacity = shimmerAnim.interpolate({
+    inputRange: [0, 0.48, 0.62, 0.8, 1],
+    outputRange: [0.04, 0.04, 0.24, 0.06, 0.04],
+    extrapolate: 'clamp',
+  });
+  const premiumLeftGlintScale = shimmerAnim.interpolate({
+    inputRange: [0, 0.24, 1],
+    outputRange: [0.92, 1.08, 0.92],
+    extrapolate: 'clamp',
+  });
+  const premiumRightGlintScale = shimmerAnim.interpolate({
+    inputRange: [0, 0.62, 1],
+    outputRange: [0.92, 1.06, 0.92],
+    extrapolate: 'clamp',
   });
 
   const basicTopX = orbitAnim.interpolate({
@@ -191,25 +283,16 @@ export default function GroupCardAnimationBorder({
     outputRange: [-basicCometWidth, horizontalTrackLength],
     extrapolate: 'clamp',
   });
-  const basicTopOpacity = orbitAnim.interpolate({
-    inputRange: [0, 0.12, 0.88, 1],
-    outputRange: [0, 0.68, 0.68, 0],
-    extrapolate: 'clamp',
-  });
 
-  const orbitHorizontalCometWidth = isPremium ? premiumHorizontalCometWidth : standardHorizontalCometWidth;
-  const orbitVerticalCometHeight = isPremium ? premiumVerticalCometHeight : standardVerticalCometHeight;
-  const orbitPeakOpacity = isPremium ? 0.18 : 0.82;
+  const topX = buildSegmentTranslate(orbitAnim, 0, horizontalTrackLength - standardHorizontalCometWidth, false);
+  const rightY = buildSegmentTranslate(orbitAnim, 1, verticalTrackLength - standardVerticalCometHeight, false);
+  const bottomX = buildSegmentTranslate(orbitAnim, 2, horizontalTrackLength - standardHorizontalCometWidth, true);
+  const leftY = buildSegmentTranslate(orbitAnim, 3, verticalTrackLength - standardVerticalCometHeight, true);
 
-  const topX = buildSegmentTranslate(orbitAnim, 0, horizontalTrackLength - orbitHorizontalCometWidth, false);
-  const rightY = buildSegmentTranslate(orbitAnim, 1, verticalTrackLength - orbitVerticalCometHeight, false);
-  const bottomX = buildSegmentTranslate(orbitAnim, 2, horizontalTrackLength - orbitHorizontalCometWidth, true);
-  const leftY = buildSegmentTranslate(orbitAnim, 3, verticalTrackLength - orbitVerticalCometHeight, true);
-
-  const topOpacity = buildSegmentOpacity(orbitAnim, 0, orbitPeakOpacity);
-  const rightOpacity = buildSegmentOpacity(orbitAnim, 1, orbitPeakOpacity);
-  const bottomOpacity = buildSegmentOpacity(orbitAnim, 2, orbitPeakOpacity);
-  const leftOpacity = buildSegmentOpacity(orbitAnim, 3, orbitPeakOpacity);
+  const topOpacity = buildSegmentOpacity(orbitAnim, 0, 0.82);
+  const rightOpacity = buildSegmentOpacity(orbitAnim, 1, 0.82);
+  const bottomOpacity = buildSegmentOpacity(orbitAnim, 2, 0.82);
+  const leftOpacity = buildSegmentOpacity(orbitAnim, 3, 0.82);
 
   const dynamicStyles = useMemo(
     () => ({
@@ -219,19 +302,17 @@ export default function GroupCardAnimationBorder({
         bottom: -outerSpread,
         left: -outerSpread,
       },
-      premiumAuraOuter: {
-        top: outerSpread - 12,
-        right: outerSpread - 12,
-        bottom: outerSpread - 12,
-        left: outerSpread - 12,
-        borderRadius: cornerRadius + 18,
+      basicTopFrame: {
+        top: outerSpread,
+        left: outerSpread + frameInset,
+        right: outerSpread + frameInset,
+        height: 1,
       },
-      premiumAuraInner: {
-        top: outerSpread - 2,
-        right: outerSpread - 2,
-        bottom: outerSpread - 2,
-        left: outerSpread - 2,
-        borderRadius: cornerRadius + 6,
+      basicTopTrack: {
+        top: outerSpread - Math.round(basicTrackThickness / 2) + 1,
+        left: outerSpread + frameInset,
+        width: horizontalTrackLength,
+        height: basicTrackThickness,
       },
       standardGlow: {
         top: outerSpread - 1,
@@ -240,248 +321,478 @@ export default function GroupCardAnimationBorder({
         left: outerSpread - 1,
         borderRadius: cornerRadius + 3,
       },
-      topFrame: {
+      standardTopFrame: {
         top: outerSpread,
         left: outerSpread + frameInset,
         right: outerSpread + frameInset,
-        height: topLineThickness,
+        height: standardLineThickness,
       },
-      rightFrame: {
+      standardRightFrame: {
         top: outerSpread + verticalInset,
         bottom: outerSpread + verticalInset,
         right: outerSpread,
-        width: sideLineThickness,
+        width: standardLineThickness,
       },
-      bottomFrame: {
+      standardBottomFrame: {
         bottom: outerSpread,
         left: outerSpread + frameInset,
         right: outerSpread + frameInset,
-        height: topLineThickness,
+        height: standardLineThickness,
       },
-      leftFrame: {
+      standardLeftFrame: {
         top: outerSpread + verticalInset,
         bottom: outerSpread + verticalInset,
         left: outerSpread,
-        width: sideLineThickness,
+        width: standardLineThickness,
       },
-      topTrack: {
-        top: outerSpread - Math.round(trackThickness / 2) + 1,
+      standardTopTrack: {
+        top: outerSpread - Math.round(standardTrackThickness / 2) + 1,
         left: outerSpread + frameInset,
         width: horizontalTrackLength,
-        height: trackThickness,
+        height: standardTrackThickness,
       },
-      rightTrack: {
+      standardRightTrack: {
         top: outerSpread + verticalInset,
-        right: outerSpread - Math.round(trackThickness / 2) + 1,
-        width: trackThickness,
+        right: outerSpread - Math.round(standardTrackThickness / 2) + 1,
+        width: standardTrackThickness,
         height: verticalTrackLength,
       },
-      bottomTrack: {
-        bottom: outerSpread - Math.round(trackThickness / 2) + 1,
+      standardBottomTrack: {
+        bottom: outerSpread - Math.round(standardTrackThickness / 2) + 1,
         left: outerSpread + frameInset,
         width: horizontalTrackLength,
-        height: trackThickness,
+        height: standardTrackThickness,
       },
-      leftTrack: {
+      standardLeftTrack: {
         top: outerSpread + verticalInset,
-        left: outerSpread - Math.round(trackThickness / 2) + 1,
-        width: trackThickness,
+        left: outerSpread - Math.round(standardTrackThickness / 2) + 1,
+        width: standardTrackThickness,
         height: verticalTrackLength,
+      },
+      premiumOuterSoftRing: {
+        top: outerSpread - 14,
+        right: outerSpread - 14,
+        bottom: outerSpread - 14,
+        left: outerSpread - 14,
+        borderRadius: cornerRadius + 16,
+        borderWidth: 8,
+      },
+      premiumOuterNearRing: {
+        top: outerSpread - 7,
+        right: outerSpread - 7,
+        bottom: outerSpread - 7,
+        left: outerSpread - 7,
+        borderRadius: cornerRadius + 9,
+        borderWidth: 3,
+      },
+      premiumFrame: {
+        top: outerSpread,
+        right: outerSpread,
+        bottom: outerSpread,
+        left: outerSpread,
+        borderRadius: cornerRadius + 1,
+        borderWidth: premiumFrameThickness,
+      },
+      premiumTopHalo: {
+        top: outerSpread - 24,
+        left: outerSpread + frameInset - 8,
+        right: outerSpread + frameInset - 8,
+        height: 18,
+      },
+      premiumBottomHalo: {
+        bottom: outerSpread - 22,
+        left: outerSpread + frameInset + 8,
+        right: outerSpread + frameInset + 8,
+        height: 12,
+      },
+      premiumLeftHalo: {
+        top: outerSpread + verticalInset + 2,
+        bottom: outerSpread + verticalInset + 10,
+        left: outerSpread - 18,
+        width: 15,
+      },
+      premiumRightHalo: {
+        top: outerSpread + verticalInset + 2,
+        bottom: outerSpread + verticalInset + 10,
+        right: outerSpread - 18,
+        width: 15,
+      },
+      premiumCornerTopLeft: {
+        top: outerSpread - 18,
+        left: outerSpread - 18,
+        width: 26,
+        height: 26,
+      },
+      premiumCornerTopRight: {
+        top: outerSpread - 18,
+        right: outerSpread - 18,
+        width: 26,
+        height: 26,
+      },
+      premiumCornerBottomLeft: {
+        bottom: outerSpread - 18,
+        left: outerSpread - 18,
+        width: 22,
+        height: 22,
+      },
+      premiumCornerBottomRight: {
+        bottom: outerSpread - 18,
+        right: outerSpread - 18,
+        width: 22,
+        height: 22,
+      },
+      premiumTopLeftGlint: {
+        top: outerSpread - 1,
+        left: outerSpread + frameInset + 6,
+        width: 34,
+        height: 1.6,
+      },
+      premiumTopRightGlint: {
+        top: outerSpread - 1,
+        right: outerSpread + frameInset + 6,
+        width: 30,
+        height: 1.6,
       },
       premiumCornerTopLeftH: {
-        top: outerSpread - 1,
+        top: outerSpread,
         left: outerSpread + 10,
         width: 16,
-        height: 1.2,
+        height: 1,
       },
       premiumCornerTopLeftV: {
         top: outerSpread + 10,
-        left: outerSpread - 1,
-        width: 1.2,
+        left: outerSpread,
+        width: 1,
         height: 16,
       },
       premiumCornerTopRightH: {
-        top: outerSpread - 1,
+        top: outerSpread,
         right: outerSpread + 10,
         width: 16,
-        height: 1.2,
+        height: 1,
       },
       premiumCornerTopRightV: {
         top: outerSpread + 10,
-        right: outerSpread - 1,
-        width: 1.2,
+        right: outerSpread,
+        width: 1,
         height: 16,
       },
       premiumCornerBottomLeftH: {
-        bottom: outerSpread - 1,
+        bottom: outerSpread,
         left: outerSpread + 10,
-        width: 16,
-        height: 1.2,
+        width: 12,
+        height: 1,
       },
       premiumCornerBottomLeftV: {
         bottom: outerSpread + 10,
-        left: outerSpread - 1,
-        width: 1.2,
-        height: 16,
+        left: outerSpread,
+        width: 1,
+        height: 12,
       },
       premiumCornerBottomRightH: {
-        bottom: outerSpread - 1,
+        bottom: outerSpread,
         right: outerSpread + 10,
-        width: 16,
-        height: 1.2,
+        width: 12,
+        height: 1,
       },
       premiumCornerBottomRightV: {
         bottom: outerSpread + 10,
-        right: outerSpread - 1,
-        width: 1.2,
-        height: 16,
+        right: outerSpread,
+        width: 1,
+        height: 12,
       },
     }),
-    [cornerRadius, frameInset, horizontalTrackLength, outerSpread, sideLineThickness, topLineThickness, trackThickness, verticalInset, verticalTrackLength],
+    [
+      basicTrackThickness,
+      cornerRadius,
+      frameInset,
+      horizontalTrackLength,
+      outerSpread,
+      premiumFrameThickness,
+      standardLineThickness,
+      standardTrackThickness,
+      verticalInset,
+      verticalTrackLength,
+    ],
   );
 
-  return (
-    <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap]}>
-      {isStandard ? (
+  if (isPremium) {
+    return (
+      <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap]}>
         <Animated.View
           style={[
-            styles.outlineGlow,
-            dynamicStyles.standardGlow,
+            styles.premiumGlowBlobHorizontal,
+            dynamicStyles.premiumTopHalo,
             {
-              borderColor: borderColor,
-              shadowColor: accentColor,
-              opacity: standardGlowOpacity,
+              backgroundColor: accentColor,
+              opacity: premiumTopHaloOpacity,
+              transform: [{ scaleX: premiumTopHaloScale }],
             },
           ]}
         />
-      ) : null}
+        <Animated.View
+          style={[
+            styles.premiumGlowBlobHorizontal,
+            dynamicStyles.premiumBottomHalo,
+            {
+              backgroundColor: accentColor,
+              opacity: premiumBottomHaloOpacity,
+              transform: [{ scaleX: premiumSideHaloScale }],
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.premiumGlowBlobVertical,
+            dynamicStyles.premiumLeftHalo,
+            {
+              backgroundColor: accentColor,
+              opacity: premiumSideHaloOpacity,
+              transform: [{ scaleY: premiumSideHaloScale }],
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.premiumGlowBlobVertical,
+            dynamicStyles.premiumRightHalo,
+            {
+              backgroundColor: accentColor,
+              opacity: premiumSideHaloOpacity,
+              transform: [{ scaleY: premiumSideHaloScale }],
+            },
+          ]}
+        />
 
-      {isPremium ? (
-        <>
+        <Animated.View
+          style={[
+            styles.premiumCornerGlow,
+            dynamicStyles.premiumCornerTopLeft,
+            {
+              backgroundColor: accentColor,
+              opacity: premiumCornerOpacity,
+              transform: [{ scale: premiumCornerScale }],
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.premiumCornerGlow,
+            dynamicStyles.premiumCornerTopRight,
+            {
+              backgroundColor: accentColor,
+              opacity: premiumCornerOpacity,
+              transform: [{ scale: premiumCornerScale }],
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.premiumCornerGlow,
+            dynamicStyles.premiumCornerBottomLeft,
+            {
+              backgroundColor: accentColor,
+              opacity: premiumBottomHaloOpacity,
+              transform: [{ scale: premiumCornerScale }],
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.premiumCornerGlow,
+            dynamicStyles.premiumCornerBottomRight,
+            {
+              backgroundColor: accentColor,
+              opacity: premiumBottomHaloOpacity,
+              transform: [{ scale: premiumCornerScale }],
+            },
+          ]}
+        />
+
+        <Animated.View
+          style={[
+            styles.premiumAuraRing,
+            dynamicStyles.premiumOuterSoftRing,
+            {
+              borderColor: accentColor,
+              opacity: premiumOuterRingOpacity,
+            },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.premiumAuraRing,
+            dynamicStyles.premiumOuterNearRing,
+            {
+              borderColor: accentColor,
+              opacity: premiumNearRingOpacity,
+            },
+          ]}
+        />
+
+        <Animated.View
+          style={[
+            styles.premiumFrame,
+            dynamicStyles.premiumFrame,
+            {
+              borderColor: borderColor,
+              opacity: premiumFrameOpacity,
+            },
+          ]}
+        />
+
+        <Animated.View
+          style={[
+            styles.premiumGlint,
+            dynamicStyles.premiumTopLeftGlint,
+            {
+              opacity: premiumLeftGlintOpacity,
+              transform: [{ scaleX: premiumLeftGlintScale }],
+            },
+          ]}
+        >
+          <LinearGradient colors={['transparent', accentColor, '#fff4c2', accentColor, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
+        </Animated.View>
+        <Animated.View
+          style={[
+            styles.premiumGlint,
+            dynamicStyles.premiumTopRightGlint,
+            {
+              opacity: premiumRightGlintOpacity,
+              transform: [{ scaleX: premiumRightGlintScale }],
+            },
+          ]}
+        >
+          <LinearGradient colors={['transparent', accentColor, '#fff4c2', accentColor, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
+        </Animated.View>
+
+        <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.premiumCornerTopLeftH, { opacity: premiumFrameOpacity }]} />
+        <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.premiumCornerTopLeftV, { opacity: premiumFrameOpacity }]} />
+        <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.premiumCornerTopRightH, { opacity: premiumFrameOpacity }]} />
+        <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.premiumCornerTopRightV, { opacity: premiumFrameOpacity }]} />
+        <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.premiumCornerBottomLeftH, { opacity: premiumCornerOpacity }]} />
+        <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.premiumCornerBottomLeftV, { opacity: premiumCornerOpacity }]} />
+        <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.premiumCornerBottomRightH, { opacity: premiumCornerOpacity }]} />
+        <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.premiumCornerBottomRightV, { opacity: premiumCornerOpacity }]} />
+      </Animated.View>
+    );
+  }
+
+  if (isBasic) {
+    return (
+      <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap]}>
+        <Animated.View style={[styles.basicTopFrame, dynamicStyles.basicTopFrame, { opacity: basicRailOpacity, backgroundColor: borderColor }]} />
+        <View style={[styles.basicTopTrack, dynamicStyles.basicTopTrack]}>
           <Animated.View
             style={[
-              styles.premiumAuraOuter,
-              dynamicStyles.premiumAuraOuter,
+              styles.horizontalComet,
               {
-                borderColor: accentColor,
+                width: basicCometWidth,
+                height: 1.8,
+                opacity: basicSweepOpacity,
                 shadowColor: accentColor,
-                opacity: premiumOuterAuraOpacity,
-                transform: [{ scale: premiumAuraScale }],
+                transform: [{ translateX: basicTopX }],
               },
             ]}
-          />
-          <Animated.View
-            style={[
-              styles.premiumAuraInner,
-              dynamicStyles.premiumAuraInner,
-              {
-                borderColor: borderColor,
-                shadowColor: accentColor,
-                opacity: premiumInnerAuraOpacity,
-                transform: [{ scale: premiumAuraScale }],
-              },
-            ]}
-          />
-          <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.premiumCornerTopLeftH, { opacity: premiumCornerOpacity }]} />
-          <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.premiumCornerTopLeftV, { opacity: premiumCornerOpacity }]} />
-          <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.premiumCornerTopRightH, { opacity: premiumCornerOpacity }]} />
-          <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.premiumCornerTopRightV, { opacity: premiumCornerOpacity }]} />
-          <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.premiumCornerBottomLeftH, { opacity: premiumCornerOpacity }]} />
-          <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.premiumCornerBottomLeftV, { opacity: premiumCornerOpacity }]} />
-          <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.premiumCornerBottomRightH, { opacity: premiumCornerOpacity }]} />
-          <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.premiumCornerBottomRightV, { opacity: premiumCornerOpacity }]} />
-        </>
-      ) : null}
+          >
+            <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
+          </Animated.View>
+        </View>
+      </Animated.View>
+    );
+  }
 
-      <Animated.View style={[styles.frameHorizontal, dynamicStyles.topFrame, { opacity: isPremium ? premiumRailOpacity : isStandard ? standardRailOpacity : basicRailOpacity }]}>
+  return (
+    <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap]}>
+      <Animated.View
+        style={[
+          styles.standardGlow,
+          dynamicStyles.standardGlow,
+          {
+            borderColor: borderColor,
+            shadowColor: accentColor,
+            opacity: standardGlowOpacity,
+          },
+        ]}
+      />
+
+      <Animated.View style={[styles.frameHorizontal, dynamicStyles.standardTopFrame, { opacity: standardRailOpacity }]}>
         <LinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
       </Animated.View>
+      <Animated.View style={[styles.frameVertical, dynamicStyles.standardRightFrame, { opacity: standardRailOpacity }]}>
+        <LinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
+      </Animated.View>
+      <Animated.View style={[styles.frameHorizontal, dynamicStyles.standardBottomFrame, { opacity: standardRailOpacity }]}>
+        <LinearGradient colors={[accentColor, borderColor, '#ffffff', accentColor]} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
+      </Animated.View>
+      <Animated.View style={[styles.frameVertical, dynamicStyles.standardLeftFrame, { opacity: standardRailOpacity }]}>
+        <LinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
+      </Animated.View>
 
-      {!isBasic ? (
-        <>
-          <Animated.View style={[styles.frameVertical, dynamicStyles.rightFrame, { opacity: isPremium ? premiumRailOpacity : standardRailOpacity }]}>
-            <LinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
-          </Animated.View>
-          <Animated.View style={[styles.frameHorizontal, dynamicStyles.bottomFrame, { opacity: isPremium ? premiumRailOpacity : standardRailOpacity }]}>
-            <LinearGradient colors={[accentColor, borderColor, '#ffffff', accentColor]} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
-          </Animated.View>
-          <Animated.View style={[styles.frameVertical, dynamicStyles.leftFrame, { opacity: isPremium ? premiumRailOpacity : standardRailOpacity }]}>
-            <LinearGradient colors={[accentColor, '#ffffff', borderColor, accentColor]} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
-          </Animated.View>
-        </>
-      ) : null}
-
-      <View style={[styles.horizontalTrack, dynamicStyles.topTrack]}>
+      <View style={[styles.standardTrack, dynamicStyles.standardTopTrack]}>
         <Animated.View
           style={[
             styles.horizontalComet,
             {
-              width: isBasic ? basicCometWidth : orbitHorizontalCometWidth,
-              height: cometThickness,
-              opacity: isBasic ? basicTopOpacity : topOpacity,
+              width: standardHorizontalCometWidth,
+              height: 2.1,
+              opacity: topOpacity,
               shadowColor: accentColor,
-              transform: [{ translateX: isBasic ? basicTopX : topX }],
+              transform: [{ translateX: topX }],
             },
           ]}
         >
           <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
         </Animated.View>
       </View>
-
-      {!isBasic ? (
-        <>
-          <View style={[styles.verticalTrack, dynamicStyles.rightTrack]}>
-            <Animated.View
-              style={[
-                styles.verticalComet,
-                {
-                  width: cometThickness,
-                  height: orbitVerticalCometHeight,
-                  opacity: rightOpacity,
-                  shadowColor: accentColor,
-                  transform: [{ translateY: rightY }],
-                },
-              ]}
-            >
-              <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
-            </Animated.View>
-          </View>
-
-          <View style={[styles.horizontalTrack, dynamicStyles.bottomTrack]}>
-            <Animated.View
-              style={[
-                styles.horizontalComet,
-                {
-                  width: orbitHorizontalCometWidth,
-                  height: cometThickness,
-                  opacity: bottomOpacity,
-                  shadowColor: accentColor,
-                  transform: [{ translateX: bottomX }],
-                },
-              ]}
-            >
-              <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
-            </Animated.View>
-          </View>
-
-          <View style={[styles.verticalTrack, dynamicStyles.leftTrack]}>
-            <Animated.View
-              style={[
-                styles.verticalComet,
-                {
-                  width: cometThickness,
-                  height: orbitVerticalCometHeight,
-                  opacity: leftOpacity,
-                  shadowColor: accentColor,
-                  transform: [{ translateY: leftY }],
-                },
-              ]}
-            >
-              <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
-            </Animated.View>
-          </View>
-        </>
-      ) : null}
+      <View style={[styles.standardVerticalTrack, dynamicStyles.standardRightTrack]}>
+        <Animated.View
+          style={[
+            styles.verticalComet,
+            {
+              width: 2.1,
+              height: standardVerticalCometHeight,
+              opacity: rightOpacity,
+              shadowColor: accentColor,
+              transform: [{ translateY: rightY }],
+            },
+          ]}
+        >
+          <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
+        </Animated.View>
+      </View>
+      <View style={[styles.standardTrack, dynamicStyles.standardBottomTrack]}>
+        <Animated.View
+          style={[
+            styles.horizontalComet,
+            {
+              width: standardHorizontalCometWidth,
+              height: 2.1,
+              opacity: bottomOpacity,
+              shadowColor: accentColor,
+              transform: [{ translateX: bottomX }],
+            },
+          ]}
+        >
+          <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
+        </Animated.View>
+      </View>
+      <View style={[styles.standardVerticalTrack, dynamicStyles.standardLeftTrack]}>
+        <Animated.View
+          style={[
+            styles.verticalComet,
+            {
+              width: 2.1,
+              height: standardVerticalCometHeight,
+              opacity: leftOpacity,
+              shadowColor: accentColor,
+              transform: [{ translateY: leftY }],
+            },
+          ]}
+        >
+          <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
+        </Animated.View>
+      </View>
     </Animated.View>
   );
 }
@@ -491,26 +802,23 @@ const styles = StyleSheet.create({
     position: 'absolute',
     zIndex: 12,
   },
-  outlineGlow: {
+  basicTopFrame: {
+    position: 'absolute',
+    borderRadius: 999,
+  },
+  basicTopTrack: {
+    position: 'absolute',
+    overflow: 'hidden',
+    borderRadius: 999,
+    justifyContent: 'center',
+  },
+  standardGlow: {
     position: 'absolute',
     borderWidth: 1,
     shadowOpacity: 0.34,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 0 },
-  },
-  premiumAuraOuter: {
-    position: 'absolute',
-    borderWidth: 1,
-    shadowOpacity: 0.5,
-    shadowRadius: 42,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  premiumAuraInner: {
-    position: 'absolute',
-    borderWidth: 1,
-    shadowOpacity: 0.26,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
   },
   frameHorizontal: {
     position: 'absolute',
@@ -522,13 +830,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     overflow: 'hidden',
   },
-  horizontalTrack: {
+  standardTrack: {
     position: 'absolute',
     overflow: 'hidden',
     borderRadius: 999,
     justifyContent: 'center',
   },
-  verticalTrack: {
+  standardVerticalTrack: {
     position: 'absolute',
     overflow: 'hidden',
     borderRadius: 999,
@@ -542,6 +850,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.88,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 0 },
+    elevation: 10,
   },
   verticalComet: {
     position: 'absolute',
@@ -551,22 +860,68 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.88,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 0 },
+    elevation: 10,
+  },
+  premiumGlowBlobHorizontal: {
+    position: 'absolute',
+    borderRadius: 999,
+    shadowOpacity: 0.42,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 16,
+  },
+  premiumGlowBlobVertical: {
+    position: 'absolute',
+    borderRadius: 999,
+    shadowOpacity: 0.34,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 14,
+  },
+  premiumCornerGlow: {
+    position: 'absolute',
+    borderRadius: 999,
+    shadowOpacity: 0.5,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 16,
+  },
+  premiumAuraRing: {
+    position: 'absolute',
+    shadowOpacity: 0.22,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 12,
+  },
+  premiumFrame: {
+    position: 'absolute',
+  },
+  premiumGlint: {
+    position: 'absolute',
+    borderRadius: 999,
+    overflow: 'hidden',
+    shadowOpacity: 0.62,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 10,
   },
   cornerAccentHorizontal: {
     position: 'absolute',
     borderRadius: 999,
     backgroundColor: '#ffd76a',
-    shadowOpacity: 0.72,
+    shadowOpacity: 0.42,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
   },
   cornerAccentVertical: {
     position: 'absolute',
     borderRadius: 999,
     backgroundColor: '#ffd76a',
-    shadowOpacity: 0.72,
+    shadowOpacity: 0.42,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
   },
   fill: {
     flex: 1,
