@@ -7,6 +7,7 @@ import Svg, {
   G,
   Line,
   LinearGradient as SvgLinearGradient,
+  Pattern,
   Rect,
   Stop,
 } from 'react-native-svg';
@@ -300,23 +301,20 @@ export default function GroupCardAnimationBorder({
   const premiumLeftOpacity = buildSegmentOpacity(orbitAnim, 3, 0.96);
 
   const premiumTone = useMemo(() => ({
-    carbonShadow: mixColors(borderColor, '#020203', 0.9),
-    carbonBase: mixColors(mixColors(borderColor, accentColor, 0.14), '#05060a', 0.78),
-    carbonMid: mixColors(borderColor, '#120f16', 0.42),
-    carbonPanelA: withAlpha(mixColors(accentColor, '#221b2b', 0.24), 0.44),
-    carbonPanelB: withAlpha(mixColors(borderColor, '#050508', 0.44), 0.7),
-    carbonWeaveA: withAlpha(mixColors(accentColor, '#6f7480', 0.08), 0.14),
-    carbonWeaveB: withAlpha(mixColors(borderColor, '#000000', 0.58), 0.22),
-    carbonTopTint: withAlpha(mixColors(accentColor, '#d7d9de', 0.06), 0.08),
-    carbonBottomTint: withAlpha('#000000', 0.2),
-    carbonFrameOuter: withAlpha(mixColors(borderColor, '#000000', 0.18), 0.96),
-    carbonFrameInner: withAlpha(mixColors(accentColor, borderColor, 0.18), 0.58),
-    electricBase: accentColor,
-    electricSoft: withAlpha(accentColor, 0.7),
-    electricLine: withAlpha(accentColor, 0.98),
+    carbonShadow: mixColors(borderColor, '#010102', 0.92),
+    carbonBase: mixColors(mixColors(accentColor, borderColor, 0.26), '#050507', 0.82),
+    carbonLift: withAlpha(mixColors(accentColor, '#655a76', 0.12), 0.11),
+    carbonWeaveShadow: withAlpha(mixColors(borderColor, '#000000', 0.72), 0.46),
+    carbonWeaveLight: withAlpha(mixColors(accentColor, '#473d57', 0.16), 0.2),
+    carbonWeaveMicro: withAlpha(mixColors(borderColor, '#1b1821', 0.36), 0.18),
+    carbonTint: withAlpha(accentColor, 0.06),
+    carbonGloss: withAlpha(mixColors(accentColor, '#9387a6', 0.08), 0.08),
+    carbonFrameOuter: withAlpha(mixColors(borderColor, '#000000', 0.22), 0.96),
+    carbonFrameInner: withAlpha(mixColors(accentColor, borderColor, 0.12), 0.4),
     electricDim: withAlpha(accentColor, 0.24),
-    electricGlow: withAlpha(accentColor, 0.18),
-    electricGlowStrong: withAlpha(accentColor, 0.42),
+    electricSoft: withAlpha(accentColor, 0.6),
+    electricBase: withAlpha(accentColor, 0.86),
+    electricHot: accentColor,
   }), [accentColor, borderColor]);
 
   const premiumCanvasWidth = width + outerSpread * 2;
@@ -430,7 +428,7 @@ export default function GroupCardAnimationBorder({
     const frameH = Math.max(height - 1, 0);
     const frameR = cornerRadius + 1;
 
-    const innerInset = 2;
+    const innerInset = 2.5;
     const innerFrameX = frameX + innerInset;
     const innerFrameY = frameY + innerInset;
     const innerFrameW = Math.max(frameW - innerInset * 2, 0);
@@ -438,15 +436,14 @@ export default function GroupCardAnimationBorder({
     const innerFrameR = Math.max(frameR - innerInset, 1);
 
     const clipId = `${premiumIdBase}-carbon-clip`;
-    const weaveBandCount = Math.ceil((frameW + frameH) / 30) + 5;
-    const weaveLineCount = Math.ceil((frameW + frameH) / 12) + 8;
-
-    const topSparkW = clamp(width * 0.14, 26, 42);
-    const sideSparkH = clamp(height * 0.16, 26, 46);
-    const glowSparkW = Math.round(topSparkW * 1.85);
-    const glowSparkH = Math.round(sideSparkH * 1.85);
-    const edgeInset = Math.max(frameInset - 2, 10);
-    const verticalEdgeInset = Math.max(verticalInset - 2, 10);
+    const patternId = `${premiumIdBase}-carbon-pattern`;
+    const fineWeaveCount = Math.ceil((frameW + frameH) / 14) + 10;
+    const microWeaveCount = Math.ceil((frameW + frameH) / 7) + 18;
+    const topPulseW = clamp(horizontalTrackLength * 0.2, 54, 88);
+    const sidePulseH = clamp(verticalTrackLength * 0.22, 54, 92);
+    const edgeInset = Math.max(frameInset - 4, 8);
+    const verticalEdgeInset = Math.max(verticalInset - 4, 8);
+    const cornerStub = clamp(cornerRadius + 4, 14, 22);
 
     return (
       <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap, dynamicStyles.premiumCanvas, { zIndex: 0 }]}>
@@ -456,223 +453,174 @@ export default function GroupCardAnimationBorder({
               <ClipPath id={clipId}>
                 <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} />
               </ClipPath>
+              <Pattern id={patternId} patternUnits="userSpaceOnUse" width={24} height={24}>
+                <Rect x={0} y={0} width={24} height={24} fill={premiumTone.carbonBase} />
+                <Line x1={-6} y1={24} x2={10} y2={0} stroke={premiumTone.carbonWeaveShadow} strokeWidth={7} strokeLinecap="square" />
+                <Line x1={6} y1={24} x2={22} y2={0} stroke={premiumTone.carbonWeaveLight} strokeWidth={6} strokeLinecap="square" />
+                <Line x1={18} y1={24} x2={34} y2={0} stroke={premiumTone.carbonWeaveShadow} strokeWidth={7} strokeLinecap="square" />
+                <Line x1={2} y1={0} x2={24} y2={22} stroke={premiumTone.carbonWeaveMicro} strokeWidth={2.2} strokeLinecap="square" />
+                <Line x1={-8} y1={8} x2={16} y2={32} stroke={premiumTone.carbonLift} strokeWidth={1.2} strokeLinecap="square" />
+                <Rect x={0} y={0} width={24} height={8} fill={premiumTone.carbonGloss} />
+              </Pattern>
             </Defs>
 
-            <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} fill={premiumTone.carbonBase} />
+            <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} fill={premiumTone.carbonShadow} />
             <G clipPath={`url(#${clipId})`}>
-              {Array.from({ length: weaveBandCount }).map((_, index) => {
-                const startX = frameX - frameH + index * 30;
+              <Rect x={frameX} y={frameY} width={frameW} height={frameH} fill={`url(#${patternId})`} />
+              <Rect x={frameX} y={frameY} width={frameW} height={frameH} fill={premiumTone.carbonTint} />
+              {Array.from({ length: fineWeaveCount }).map((_, index) => {
+                const startX = frameX - frameH + index * 14;
                 return (
                   <Line
-                    key={`premium-band-a-${index}`}
+                    key={`premium-fine-a-${index}`}
                     x1={startX}
                     y1={frameY + frameH}
                     x2={startX + frameH}
                     y2={frameY}
-                    stroke={premiumTone.carbonPanelA}
-                    strokeWidth={11}
+                    stroke={index % 4 < 2 ? premiumTone.carbonWeaveLight : premiumTone.carbonWeaveShadow}
+                    strokeWidth={index % 3 === 0 ? 3.2 : 2.4}
                     strokeLinecap="square"
                   />
                 );
               })}
-              {Array.from({ length: weaveBandCount }).map((_, index) => {
-                const startX = frameX - 20 + index * 30;
+              {Array.from({ length: fineWeaveCount }).map((_, index) => {
+                const startX = frameX - 12 + index * 14;
                 return (
                   <Line
-                    key={`premium-band-b-${index}`}
+                    key={`premium-fine-b-${index}`}
                     x1={startX}
                     y1={frameY}
                     x2={startX + frameH}
                     y2={frameY + frameH}
-                    stroke={premiumTone.carbonPanelB}
-                    strokeWidth={11}
+                    stroke={index % 5 === 0 ? premiumTone.carbonLift : premiumTone.carbonWeaveMicro}
+                    strokeWidth={index % 2 === 0 ? 1.3 : 1.1}
                     strokeLinecap="square"
                   />
                 );
               })}
-              {Array.from({ length: weaveLineCount }).map((_, index) => {
-                const startX = frameX - frameH + index * 12;
+              {Array.from({ length: microWeaveCount }).map((_, index) => {
+                const startX = frameX - frameH + index * 7;
                 return (
                   <Line
-                    key={`premium-weave-a-${index}`}
+                    key={`premium-micro-a-${index}`}
                     x1={startX}
                     y1={frameY + frameH}
                     x2={startX + frameH}
                     y2={frameY}
-                    stroke={premiumTone.carbonWeaveA}
-                    strokeWidth={1.8}
+                    stroke={premiumTone.carbonWeaveMicro}
+                    strokeWidth={0.9}
                     strokeLinecap="square"
                   />
                 );
               })}
-              {Array.from({ length: weaveLineCount }).map((_, index) => {
-                const startX = frameX - 14 + index * 12;
-                return (
-                  <Line
-                    key={`premium-weave-b-${index}`}
-                    x1={startX}
-                    y1={frameY}
-                    x2={startX + frameH}
-                    y2={frameY + frameH}
-                    stroke={premiumTone.carbonWeaveB}
-                    strokeWidth={1.7}
-                    strokeLinecap="square"
-                  />
-                );
-              })}
-              <Rect x={frameX} y={frameY} width={frameW} height={Math.max(frameH * 0.16, 22)} fill={premiumTone.carbonTopTint} />
-              <Rect x={frameX} y={frameY + frameH * 0.72} width={frameW} height={Math.max(frameH * 0.28, 30)} fill={premiumTone.carbonBottomTint} />
+              <Rect x={frameX} y={frameY} width={frameW} height={Math.max(frameH * 0.18, 22)} fill={premiumTone.carbonGloss} />
+              <Rect x={frameX} y={frameY + frameH * 0.66} width={frameW} height={Math.max(frameH * 0.34, 28)} fill={withAlpha('#000000', 0.16)} />
             </G>
 
-            <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} stroke={premiumTone.carbonFrameOuter} strokeWidth={1.2} fill="none" />
-            <Rect x={innerFrameX} y={innerFrameY} width={innerFrameW} height={innerFrameH} rx={innerFrameR} ry={innerFrameR} stroke={premiumTone.carbonFrameInner} strokeWidth={1} fill="none" />
+            <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} stroke={premiumTone.carbonFrameOuter} strokeWidth={1.15} fill="none" />
+            <Rect x={innerFrameX} y={innerFrameY} width={innerFrameW} height={innerFrameH} rx={innerFrameR} ry={innerFrameR} stroke={premiumTone.carbonFrameInner} strokeWidth={0.9} fill="none" />
 
+            <Line x1={frameX + edgeInset} y1={frameY + 0.8} x2={frameX + frameW - edgeInset} y2={frameY + 0.8} stroke={premiumTone.electricDim} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={frameX + edgeInset} y1={frameY + frameH - 0.8} x2={frameX + frameW - edgeInset} y2={frameY + frameH - 0.8} stroke={premiumTone.electricDim} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={frameX + 0.8} y1={frameY + verticalEdgeInset} x2={frameX + 0.8} y2={frameY + frameH - verticalEdgeInset} stroke={premiumTone.electricDim} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={frameX + frameW - 0.8} y1={frameY + verticalEdgeInset} x2={frameX + frameW - 0.8} y2={frameY + frameH - verticalEdgeInset} stroke={premiumTone.electricDim} strokeWidth={1.1} strokeLinecap="round" />
           </Svg>
         </Animated.View>
 
-        <Animated.View
-          style={[
-            styles.premiumElectricHalo,
-            {
-              top: outerSpread,
-              right: outerSpread,
-              bottom: outerSpread,
-              left: outerSpread,
-              borderRadius: cornerRadius + 1,
-              borderColor: premiumTone.electricDim,
-              shadowColor: accentColor,
-              opacity: premiumGlowOpacity,
-            },
-          ]}
-        />
+        <Animated.View style={[styles.premiumCornerHorizontal, { top: outerSpread + 0.5, left: outerSpread + 1.5, width: cornerStub, backgroundColor: premiumTone.electricBase, opacity: premiumGlowOpacity }]} />
+        <Animated.View style={[styles.premiumCornerVertical, { top: outerSpread + 1.5, left: outerSpread + 0.5, height: cornerStub, backgroundColor: premiumTone.electricBase, opacity: premiumGlowOpacity }]} />
+        <Animated.View style={[styles.premiumCornerHorizontal, { top: outerSpread + 0.5, right: outerSpread + 1.5, width: cornerStub, backgroundColor: premiumTone.electricBase, opacity: premiumGlowOpacity }]} />
+        <Animated.View style={[styles.premiumCornerVertical, { top: outerSpread + 1.5, right: outerSpread + 0.5, height: cornerStub, backgroundColor: premiumTone.electricBase, opacity: premiumGlowOpacity }]} />
+        <Animated.View style={[styles.premiumCornerHorizontal, { bottom: outerSpread + 0.5, left: outerSpread + 1.5, width: cornerStub, backgroundColor: premiumTone.electricBase, opacity: premiumGlowOpacity }]} />
+        <Animated.View style={[styles.premiumCornerVertical, { bottom: outerSpread + 1.5, left: outerSpread + 0.5, height: cornerStub, backgroundColor: premiumTone.electricBase, opacity: premiumGlowOpacity }]} />
+        <Animated.View style={[styles.premiumCornerHorizontal, { bottom: outerSpread + 0.5, right: outerSpread + 1.5, width: cornerStub, backgroundColor: premiumTone.electricBase, opacity: premiumGlowOpacity }]} />
+        <Animated.View style={[styles.premiumCornerVertical, { bottom: outerSpread + 1.5, right: outerSpread + 0.5, height: cornerStub, backgroundColor: premiumTone.electricBase, opacity: premiumGlowOpacity }]} />
 
-        <Animated.View style={[styles.premiumStaticEdge, { top: outerSpread, left: outerSpread + edgeInset, right: outerSpread + edgeInset, borderColor: premiumTone.electricDim, opacity: 0.32 }]} />
-        <Animated.View style={[styles.premiumStaticEdge, { bottom: outerSpread, left: outerSpread + edgeInset, right: outerSpread + edgeInset, borderColor: premiumTone.electricDim, opacity: 0.28 }]} />
-        <Animated.View style={[styles.premiumStaticEdgeVertical, { top: outerSpread + verticalEdgeInset, bottom: outerSpread + verticalEdgeInset, left: outerSpread, borderColor: premiumTone.electricDim, opacity: 0.3 }]} />
-        <Animated.View style={[styles.premiumStaticEdgeVertical, { top: outerSpread + verticalEdgeInset, bottom: outerSpread + verticalEdgeInset, right: outerSpread, borderColor: premiumTone.electricDim, opacity: 0.3 }]} />
-
-        <View style={[styles.standardTrack, dynamicStyles.standardTopTrack]}>
+        <View style={[styles.premiumEdgeTrack, { top: outerSpread - 3, left: outerSpread + edgeInset, width: horizontalTrackLength }]}>
+          <Animated.View style={[styles.premiumRail, { backgroundColor: premiumTone.electricDim, opacity: premiumRailOpacity }]} />
           <Animated.View
             style={[
-              styles.horizontalComet,
+              styles.premiumPulseCluster,
               {
-                left: -Math.round((glowSparkW - topSparkW) / 2),
-                width: glowSparkW,
-                height: 6,
+                width: topPulseW,
                 opacity: premiumTopOpacity,
-                shadowColor: accentColor,
                 transform: [{ translateX: premiumTopX }],
               },
             ]}
           >
-            <LinearGradient colors={['transparent', premiumTone.electricGlow, premiumTone.electricGlowStrong, premiumTone.electricGlow, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
-          </Animated.View>
-          <Animated.View
-            style={[
-              styles.horizontalComet,
-              {
-                width: topSparkW,
-                height: 2.4,
-                opacity: premiumTopOpacity,
-                shadowColor: accentColor,
-                transform: [{ translateX: premiumTopX }],
-              },
-            ]}
-          >
-            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricLine, premiumTone.electricSoft, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
+            <View style={[styles.premiumPulseSegment, { left: 0, top: 3, width: Math.round(topPulseW * 0.18), backgroundColor: premiumTone.electricSoft }]} />
+            <View style={[styles.premiumPulseSegmentCore, { left: Math.round(topPulseW * 0.2), top: 2, width: Math.round(topPulseW * 0.26), backgroundColor: premiumTone.electricBase }]} />
+            <View style={[styles.premiumPulseSegment, { left: Math.round(topPulseW * 0.5), top: 3, width: Math.round(topPulseW * 0.16), backgroundColor: premiumTone.electricHot }]} />
+            <View style={[styles.premiumPulseSegmentCore, { left: Math.round(topPulseW * 0.66), top: 2, width: Math.round(topPulseW * 0.22), backgroundColor: premiumTone.electricBase }]} />
+            <View style={[styles.premiumPulseBranch, { left: Math.round(topPulseW * 0.28), top: 0, height: 3, backgroundColor: premiumTone.electricSoft }]} />
+            <View style={[styles.premiumPulseBranch, { left: Math.round(topPulseW * 0.58), top: 4, height: 2, backgroundColor: premiumTone.electricHot }]} />
+            <View style={[styles.premiumPulseBranch, { left: Math.round(topPulseW * 0.8), top: 1, height: 3, backgroundColor: premiumTone.electricSoft }]} />
           </Animated.View>
         </View>
-        <View style={[styles.standardVerticalTrack, dynamicStyles.standardRightTrack]}>
+
+        <View style={[styles.premiumEdgeTrackVertical, { top: outerSpread + verticalEdgeInset, right: outerSpread - 3, height: verticalTrackLength }]}>
+          <Animated.View style={[styles.premiumRailVertical, { backgroundColor: premiumTone.electricDim, opacity: premiumRailOpacity }]} />
           <Animated.View
             style={[
-              styles.verticalComet,
+              styles.premiumPulseClusterVertical,
               {
-                top: -Math.round((glowSparkH - sideSparkH) / 2),
-                width: 6,
-                height: glowSparkH,
+                height: sidePulseH,
                 opacity: premiumRightOpacity,
-                shadowColor: accentColor,
                 transform: [{ translateY: premiumRightY }],
               },
             ]}
           >
-            <LinearGradient colors={['transparent', premiumTone.electricGlow, premiumTone.electricGlowStrong, premiumTone.electricGlow, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
-          </Animated.View>
-          <Animated.View
-            style={[
-              styles.verticalComet,
-              {
-                width: 2.4,
-                height: sideSparkH,
-                opacity: premiumRightOpacity,
-                shadowColor: accentColor,
-                transform: [{ translateY: premiumRightY }],
-              },
-            ]}
-          >
-            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricLine, premiumTone.electricSoft, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
+            <View style={[styles.premiumPulseSegmentVertical, { left: 3, top: 0, height: Math.round(sidePulseH * 0.18), backgroundColor: premiumTone.electricSoft }]} />
+            <View style={[styles.premiumPulseSegmentVerticalCore, { left: 2, top: Math.round(sidePulseH * 0.22), height: Math.round(sidePulseH * 0.24), backgroundColor: premiumTone.electricBase }]} />
+            <View style={[styles.premiumPulseSegmentVertical, { left: 3, top: Math.round(sidePulseH * 0.54), height: Math.round(sidePulseH * 0.16), backgroundColor: premiumTone.electricHot }]} />
+            <View style={[styles.premiumPulseSegmentVerticalCore, { left: 2, top: Math.round(sidePulseH * 0.72), height: Math.round(sidePulseH * 0.2), backgroundColor: premiumTone.electricBase }]} />
+            <View style={[styles.premiumPulseBranchVertical, { left: 0, top: Math.round(sidePulseH * 0.28), width: 3, backgroundColor: premiumTone.electricSoft }]} />
+            <View style={[styles.premiumPulseBranchVertical, { left: 4, top: Math.round(sidePulseH * 0.6), width: 2, backgroundColor: premiumTone.electricHot }]} />
+            <View style={[styles.premiumPulseBranchVertical, { left: 1, top: Math.round(sidePulseH * 0.82), width: 3, backgroundColor: premiumTone.electricSoft }]} />
           </Animated.View>
         </View>
-        <View style={[styles.standardTrack, dynamicStyles.standardBottomTrack]}>
+
+        <View style={[styles.premiumEdgeTrack, { bottom: outerSpread - 3, left: outerSpread + edgeInset, width: horizontalTrackLength }]}>
+          <Animated.View style={[styles.premiumRail, { backgroundColor: premiumTone.electricDim, opacity: premiumRailOpacity }]} />
           <Animated.View
             style={[
-              styles.horizontalComet,
+              styles.premiumPulseCluster,
               {
-                left: -Math.round((glowSparkW - topSparkW) / 2),
-                width: glowSparkW,
-                height: 6,
+                width: topPulseW,
                 opacity: premiumBottomOpacity,
-                shadowColor: accentColor,
                 transform: [{ translateX: premiumBottomX }],
               },
             ]}
           >
-            <LinearGradient colors={['transparent', premiumTone.electricGlow, premiumTone.electricGlowStrong, premiumTone.electricGlow, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
-          </Animated.View>
-          <Animated.View
-            style={[
-              styles.horizontalComet,
-              {
-                width: topSparkW,
-                height: 2.4,
-                opacity: premiumBottomOpacity,
-                shadowColor: accentColor,
-                transform: [{ translateX: premiumBottomX }],
-              },
-            ]}
-          >
-            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricLine, premiumTone.electricSoft, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
+            <View style={[styles.premiumPulseSegment, { left: 0, top: 3, width: Math.round(topPulseW * 0.18), backgroundColor: premiumTone.electricSoft }]} />
+            <View style={[styles.premiumPulseSegmentCore, { left: Math.round(topPulseW * 0.18), top: 2, width: Math.round(topPulseW * 0.24), backgroundColor: premiumTone.electricBase }]} />
+            <View style={[styles.premiumPulseSegment, { left: Math.round(topPulseW * 0.48), top: 3, width: Math.round(topPulseW * 0.18), backgroundColor: premiumTone.electricHot }]} />
+            <View style={[styles.premiumPulseSegmentCore, { left: Math.round(topPulseW * 0.68), top: 2, width: Math.round(topPulseW * 0.2), backgroundColor: premiumTone.electricBase }]} />
+            <View style={[styles.premiumPulseBranch, { left: Math.round(topPulseW * 0.22), top: 1, height: 3, backgroundColor: premiumTone.electricSoft }]} />
+            <View style={[styles.premiumPulseBranch, { left: Math.round(topPulseW * 0.54), top: 4, height: 2, backgroundColor: premiumTone.electricHot }]} />
+            <View style={[styles.premiumPulseBranch, { left: Math.round(topPulseW * 0.78), top: 0, height: 3, backgroundColor: premiumTone.electricSoft }]} />
           </Animated.View>
         </View>
-        <View style={[styles.standardVerticalTrack, dynamicStyles.standardLeftTrack]}>
+
+        <View style={[styles.premiumEdgeTrackVertical, { top: outerSpread + verticalEdgeInset, left: outerSpread - 3, height: verticalTrackLength }]}>
+          <Animated.View style={[styles.premiumRailVertical, { backgroundColor: premiumTone.electricDim, opacity: premiumRailOpacity }]} />
           <Animated.View
             style={[
-              styles.verticalComet,
+              styles.premiumPulseClusterVertical,
               {
-                top: -Math.round((glowSparkH - sideSparkH) / 2),
-                width: 6,
-                height: glowSparkH,
+                height: sidePulseH,
                 opacity: premiumLeftOpacity,
-                shadowColor: accentColor,
                 transform: [{ translateY: premiumLeftY }],
               },
             ]}
           >
-            <LinearGradient colors={['transparent', premiumTone.electricGlow, premiumTone.electricGlowStrong, premiumTone.electricGlow, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
-          </Animated.View>
-          <Animated.View
-            style={[
-              styles.verticalComet,
-              {
-                width: 2.4,
-                height: sideSparkH,
-                opacity: premiumLeftOpacity,
-                shadowColor: accentColor,
-                transform: [{ translateY: premiumLeftY }],
-              },
-            ]}
-          >
-            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricLine, premiumTone.electricSoft, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
+            <View style={[styles.premiumPulseSegmentVertical, { left: 3, top: 0, height: Math.round(sidePulseH * 0.18), backgroundColor: premiumTone.electricSoft }]} />
+            <View style={[styles.premiumPulseSegmentVerticalCore, { left: 2, top: Math.round(sidePulseH * 0.2), height: Math.round(sidePulseH * 0.24), backgroundColor: premiumTone.electricBase }]} />
+            <View style={[styles.premiumPulseSegmentVertical, { left: 3, top: Math.round(sidePulseH * 0.52), height: Math.round(sidePulseH * 0.18), backgroundColor: premiumTone.electricHot }]} />
+            <View style={[styles.premiumPulseSegmentVerticalCore, { left: 2, top: Math.round(sidePulseH * 0.72), height: Math.round(sidePulseH * 0.2), backgroundColor: premiumTone.electricBase }]} />
+            <View style={[styles.premiumPulseBranchVertical, { left: 3, top: Math.round(sidePulseH * 0.26), width: 3, backgroundColor: premiumTone.electricSoft }]} />
+            <View style={[styles.premiumPulseBranchVertical, { left: 0, top: Math.round(sidePulseH * 0.6), width: 2, backgroundColor: premiumTone.electricHot }]} />
+            <View style={[styles.premiumPulseBranchVertical, { left: 2, top: Math.round(sidePulseH * 0.84), width: 3, backgroundColor: premiumTone.electricSoft }]} />
           </Animated.View>
         </View>
       </Animated.View>
@@ -807,6 +755,86 @@ const styles = StyleSheet.create({
   premiumLayer: {
     position: 'absolute',
   },
+  premiumEdgeTrack: {
+    position: 'absolute',
+    height: 8,
+    overflow: 'hidden',
+    justifyContent: 'center',
+  },
+  premiumEdgeTrackVertical: {
+    position: 'absolute',
+    width: 8,
+    overflow: 'hidden',
+    alignItems: 'center',
+  },
+  premiumRail: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 3,
+    height: 1.2,
+    borderRadius: 999,
+  },
+  premiumRailVertical: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 3,
+    width: 1.2,
+    borderRadius: 999,
+  },
+  premiumPulseCluster: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: 8,
+  },
+  premiumPulseClusterVertical: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 8,
+  },
+  premiumPulseSegment: {
+    position: 'absolute',
+    height: 1.4,
+    borderRadius: 999,
+  },
+  premiumPulseSegmentCore: {
+    position: 'absolute',
+    height: 2.2,
+    borderRadius: 999,
+  },
+  premiumPulseSegmentVertical: {
+    position: 'absolute',
+    width: 1.4,
+    borderRadius: 999,
+  },
+  premiumPulseSegmentVerticalCore: {
+    position: 'absolute',
+    width: 2.2,
+    borderRadius: 999,
+  },
+  premiumPulseBranch: {
+    position: 'absolute',
+    width: 1.2,
+    borderRadius: 999,
+  },
+  premiumPulseBranchVertical: {
+    position: 'absolute',
+    height: 1.2,
+    borderRadius: 999,
+  },
+  premiumCornerHorizontal: {
+    position: 'absolute',
+    height: 1.6,
+    borderRadius: 999,
+  },
+  premiumCornerVertical: {
+    position: 'absolute',
+    width: 1.6,
+    borderRadius: 999,
+  },
   premiumSheenTrack: {
     position: 'absolute',
     overflow: 'hidden',
@@ -817,24 +845,6 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    borderRadius: 999,
-  },
-  premiumElectricHalo: {
-    position: 'absolute',
-    borderWidth: 1,
-    shadowOpacity: 0.42,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 10,
-  },
-  premiumStaticEdge: {
-    position: 'absolute',
-    borderTopWidth: 1,
-    borderRadius: 999,
-  },
-  premiumStaticEdgeVertical: {
-    position: 'absolute',
-    borderLeftWidth: 1,
     borderRadius: 999,
   },
   basicTopFrame: {

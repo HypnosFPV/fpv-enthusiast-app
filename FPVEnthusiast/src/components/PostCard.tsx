@@ -486,6 +486,7 @@ export default function PostCard(props: Props) {
   const themedCardStyle = useMemo(() => activeGroupTheme ? ({
     backgroundColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.surfaceColor,
     borderColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.borderColor,
+    borderWidth: isPremiumGroupCard ? 0 : 1,
   }) : null, [activeGroupTheme, isPremiumGroupCard]);
   const themedHeaderText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
   const themedMutedText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.mutedTextColor }) : null, [activeGroupTheme]);
@@ -1154,7 +1155,7 @@ export default function PostCard(props: Props) {
         />
       ) : null}
       <View
-        style={[styles.card, activeGroupTheme && styles.themedCard, themedCardStyle]}
+        style={[styles.card, activeGroupTheme && !isPremiumGroupCard && styles.themedCard, themedCardStyle]}
         onLayout={(event) => {
           const nextWidth = Math.round(event.nativeEvent.layout.width);
           const nextHeight = Math.round(event.nativeEvent.layout.height);
