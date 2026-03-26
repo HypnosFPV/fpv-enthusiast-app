@@ -224,6 +224,10 @@ export default function GroupCardAnimationBorder({
     inputRange: [0, 1],
     outputRange: isPremium ? [0.3, 0.52] : [0, 0],
   });
+  const ambientOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isPremium ? [0.14, 0.26] : [0, 0],
+  });
   const auraOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
     outputRange: isPremium ? [0.24, 0.5] : isStandard ? [0.08, 0.16] : [0.02, 0.05],
@@ -235,6 +239,10 @@ export default function GroupCardAnimationBorder({
   const auraScale = pulseAnim.interpolate({
     inputRange: [0, 1],
     outputRange: isPremium ? [0.996, 1.022] : isStandard ? [0.998, 1.008] : [1, 1.003],
+  });
+  const ambientScale = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isPremium ? [1.01, 1.06] : [1, 1],
   });
 
   const primaryOpacityValue = isPremium ? 0.98 : isStandard ? 0.82 : 0.62;
@@ -264,6 +272,14 @@ export default function GroupCardAnimationBorder({
   const cornerTopRightOpacity = isPremium ? buildCornerOpacity(travelAnim, 1, 0.84) : pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.08] });
   const cornerBottomRightOpacity = isPremium ? buildCornerOpacity(travelAnim, 2, 0.84) : pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.08] });
   const cornerBottomLeftOpacity = isPremium ? buildCornerOpacity(travelAnim, 3, 0.84) : pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.08] });
+  const premiumTopSheenOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isPremium ? [0.24, 0.46] : [0, 0],
+  });
+  const premiumCornerAccentOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: isPremium ? [0.38, 0.7] : [0, 0],
+  });
 
   const premiumDust = useMemo<DustSpec[]>(() => {
     if (!isPremium) return [];
@@ -284,6 +300,13 @@ export default function GroupCardAnimationBorder({
         right: -outerSpread,
         bottom: -outerSpread,
         left: -outerSpread,
+      },
+      ambient: {
+        top: outerSpread - 10,
+        right: outerSpread - 10,
+        bottom: outerSpread - 10,
+        left: outerSpread - 10,
+        borderRadius: cornerRadius + 14,
       },
       aura: {
         top: outerSpread - 2,
@@ -375,12 +398,41 @@ export default function GroupCardAnimationBorder({
       cornerTopRight: { top: outerSpread - 3, right: outerSpread - 3 },
       cornerBottomRight: { bottom: outerSpread - 3, right: outerSpread - 3 },
       cornerBottomLeft: { bottom: outerSpread - 3, left: outerSpread - 3 },
+      topSheen: {
+        top: outerSpread - 10,
+        left: outerSpread + frameInset + 8,
+        right: outerSpread + frameInset + 8,
+        height: 24,
+      },
+      cornerAccentTopLeftH: { top: outerSpread - 1, left: outerSpread + 10, width: 16, height: 1.4 },
+      cornerAccentTopLeftV: { top: outerSpread + 10, left: outerSpread - 1, width: 1.4, height: 16 },
+      cornerAccentTopRightH: { top: outerSpread - 1, right: outerSpread + 10, width: 16, height: 1.4 },
+      cornerAccentTopRightV: { top: outerSpread + 10, right: outerSpread - 1, width: 1.4, height: 16 },
+      cornerAccentBottomLeftH: { bottom: outerSpread - 1, left: outerSpread + 10, width: 16, height: 1.4 },
+      cornerAccentBottomLeftV: { bottom: outerSpread + 10, left: outerSpread - 1, width: 1.4, height: 16 },
+      cornerAccentBottomRightH: { bottom: outerSpread - 1, right: outerSpread + 10, width: 16, height: 1.4 },
+      cornerAccentBottomRightV: { bottom: outerSpread + 10, right: outerSpread - 1, width: 1.4, height: 16 },
     }),
     [cornerRadius, frameInset, horizontalTrackLength, lineThickness, outerLineThickness, outerSpread, trackThickness, verticalInset, verticalTrackLength],
   );
 
   return (
     <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap]}>
+      {isPremium ? (
+        <Animated.View
+          style={[
+            styles.ambient,
+            dynamicStyles.ambient,
+            {
+              backgroundColor: accentColor,
+              shadowColor: accentColor,
+              opacity: ambientOpacity,
+              transform: [{ scale: ambientScale }],
+            },
+          ]}
+        />
+      ) : null}
+
       <Animated.View
         style={[
           styles.aura,
@@ -409,6 +461,9 @@ export default function GroupCardAnimationBorder({
 
       {isPremium ? (
         <>
+          <Animated.View style={[styles.topSheen, dynamicStyles.topSheen, { opacity: premiumTopSheenOpacity, shadowColor: accentColor }]}>
+            <LinearGradient colors={['transparent', accentColor, '#ffffff', accentColor, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
+          </Animated.View>
           <Animated.View style={[styles.frameHorizontal, dynamicStyles.outerFrameTop, { opacity: outerFrameOpacity }]}>
             <LinearGradient colors={[accentColor, '#ffffff', accentColor]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
           </Animated.View>
@@ -421,6 +476,14 @@ export default function GroupCardAnimationBorder({
           <Animated.View style={[styles.frameVertical, dynamicStyles.outerFrameRight, { opacity: outerFrameOpacity }]}>
             <LinearGradient colors={[accentColor, '#ffffff', accentColor]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
           </Animated.View>
+          <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.cornerAccentTopLeftH, { opacity: premiumCornerAccentOpacity }]} />
+          <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.cornerAccentTopLeftV, { opacity: premiumCornerAccentOpacity }]} />
+          <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.cornerAccentTopRightH, { opacity: premiumCornerAccentOpacity }]} />
+          <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.cornerAccentTopRightV, { opacity: premiumCornerAccentOpacity }]} />
+          <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.cornerAccentBottomLeftH, { opacity: premiumCornerAccentOpacity }]} />
+          <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.cornerAccentBottomLeftV, { opacity: premiumCornerAccentOpacity }]} />
+          <Animated.View style={[styles.cornerAccentHorizontal, dynamicStyles.cornerAccentBottomRightH, { opacity: premiumCornerAccentOpacity }]} />
+          <Animated.View style={[styles.cornerAccentVertical, dynamicStyles.cornerAccentBottomRightV, { opacity: premiumCornerAccentOpacity }]} />
         </>
       ) : null}
 
@@ -661,6 +724,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     zIndex: 12,
   },
+  ambient: {
+    position: 'absolute',
+    borderRadius: 999,
+    shadowOpacity: 0.3,
+    shadowRadius: 42,
+    shadowOffset: { width: 0, height: 0 },
+  },
   aura: {
     position: 'absolute',
     borderWidth: 1,
@@ -673,6 +743,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     shadowOpacity: 0.44,
     shadowRadius: 18,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  topSheen: {
+    position: 'absolute',
+    borderRadius: 999,
+    overflow: 'hidden',
+    shadowOpacity: 0.65,
+    shadowRadius: 20,
     shadowOffset: { width: 0, height: 0 },
   },
   frameHorizontal: {
@@ -736,6 +814,22 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     overflow: 'hidden',
     shadowOpacity: 0.7,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  cornerAccentHorizontal: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: '#ffd76a',
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  cornerAccentVertical: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: '#ffd76a',
+    shadowOpacity: 0.9,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 0 },
   },
