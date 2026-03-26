@@ -98,6 +98,7 @@ function AnimationVariantPreviewCard({
   const overlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.08, 0.32);
   const variantLabel = GROUP_CARD_ANIMATION_VARIANTS.find((variant) => variant.id === variantId)?.name ?? 'No animation';
   const isLive = variantId === activeVariantId;
+  const isPremiumPreview = variantId === 'premium';
 
   return (
     <View style={styles.animationPreviewShell}>
@@ -129,9 +130,9 @@ function AnimationVariantPreviewCard({
             cornerRadius={18}
           />
         ) : null}
-        <View style={[styles.animationPreviewCard, { backgroundColor: theme.surfaceColor, borderColor: theme.borderColor }]}>
-          {theme.cardImageUrl ? <Image source={{ uri: theme.cardImageUrl }} style={styles.animationPreviewImage} resizeMode="cover" /> : null}
-          {theme.cardImageUrl ? <View style={[styles.animationPreviewImageOverlay, { backgroundColor: `rgba(0,0,0,${overlayOpacity})` }]} /> : null}
+        <View style={[styles.animationPreviewCard, { backgroundColor: isPremiumPreview ? 'transparent' : theme.surfaceColor, borderColor: isPremiumPreview ? 'transparent' : theme.borderColor }]}>
+          {theme.cardImageUrl && !isPremiumPreview ? <Image source={{ uri: theme.cardImageUrl }} style={styles.animationPreviewImage} resizeMode="cover" /> : null}
+          {theme.cardImageUrl && !isPremiumPreview ? <View style={[styles.animationPreviewImageOverlay, { backgroundColor: `rgba(0,0,0,${overlayOpacity})` }]} /> : null}
           <View style={styles.animationPreviewContent}>
           <View style={[styles.animationPreviewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
             <Ionicons name="sparkles-outline" size={11} color={theme.chipTextColor} />

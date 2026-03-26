@@ -27,7 +27,17 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function hexToRgb(input: string) {
-  const hex = input.trim().replace('#', '');
+  const trimmed = input.trim();
+  const rgbMatch = trimmed.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i);
+  if (rgbMatch) {
+    return {
+      r: clamp(parseInt(rgbMatch[1], 10), 0, 255),
+      g: clamp(parseInt(rgbMatch[2], 10), 0, 255),
+      b: clamp(parseInt(rgbMatch[3], 10), 0, 255),
+    };
+  }
+
+  const hex = trimmed.replace('#', '');
   const normalized = hex.length === 3
     ? hex.split('').map((part) => part + part).join('')
     : hex.slice(0, 6);
@@ -291,22 +301,22 @@ export default function GroupCardAnimationBorder({
 
   const premiumTone = useMemo(() => ({
     carbonShadow: mixColors(borderColor, '#020203', 0.9),
-    carbonBase: mixColors(accentColor, '#06060a', 0.26),
-    carbonMid: mixColors(borderColor, '#120f16', 0.34),
-    carbonPanelA: withAlpha(mixColors(accentColor, '#1b1622', 0.46), 0.5),
-    carbonPanelB: withAlpha(mixColors(borderColor, '#07070a', 0.3), 0.54),
-    carbonWeaveA: withAlpha(mixColors(accentColor, '#2b2134', 0.28), 0.34),
-    carbonWeaveB: withAlpha(mixColors(borderColor, '#000000', 0.18), 0.36),
-    carbonTopTint: withAlpha(mixColors(accentColor, borderColor, 0.3), 0.12),
-    carbonBottomTint: withAlpha(mixColors(borderColor, '#000000', 0.42), 0.24),
+    carbonBase: mixColors(mixColors(borderColor, accentColor, 0.14), '#05060a', 0.78),
+    carbonMid: mixColors(borderColor, '#120f16', 0.42),
+    carbonPanelA: withAlpha(mixColors(accentColor, '#221b2b', 0.24), 0.44),
+    carbonPanelB: withAlpha(mixColors(borderColor, '#050508', 0.44), 0.7),
+    carbonWeaveA: withAlpha(mixColors(accentColor, '#6f7480', 0.08), 0.14),
+    carbonWeaveB: withAlpha(mixColors(borderColor, '#000000', 0.58), 0.22),
+    carbonTopTint: withAlpha(mixColors(accentColor, '#d7d9de', 0.06), 0.08),
+    carbonBottomTint: withAlpha('#000000', 0.2),
     carbonFrameOuter: withAlpha(mixColors(borderColor, '#000000', 0.18), 0.96),
-    carbonFrameInner: withAlpha(mixColors(accentColor, borderColor, 0.18), 0.82),
+    carbonFrameInner: withAlpha(mixColors(accentColor, borderColor, 0.18), 0.58),
     electricBase: accentColor,
-    electricSoft: withAlpha(accentColor, 0.58),
-    electricLine: withAlpha(accentColor, 0.96),
-    electricDim: withAlpha(accentColor, 0.28),
+    electricSoft: withAlpha(accentColor, 0.7),
+    electricLine: withAlpha(accentColor, 0.98),
+    electricDim: withAlpha(accentColor, 0.24),
     electricGlow: withAlpha(accentColor, 0.18),
-    electricGlowStrong: withAlpha(accentColor, 0.3),
+    electricGlowStrong: withAlpha(accentColor, 0.42),
   }), [accentColor, borderColor]);
 
   const premiumCanvasWidth = width + outerSpread * 2;
@@ -431,11 +441,12 @@ export default function GroupCardAnimationBorder({
     const weaveBandCount = Math.ceil((frameW + frameH) / 30) + 5;
     const weaveLineCount = Math.ceil((frameW + frameH) / 12) + 8;
 
-    const topSparkW = clamp(width * 0.11, 18, 28);
-    const sideSparkH = clamp(height * 0.12, 18, 30);
+    const topSparkW = clamp(width * 0.14, 26, 42);
+    const sideSparkH = clamp(height * 0.16, 26, 46);
+    const glowSparkW = Math.round(topSparkW * 1.85);
+    const glowSparkH = Math.round(sideSparkH * 1.85);
     const edgeInset = Math.max(frameInset - 2, 10);
     const verticalEdgeInset = Math.max(verticalInset - 2, 10);
-    const cornerStub = clamp(cornerRadius + 4, 14, 22);
 
     return (
       <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap, dynamicStyles.premiumCanvas, { zIndex: 0 }]}>
@@ -516,14 +527,6 @@ export default function GroupCardAnimationBorder({
             <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} stroke={premiumTone.carbonFrameOuter} strokeWidth={1.2} fill="none" />
             <Rect x={innerFrameX} y={innerFrameY} width={innerFrameW} height={innerFrameH} rx={innerFrameR} ry={innerFrameR} stroke={premiumTone.carbonFrameInner} strokeWidth={1} fill="none" />
 
-            <Line x1={frameX + 8} y1={frameY + 1} x2={frameX + 8 + cornerStub} y2={frameY + 1} stroke={premiumTone.electricDim} strokeWidth={1.2} strokeLinecap="round" />
-            <Line x1={frameX + 1} y1={frameY + 8} x2={frameX + 1} y2={frameY + 8 + cornerStub} stroke={premiumTone.electricDim} strokeWidth={1.2} strokeLinecap="round" />
-            <Line x1={frameX + frameW - 8 - cornerStub} y1={frameY + 1} x2={frameX + frameW - 8} y2={frameY + 1} stroke={premiumTone.electricDim} strokeWidth={1.2} strokeLinecap="round" />
-            <Line x1={frameX + frameW - 1} y1={frameY + 8} x2={frameX + frameW - 1} y2={frameY + 8 + cornerStub} stroke={premiumTone.electricDim} strokeWidth={1.2} strokeLinecap="round" />
-            <Line x1={frameX + 8} y1={frameY + frameH - 1} x2={frameX + 8 + cornerStub} y2={frameY + frameH - 1} stroke={premiumTone.electricDim} strokeWidth={1.2} strokeLinecap="round" />
-            <Line x1={frameX + 1} y1={frameY + frameH - 8 - cornerStub} x2={frameX + 1} y2={frameY + frameH - 8} stroke={premiumTone.electricDim} strokeWidth={1.2} strokeLinecap="round" />
-            <Line x1={frameX + frameW - 8 - cornerStub} y1={frameY + frameH - 1} x2={frameX + frameW - 8} y2={frameY + frameH - 1} stroke={premiumTone.electricDim} strokeWidth={1.2} strokeLinecap="round" />
-            <Line x1={frameX + frameW - 1} y1={frameY + frameH - 8 - cornerStub} x2={frameX + frameW - 1} y2={frameY + frameH - 8} stroke={premiumTone.electricDim} strokeWidth={1.2} strokeLinecap="round" />
           </Svg>
         </Animated.View>
 
@@ -543,72 +546,135 @@ export default function GroupCardAnimationBorder({
           ]}
         />
 
-        <Animated.View style={[styles.premiumCornerFlash, { left: outerSpread + 2, top: outerSpread + 2, opacity: premiumRailOpacity, shadowColor: accentColor, backgroundColor: premiumTone.electricLine }]} />
-        <Animated.View style={[styles.premiumCornerFlash, { right: outerSpread + 2, top: outerSpread + 2, opacity: premiumTopOpacity, shadowColor: accentColor, backgroundColor: premiumTone.electricLine }]} />
-        <Animated.View style={[styles.premiumCornerFlash, { right: outerSpread + 2, bottom: outerSpread + 2, opacity: premiumRightOpacity, shadowColor: accentColor, backgroundColor: premiumTone.electricLine }]} />
-        <Animated.View style={[styles.premiumCornerFlash, { left: outerSpread + 2, bottom: outerSpread + 2, opacity: premiumBottomOpacity, shadowColor: accentColor, backgroundColor: premiumTone.electricLine }]} />
+        <Animated.View style={[styles.premiumStaticEdge, { top: outerSpread, left: outerSpread + edgeInset, right: outerSpread + edgeInset, borderColor: premiumTone.electricDim, opacity: 0.32 }]} />
+        <Animated.View style={[styles.premiumStaticEdge, { bottom: outerSpread, left: outerSpread + edgeInset, right: outerSpread + edgeInset, borderColor: premiumTone.electricDim, opacity: 0.28 }]} />
+        <Animated.View style={[styles.premiumStaticEdgeVertical, { top: outerSpread + verticalEdgeInset, bottom: outerSpread + verticalEdgeInset, left: outerSpread, borderColor: premiumTone.electricDim, opacity: 0.3 }]} />
+        <Animated.View style={[styles.premiumStaticEdgeVertical, { top: outerSpread + verticalEdgeInset, bottom: outerSpread + verticalEdgeInset, right: outerSpread, borderColor: premiumTone.electricDim, opacity: 0.3 }]} />
 
         <View style={[styles.standardTrack, dynamicStyles.standardTopTrack]}>
           <Animated.View
             style={[
-              styles.premiumSparkHorizontal,
+              styles.horizontalComet,
               {
-                width: topSparkW,
+                left: -Math.round((glowSparkW - topSparkW) / 2),
+                width: glowSparkW,
+                height: 6,
                 opacity: premiumTopOpacity,
-                backgroundColor: premiumTone.electricLine,
                 shadowColor: accentColor,
                 transform: [{ translateX: premiumTopX }],
               },
             ]}
-          />
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricGlow, premiumTone.electricGlowStrong, premiumTone.electricGlow, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.horizontalComet,
+              {
+                width: topSparkW,
+                height: 2.4,
+                opacity: premiumTopOpacity,
+                shadowColor: accentColor,
+                transform: [{ translateX: premiumTopX }],
+              },
+            ]}
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricLine, premiumTone.electricSoft, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
+          </Animated.View>
         </View>
         <View style={[styles.standardVerticalTrack, dynamicStyles.standardRightTrack]}>
           <Animated.View
             style={[
-              styles.premiumSparkVertical,
+              styles.verticalComet,
               {
-                height: sideSparkH,
+                top: -Math.round((glowSparkH - sideSparkH) / 2),
+                width: 6,
+                height: glowSparkH,
                 opacity: premiumRightOpacity,
-                backgroundColor: premiumTone.electricLine,
                 shadowColor: accentColor,
                 transform: [{ translateY: premiumRightY }],
               },
             ]}
-          />
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricGlow, premiumTone.electricGlowStrong, premiumTone.electricGlow, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.verticalComet,
+              {
+                width: 2.4,
+                height: sideSparkH,
+                opacity: premiumRightOpacity,
+                shadowColor: accentColor,
+                transform: [{ translateY: premiumRightY }],
+              },
+            ]}
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricLine, premiumTone.electricSoft, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
+          </Animated.View>
         </View>
         <View style={[styles.standardTrack, dynamicStyles.standardBottomTrack]}>
           <Animated.View
             style={[
-              styles.premiumSparkHorizontal,
+              styles.horizontalComet,
               {
-                width: topSparkW,
+                left: -Math.round((glowSparkW - topSparkW) / 2),
+                width: glowSparkW,
+                height: 6,
                 opacity: premiumBottomOpacity,
-                backgroundColor: premiumTone.electricLine,
                 shadowColor: accentColor,
                 transform: [{ translateX: premiumBottomX }],
               },
             ]}
-          />
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricGlow, premiumTone.electricGlowStrong, premiumTone.electricGlow, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.horizontalComet,
+              {
+                width: topSparkW,
+                height: 2.4,
+                opacity: premiumBottomOpacity,
+                shadowColor: accentColor,
+                transform: [{ translateX: premiumBottomX }],
+              },
+            ]}
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricLine, premiumTone.electricSoft, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
+          </Animated.View>
         </View>
         <View style={[styles.standardVerticalTrack, dynamicStyles.standardLeftTrack]}>
           <Animated.View
             style={[
-              styles.premiumSparkVertical,
+              styles.verticalComet,
               {
-                height: sideSparkH,
+                top: -Math.round((glowSparkH - sideSparkH) / 2),
+                width: 6,
+                height: glowSparkH,
                 opacity: premiumLeftOpacity,
-                backgroundColor: premiumTone.electricLine,
                 shadowColor: accentColor,
                 transform: [{ translateY: premiumLeftY }],
               },
             ]}
-          />
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricGlow, premiumTone.electricGlowStrong, premiumTone.electricGlow, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.verticalComet,
+              {
+                width: 2.4,
+                height: sideSparkH,
+                opacity: premiumLeftOpacity,
+                shadowColor: accentColor,
+                transform: [{ translateY: premiumLeftY }],
+              },
+            ]}
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricLine, premiumTone.electricSoft, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
+          </Animated.View>
         </View>
-
-        <Animated.View style={[styles.premiumStaticEdge, { top: outerSpread, left: outerSpread + edgeInset, right: outerSpread + edgeInset, borderColor: premiumTone.electricDim, opacity: 0.42 }]} />
-        <Animated.View style={[styles.premiumStaticEdge, { bottom: outerSpread, left: outerSpread + edgeInset, right: outerSpread + edgeInset, borderColor: premiumTone.electricDim, opacity: 0.32 }]} />
-        <Animated.View style={[styles.premiumStaticEdgeVertical, { top: outerSpread + verticalEdgeInset, bottom: outerSpread + verticalEdgeInset, left: outerSpread, borderColor: premiumTone.electricDim, opacity: 0.38 }]} />
-        <Animated.View style={[styles.premiumStaticEdgeVertical, { top: outerSpread + verticalEdgeInset, bottom: outerSpread + verticalEdgeInset, right: outerSpread, borderColor: premiumTone.electricDim, opacity: 0.38 }]} />
       </Animated.View>
     );
   }
@@ -758,36 +824,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     shadowOpacity: 0.42,
     shadowRadius: 16,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 10,
-  },
-  premiumCornerFlash: {
-    position: 'absolute',
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    shadowOpacity: 0.95,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 10,
-  },
-  premiumSparkHorizontal: {
-    position: 'absolute',
-    left: 0,
-    height: 2.2,
-    borderRadius: 999,
-    shadowOpacity: 0.95,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 10,
-  },
-  premiumSparkVertical: {
-    position: 'absolute',
-    top: 0,
-    width: 2.2,
-    borderRadius: 999,
-    shadowOpacity: 0.95,
-    shadowRadius: 10,
     shadowOffset: { width: 0, height: 0 },
     elevation: 10,
   },
