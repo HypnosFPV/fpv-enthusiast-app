@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, {
+  ClipPath,
   Defs,
+  G,
   Line,
   LinearGradient as SvgLinearGradient,
-  RadialGradient as SvgRadialGradient,
   Rect,
   Stop,
 } from 'react-native-svg';
@@ -251,15 +252,15 @@ export default function GroupCardAnimationBorder({
 
   const premiumCarbonOpacity = pulseAnim.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.92, 1, 0.92],
+    outputRange: [0.96, 1, 0.96],
   });
   const premiumRailOpacity = pulseAnim.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.24, 0.42, 0.24],
+    outputRange: [0.42, 0.78, 0.42],
   });
   const premiumGlowOpacity = pulseAnim.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.08, 0.18, 0.08],
+    outputRange: [0.12, 0.28, 0.12],
   });
 
   const basicTopX = orbitAnim.interpolate({
@@ -289,16 +290,26 @@ export default function GroupCardAnimationBorder({
   const premiumLeftOpacity = buildSegmentOpacity(orbitAnim, 3, 0.96);
 
   const premiumTone = useMemo(() => ({
-    carbonShadow: mixColors(borderColor, '#000000', 0.82),
-    carbonBase: mixColors(mixColors(borderColor, accentColor, 0.08), '#101214', 0.72),
-    carbonMid: mixColors(mixColors(borderColor, accentColor, 0.12), '#24282c', 0.46),
-    carbonEdge: mixColors(borderColor, '#4c5259', 0.18),
-    carbonHatch: withAlpha(mixColors('#c7ccd1', accentColor, 0.08), 0.18),
+    carbonShadow: mixColors(borderColor, '#050507', 0.82),
+    carbonBase: mixColors(mixColors(borderColor, accentColor, 0.42), '#09090d', 0.56),
+    carbonMid: mixColors(mixColors(borderColor, accentColor, 0.56), '#1c1622', 0.34),
+    carbonHigh: mixColors(accentColor, '#ffffff', 0.12),
+    carbonPanelA: withAlpha(mixColors(accentColor, '#0c0c10', 0.74), 0.22),
+    carbonPanelB: withAlpha(mixColors(borderColor, '#060608', 0.78), 0.28),
+    carbonWeaveA: withAlpha(mixColors(accentColor, '#ffffff', 0.08), 0.16),
+    carbonWeaveB: withAlpha(mixColors(borderColor, '#000000', 0.22), 0.2),
+    carbonTopTint: withAlpha(mixColors(accentColor, '#ffffff', 0.14), 0.1),
+    carbonBottomTint: withAlpha(mixColors(borderColor, '#000000', 0.46), 0.18),
+    carbonFrameOuter: withAlpha(mixColors(borderColor, '#000000', 0.28), 0.94),
+    carbonFrameInner: withAlpha(mixColors(accentColor, '#000000', 0.18), 0.82),
     electricBase: accentColor,
-    electricHot: mixColors(accentColor, '#ffffff', 0.76),
-    electricSoft: withAlpha(accentColor, 0.58),
-    electricGlow: withAlpha(accentColor, 0.18),
-    electricGlowStrong: withAlpha(mixColors(accentColor, '#ffffff', 0.42), 0.28),
+    electricHot: mixColors(accentColor, '#ffffff', 0.16),
+    electricGhost: withAlpha(accentColor, 0.14),
+    electricSoft: withAlpha(accentColor, 0.66),
+    electricLine: withAlpha(accentColor, 0.92),
+    electricDim: withAlpha(mixColors(borderColor, accentColor, 0.7), 0.48),
+    electricGlow: withAlpha(accentColor, 0.24),
+    electricGlowStrong: withAlpha(mixColors(accentColor, '#ffffff', 0.18), 0.34),
   }), [accentColor, borderColor]);
 
   const premiumCanvasWidth = width + outerSpread * 2;
@@ -419,130 +430,167 @@ export default function GroupCardAnimationBorder({
     const innerFrameH = Math.max(frameH - innerInset * 2, 0);
     const innerFrameR = Math.max(frameR - innerInset, 1);
 
-    const stripInset = 6;
-    const stripThickness = 7;
-    const topStripX = frameX + stripInset;
-    const topStripY = frameY + 2;
-    const topStripW = Math.max(frameW - stripInset * 2, 24);
-    const bottomStripY = frameY + frameH - stripThickness - 2;
-    const leftStripX = frameX + 2;
-    const rightStripX = frameX + frameW - stripThickness - 2;
-    const sideStripY = frameY + 8;
-    const sideStripH = Math.max(frameH - 16, 28);
+    const clipId = `${premiumIdBase}-carbon-clip`;
+    const carbonFillId = `${premiumIdBase}-carbon-fill`;
+    const carbonTopId = `${premiumIdBase}-carbon-top`;
+    const electricOuterId = `${premiumIdBase}-electric-outer`;
+    const electricInnerId = `${premiumIdBase}-electric-inner`;
 
-    const hatchSpacing = 10;
-    const topHatchCount = Math.ceil((topStripW + stripThickness * 2) / hatchSpacing);
-    const sideHatchCount = Math.ceil((sideStripH + stripThickness * 2) / hatchSpacing);
-    const cornerBracket = 14;
+    const weavePitch = 18;
+    const weaveBandPitch = 52;
+    const weaveLineCount = Math.ceil((frameW + frameH) / weavePitch) + 4;
+    const weaveBandCount = Math.ceil((frameW + frameH) / weaveBandPitch) + 4;
+
+    const outerEdgeX = frameX - 1.5;
+    const outerEdgeY = frameY - 1.5;
+    const outerEdgeW = frameW + 3;
+    const outerEdgeH = frameH + 3;
+    const outerEdgeR = frameR + 2;
+
+    const innerEdgeX = frameX + 3;
+    const innerEdgeY = frameY + 3;
+    const innerEdgeW = Math.max(frameW - 6, 0);
+    const innerEdgeH = Math.max(frameH - 6, 0);
+    const innerEdgeR = Math.max(frameR - 3, 1);
+
+    const cornerBracket = clamp(cornerRadius + 5, 16, 22);
+    const cornerInset = 8;
 
     return (
-      <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap, dynamicStyles.premiumCanvas]}>
+      <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap, dynamicStyles.premiumCanvas, { zIndex: 0 }]}>
         <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumCarbonOpacity }]}>
           <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} stroke={premiumTone.carbonShadow} strokeWidth={1.4} fill="none" />
-            <Rect x={innerFrameX} y={innerFrameY} width={innerFrameW} height={innerFrameH} rx={innerFrameR} ry={innerFrameR} stroke={premiumTone.carbonEdge} strokeWidth={1} fill="none" />
+            <Defs>
+              <ClipPath id={clipId}>
+                <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} />
+              </ClipPath>
+              <SvgLinearGradient id={carbonFillId} x1="0" y1="0" x2="1" y2="1">
+                <Stop offset="0%" stopColor={premiumTone.carbonMid} />
+                <Stop offset="38%" stopColor={premiumTone.carbonBase} />
+                <Stop offset="72%" stopColor={premiumTone.carbonMid} />
+                <Stop offset="100%" stopColor={premiumTone.carbonShadow} />
+              </SvgLinearGradient>
+              <SvgLinearGradient id={carbonTopId} x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor={premiumTone.carbonHigh} stopOpacity="0.42" />
+                <Stop offset="42%" stopColor={premiumTone.carbonTopTint} stopOpacity="0.22" />
+                <Stop offset="100%" stopColor={premiumTone.carbonShadow} stopOpacity="0" />
+              </SvgLinearGradient>
+              <SvgLinearGradient id={electricOuterId} x1="0" y1="0" x2="1" y2="1">
+                <Stop offset="0%" stopColor={premiumTone.electricGhost} />
+                <Stop offset="18%" stopColor={premiumTone.electricLine} />
+                <Stop offset="52%" stopColor={premiumTone.electricHot} />
+                <Stop offset="82%" stopColor={premiumTone.electricLine} />
+                <Stop offset="100%" stopColor={premiumTone.electricGhost} />
+              </SvgLinearGradient>
+              <SvgLinearGradient id={electricInnerId} x1="1" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor={premiumTone.electricGhost} />
+                <Stop offset="22%" stopColor={premiumTone.electricBase} />
+                <Stop offset="50%" stopColor={premiumTone.electricHot} />
+                <Stop offset="78%" stopColor={premiumTone.electricBase} />
+                <Stop offset="100%" stopColor={premiumTone.electricGhost} />
+              </SvgLinearGradient>
+            </Defs>
 
-            <Rect x={topStripX} y={topStripY} width={topStripW} height={stripThickness} rx={3} ry={3} fill={premiumTone.carbonBase} />
-            <Rect x={topStripX} y={bottomStripY} width={topStripW} height={stripThickness} rx={3} ry={3} fill={premiumTone.carbonBase} />
-            <Rect x={leftStripX} y={sideStripY} width={stripThickness} height={sideStripH} rx={3} ry={3} fill={premiumTone.carbonMid} />
-            <Rect x={rightStripX} y={sideStripY} width={stripThickness} height={sideStripH} rx={3} ry={3} fill={premiumTone.carbonMid} />
+            <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} fill={`url(#${carbonFillId})`} />
+            <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} fill={`url(#${carbonTopId})`} opacity={0.54} />
 
-            {Array.from({ length: topHatchCount }).map((_, index) => {
-              const x = topStripX - stripThickness + index * hatchSpacing;
-              return (
-                <Line
-                  key={`top-hatch-${index}`}
-                  x1={x}
-                  y1={topStripY + stripThickness}
-                  x2={x + stripThickness}
-                  y2={topStripY}
-                  stroke={premiumTone.carbonHatch}
-                  strokeWidth={1}
-                  strokeLinecap="round"
-                />
-              );
-            })}
-            {Array.from({ length: topHatchCount }).map((_, index) => {
-              const x = topStripX - stripThickness + index * hatchSpacing;
-              return (
-                <Line
-                  key={`bottom-hatch-${index}`}
-                  x1={x}
-                  y1={bottomStripY}
-                  x2={x + stripThickness}
-                  y2={bottomStripY + stripThickness}
-                  stroke={premiumTone.carbonHatch}
-                  strokeWidth={1}
-                  strokeLinecap="round"
-                />
-              );
-            })}
-            {Array.from({ length: sideHatchCount }).map((_, index) => {
-              const y = sideStripY - stripThickness + index * hatchSpacing;
-              return (
-                <Line
-                  key={`left-hatch-${index}`}
-                  x1={leftStripX}
-                  y1={y}
-                  x2={leftStripX + stripThickness}
-                  y2={y + stripThickness}
-                  stroke={premiumTone.carbonHatch}
-                  strokeWidth={1}
-                  strokeLinecap="round"
-                />
-              );
-            })}
-            {Array.from({ length: sideHatchCount }).map((_, index) => {
-              const y = sideStripY - stripThickness + index * hatchSpacing;
-              return (
-                <Line
-                  key={`right-hatch-${index}`}
-                  x1={rightStripX + stripThickness}
-                  y1={y}
-                  x2={rightStripX}
-                  y2={y + stripThickness}
-                  stroke={premiumTone.carbonHatch}
-                  strokeWidth={1}
-                  strokeLinecap="round"
-                />
-              );
-            })}
+            <G clipPath={`url(#${clipId})`}>
+              {Array.from({ length: weaveBandCount }).map((_, index) => {
+                const startX = frameX - frameH + index * weaveBandPitch;
+                return (
+                  <Line
+                    key={`premium-band-a-${index}`}
+                    x1={startX}
+                    y1={frameY + frameH}
+                    x2={startX + frameH}
+                    y2={frameY}
+                    stroke={premiumTone.carbonPanelA}
+                    strokeWidth={14}
+                    strokeLinecap="square"
+                  />
+                );
+              })}
+              {Array.from({ length: weaveBandCount }).map((_, index) => {
+                const startX = frameX - 24 + index * weaveBandPitch;
+                return (
+                  <Line
+                    key={`premium-band-b-${index}`}
+                    x1={startX}
+                    y1={frameY}
+                    x2={startX + frameH}
+                    y2={frameY + frameH}
+                    stroke={premiumTone.carbonPanelB}
+                    strokeWidth={12}
+                    strokeLinecap="square"
+                  />
+                );
+              })}
+              {Array.from({ length: weaveLineCount }).map((_, index) => {
+                const startX = frameX - frameH + index * weavePitch;
+                return (
+                  <Line
+                    key={`premium-weave-a-${index}`}
+                    x1={startX}
+                    y1={frameY + frameH}
+                    x2={startX + frameH}
+                    y2={frameY}
+                    stroke={premiumTone.carbonWeaveA}
+                    strokeWidth={1.2}
+                    strokeLinecap="round"
+                  />
+                );
+              })}
+              {Array.from({ length: weaveLineCount }).map((_, index) => {
+                const startX = frameX - 14 + index * weavePitch;
+                return (
+                  <Line
+                    key={`premium-weave-b-${index}`}
+                    x1={startX}
+                    y1={frameY}
+                    x2={startX + frameH}
+                    y2={frameY + frameH}
+                    stroke={premiumTone.carbonWeaveB}
+                    strokeWidth={1.1}
+                    strokeLinecap="round"
+                  />
+                );
+              })}
+              <Rect x={frameX} y={frameY} width={frameW} height={Math.max(frameH * 0.2, 30)} fill={premiumTone.carbonTopTint} />
+              <Rect x={frameX} y={frameY + frameH * 0.72} width={frameW} height={Math.max(frameH * 0.28, 38)} fill={premiumTone.carbonBottomTint} />
+            </G>
 
-            <Line x1={frameX + 10} y1={frameY} x2={frameX + 10 + cornerBracket} y2={frameY} stroke={premiumTone.carbonEdge} strokeWidth={1.2} strokeLinecap="round" />
-            <Line x1={frameX} y1={frameY + 10} x2={frameX} y2={frameY + 10 + cornerBracket} stroke={premiumTone.carbonEdge} strokeWidth={1.2} strokeLinecap="round" />
-            <Line x1={frameX + frameW - 10 - cornerBracket} y1={frameY} x2={frameX + frameW - 10} y2={frameY} stroke={premiumTone.carbonEdge} strokeWidth={1.2} strokeLinecap="round" />
-            <Line x1={frameX + frameW} y1={frameY + 10} x2={frameX + frameW} y2={frameY + 10 + cornerBracket} stroke={premiumTone.carbonEdge} strokeWidth={1.2} strokeLinecap="round" />
+            <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} stroke={premiumTone.carbonFrameOuter} strokeWidth={1.4} fill="none" />
+            <Rect x={innerFrameX} y={innerFrameY} width={innerFrameW} height={innerFrameH} rx={innerFrameR} ry={innerFrameR} stroke={premiumTone.carbonFrameInner} strokeWidth={1} fill="none" />
+
+            <Rect x={outerEdgeX} y={outerEdgeY} width={outerEdgeW} height={outerEdgeH} rx={outerEdgeR} ry={outerEdgeR} stroke={`url(#${electricOuterId})`} strokeWidth={1.4} strokeDasharray="10 12 5 16" strokeLinecap="round" fill="none" opacity={0.92} />
+            <Rect x={innerEdgeX} y={innerEdgeY} width={innerEdgeW} height={innerEdgeH} rx={innerEdgeR} ry={innerEdgeR} stroke={`url(#${electricInnerId})`} strokeWidth={0.9} strokeDasharray="6 14 4 10" strokeLinecap="round" fill="none" opacity={0.74} />
+
+            <Line x1={frameX + cornerInset} y1={frameY + 1} x2={frameX + cornerInset + cornerBracket} y2={frameY + 1} stroke={premiumTone.electricLine} strokeWidth={1.6} strokeLinecap="round" opacity={0.58} />
+            <Line x1={frameX + 1} y1={frameY + cornerInset} x2={frameX + 1} y2={frameY + cornerInset + cornerBracket} stroke={premiumTone.electricLine} strokeWidth={1.6} strokeLinecap="round" opacity={0.58} />
+            <Line x1={frameX + frameW - cornerInset - cornerBracket} y1={frameY + 1} x2={frameX + frameW - cornerInset} y2={frameY + 1} stroke={premiumTone.electricLine} strokeWidth={1.6} strokeLinecap="round" opacity={0.58} />
+            <Line x1={frameX + frameW - 1} y1={frameY + cornerInset} x2={frameX + frameW - 1} y2={frameY + cornerInset + cornerBracket} stroke={premiumTone.electricLine} strokeWidth={1.6} strokeLinecap="round" opacity={0.58} />
+            <Line x1={frameX + cornerInset} y1={frameY + frameH - 1} x2={frameX + cornerInset + cornerBracket} y2={frameY + frameH - 1} stroke={premiumTone.electricLine} strokeWidth={1.6} strokeLinecap="round" opacity={0.34} />
+            <Line x1={frameX + 1} y1={frameY + frameH - cornerInset - cornerBracket} x2={frameX + 1} y2={frameY + frameH - cornerInset} stroke={premiumTone.electricLine} strokeWidth={1.6} strokeLinecap="round" opacity={0.34} />
+            <Line x1={frameX + frameW - cornerInset - cornerBracket} y1={frameY + frameH - 1} x2={frameX + frameW - cornerInset} y2={frameY + frameH - 1} stroke={premiumTone.electricLine} strokeWidth={1.6} strokeLinecap="round" opacity={0.34} />
+            <Line x1={frameX + frameW - 1} y1={frameY + frameH - cornerInset - cornerBracket} x2={frameX + frameW - 1} y2={frameY + frameH - cornerInset} stroke={premiumTone.electricLine} strokeWidth={1.6} strokeLinecap="round" opacity={0.34} />
           </Svg>
         </Animated.View>
 
         <Animated.View
           style={[
-            styles.standardGlow,
+            styles.premiumElectricHalo,
             {
               top: outerSpread - 1,
               right: outerSpread - 1,
               bottom: outerSpread - 1,
               left: outerSpread - 1,
               borderRadius: cornerRadius + 3,
-              borderColor: premiumTone.electricBase,
-              shadowColor: premiumTone.electricBase,
+              borderColor: premiumTone.electricGlowStrong,
+              shadowColor: accentColor,
               opacity: premiumGlowOpacity,
             },
           ]}
         />
-
-        <Animated.View style={[styles.frameHorizontal, dynamicStyles.standardTopFrame, { opacity: premiumRailOpacity }]}>
-          <LinearGradient colors={[withAlpha(accentColor, 0), premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, withAlpha(accentColor, 0)]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
-        </Animated.View>
-        <Animated.View style={[styles.frameVertical, dynamicStyles.standardRightFrame, { opacity: premiumRailOpacity }]}>
-          <LinearGradient colors={[withAlpha(accentColor, 0), premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, withAlpha(accentColor, 0)]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
-        </Animated.View>
-        <Animated.View style={[styles.frameHorizontal, dynamicStyles.standardBottomFrame, { opacity: premiumRailOpacity }]}>
-          <LinearGradient colors={[withAlpha(accentColor, 0), premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, withAlpha(accentColor, 0)]} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
-        </Animated.View>
-        <Animated.View style={[styles.frameVertical, dynamicStyles.standardLeftFrame, { opacity: premiumRailOpacity }]}>
-          <LinearGradient colors={[withAlpha(accentColor, 0), premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, withAlpha(accentColor, 0)]} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
-        </Animated.View>
 
         <View style={[styles.standardTrack, dynamicStyles.standardTopTrack]}>
           <Animated.View
@@ -550,14 +598,14 @@ export default function GroupCardAnimationBorder({
               styles.horizontalComet,
               {
                 width: premiumHorizontalCometWidth,
-                height: 2.6,
+                height: 2.2,
                 opacity: premiumTopOpacity,
                 shadowColor: accentColor,
                 transform: [{ translateX: premiumTopX }],
               },
             ]}
           >
-            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricHot, '#ffffff', premiumTone.electricHot, premiumTone.electricSoft, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
+            <LinearGradient colors={['transparent', premiumTone.electricGhost, premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, premiumTone.electricGhost, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
           </Animated.View>
         </View>
         <View style={[styles.standardVerticalTrack, dynamicStyles.standardRightTrack]}>
@@ -565,7 +613,7 @@ export default function GroupCardAnimationBorder({
             style={[
               styles.verticalComet,
               {
-                width: 2.6,
+                width: 2.2,
                 height: premiumVerticalCometHeight,
                 opacity: premiumRightOpacity,
                 shadowColor: accentColor,
@@ -573,7 +621,7 @@ export default function GroupCardAnimationBorder({
               },
             ]}
           >
-            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricHot, '#ffffff', premiumTone.electricHot, premiumTone.electricSoft, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
+            <LinearGradient colors={['transparent', premiumTone.electricGhost, premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, premiumTone.electricGhost, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
           </Animated.View>
         </View>
         <View style={[styles.standardTrack, dynamicStyles.standardBottomTrack]}>
@@ -582,14 +630,14 @@ export default function GroupCardAnimationBorder({
               styles.horizontalComet,
               {
                 width: premiumHorizontalCometWidth,
-                height: 2.6,
+                height: 2.2,
                 opacity: premiumBottomOpacity,
                 shadowColor: accentColor,
                 transform: [{ translateX: premiumBottomX }],
               },
             ]}
           >
-            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricHot, '#ffffff', premiumTone.electricHot, premiumTone.electricSoft, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
+            <LinearGradient colors={['transparent', premiumTone.electricGhost, premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, premiumTone.electricGhost, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
           </Animated.View>
         </View>
         <View style={[styles.standardVerticalTrack, dynamicStyles.standardLeftTrack]}>
@@ -597,7 +645,7 @@ export default function GroupCardAnimationBorder({
             style={[
               styles.verticalComet,
               {
-                width: 2.6,
+                width: 2.2,
                 height: premiumVerticalCometHeight,
                 opacity: premiumLeftOpacity,
                 shadowColor: accentColor,
@@ -605,7 +653,7 @@ export default function GroupCardAnimationBorder({
               },
             ]}
           >
-            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricHot, '#ffffff', premiumTone.electricHot, premiumTone.electricSoft, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
+            <LinearGradient colors={['transparent', premiumTone.electricGhost, premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, premiumTone.electricGhost, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
           </Animated.View>
         </View>
       </Animated.View>
@@ -751,6 +799,14 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     borderRadius: 999,
+  },
+  premiumElectricHalo: {
+    position: 'absolute',
+    borderWidth: 1,
+    shadowOpacity: 0.42,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 10,
   },
   basicTopFrame: {
     position: 'absolute',

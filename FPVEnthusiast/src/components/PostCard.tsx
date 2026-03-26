@@ -481,10 +481,12 @@ export default function PostCard(props: Props) {
   const isGroupPost = !!post.group?.id;
   const { theme: resolvedGroupTheme } = useResolvedGroupTheme(currentUserId ?? undefined, post.group?.id ?? undefined);
   const activeGroupTheme = isGroupPost ? resolvedGroupTheme : null;
+  const groupAnimationVariantId = activeGroupTheme?.animationVariantId ?? 'none';
+  const isPremiumGroupCard = !!activeGroupTheme && groupAnimationVariantId === 'premium';
   const themedCardStyle = useMemo(() => activeGroupTheme ? ({
-    backgroundColor: activeGroupTheme.surfaceColor,
-    borderColor: activeGroupTheme.borderColor,
-  }) : null, [activeGroupTheme]);
+    backgroundColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.surfaceColor,
+    borderColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.borderColor,
+  }) : null, [activeGroupTheme, isPremiumGroupCard]);
   const themedHeaderText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
   const themedMutedText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.mutedTextColor }) : null, [activeGroupTheme]);
   const themedGroupChipStyle = useMemo(() => activeGroupTheme ? ({
@@ -494,7 +496,6 @@ export default function PostCard(props: Props) {
   const themedGroupChipText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.chipTextColor }) : null, [activeGroupTheme]);
   const themedCaptionStyle = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
   const themedActionsStyle = useMemo(() => activeGroupTheme ? ({ borderTopColor: activeGroupTheme.borderColor }) : null, [activeGroupTheme]);
-  const groupAnimationVariantId = activeGroupTheme?.animationVariantId ?? 'none';
   const shouldAnimateGroupCard = !!activeGroupTheme && groupAnimationVariantId !== 'none' && isGroupPost && !!props.isVisible;
   const [cardFrame, setCardFrame] = useState({ width: 0, height: 0 });
 
@@ -1160,7 +1161,7 @@ export default function PostCard(props: Props) {
           setCardFrame((prev) => (prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }));
         }}
       >
-        {activeGroupTheme?.cardImageUrl ? (
+        {activeGroupTheme?.cardImageUrl && !isPremiumGroupCard ? (
           <>
             <Image source={{ uri: activeGroupTheme.cardImageUrl }} style={styles.themedCardImage} resizeMode="cover" />
             <View style={[styles.themedCardOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.08, Math.min(0.32, (activeGroupTheme.overlayStrength ?? 72) / 180))})` }]} />
@@ -1438,7 +1439,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
-  card: { backgroundColor: '#13132a', borderRadius: 14, overflow: 'hidden' },
+  card: { backgroundColor: '#13132a', borderRadius: 14, overflow: 'hidden', position: 'relative', zIndex: 1 },
   themedCard: { borderWidth: 1 },
   themedCardImage: { ...StyleSheet.absoluteFillObject, opacity: 0.4 },
   themedCardOverlay: { ...StyleSheet.absoluteFillObject },
