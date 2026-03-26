@@ -96,7 +96,7 @@ function AnimationVariantPreviewCard({
 }) {
   const [cardFrame, setCardFrame] = useState({ width: 0, height: 0 });
   const overlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.08, 0.32);
-  const variantLabel = GROUP_CARD_ANIMATION_VARIANTS.find((variant) => variant.id === variantId)?.name ?? 'No animation';
+  const variantLabel = GROUP_CARD_ANIMATION_VARIANTS.find((variant) => variant.id === variantId)?.name ?? 'Default';
   const isLive = variantId === activeVariantId;
   const isPremiumPreview = variantId === 'premium';
 
@@ -136,7 +136,7 @@ function AnimationVariantPreviewCard({
           <View style={styles.animationPreviewContent}>
           <View style={[styles.animationPreviewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
             <Ionicons name="sparkles-outline" size={11} color={theme.chipTextColor} />
-            <Text style={[styles.animationPreviewChipText, { color: theme.chipTextColor }]}>{variantId === 'none' ? 'Static feed card' : 'Animated feed card'}</Text>
+            <Text style={[styles.animationPreviewChipText, { color: theme.chipTextColor }]}>{variantId === 'none' ? 'Default feed card' : 'Animated feed card'}</Text>
           </View>
           <Text style={[styles.animationPreviewTitleText, { color: theme.textColor }]}>View group • {groupName}</Text>
           <Text style={[styles.animationPreviewBodyText, { color: theme.textColor }]}>This is how the border motion will read on a real post card for your current theme.</Text>

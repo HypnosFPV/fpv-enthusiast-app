@@ -33,11 +33,11 @@ export interface GroupThemeTokens {
 export const GROUP_CARD_ANIMATION_VARIANTS: GroupCardAnimationVariant[] = [
   {
     id: 'none',
-    name: 'Static carbon',
+    name: 'Default',
     tier: 'free',
     priceCents: 0,
     badge: 'Free',
-    description: 'Keeps the full carbon-fiber card static. Use this when you want the woven surface without electrical edge motion.',
+    description: 'Uses the default feed card with no premium carbon-fiber treatment and no electrical edge motion.',
   },
   {
     id: 'basic',
