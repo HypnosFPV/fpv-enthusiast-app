@@ -14,9 +14,9 @@ const VARIANT_PRICES: Record<string, number> = {
 };
 
 const VARIANT_LABELS: Record<string, string> = {
-  basic: 'Basic sweep',
-  standard: 'Standard glow',
-  premium: 'Premium aura',
+  basic: 'Edge pulse',
+  standard: 'Perimeter charge',
+  premium: 'Electric storm',
 };
 
 serve(async (req) => {

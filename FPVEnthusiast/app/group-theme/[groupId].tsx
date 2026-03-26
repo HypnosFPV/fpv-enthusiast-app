@@ -415,7 +415,7 @@ export default function GroupThemeScreen() {
                 <Ionicons name="sparkles-outline" size={18} color="#ff9b68" />
               </View>
               <Text style={styles.quickActionTitle}>Custom theme</Text>
-              <Text style={styles.quickActionMeta}>Jump to the premium builder and preview the art treatment.</Text>
+              <Text style={styles.quickActionMeta}>Jump to the carbon-fiber builder and preview the card treatment.</Text>
               <View style={styles.quickActionBadge}>
                 <Text style={styles.quickActionBadgeText}>{customThemes.length > 0 ? `${customThemes.length} saved` : 'Build now'}</Text>
               </View>
@@ -704,7 +704,7 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
         borderColor: 'rgba(255,255,255,0.05)',
       };
   const previewBodyText = hasCardArt
-    ? 'Pinned a new look for Admin test — this is how the premium card treatment will read in the feed with your uploaded art, overlay, and surface glow applied.'
+    ? 'Pinned a new look for Admin test — this is how the carbon-fiber card treatment will read in the feed with your uploaded art, overlay, and electric edge applied.'
     : '';
 
   return (
@@ -755,7 +755,7 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
                       <Ionicons name="albums-outline" size={20} color={theme.chipTextColor} />
                     </View>
                     <Text style={[styles.previewEmptyMediaTitle, { color: theme.textColor }]}>Card art preview appears here</Text>
-                    <Text style={[styles.previewEmptyMediaText, { color: theme.mutedTextColor }]}>Upload artwork above to see the animated premium treatment on a real post surface.</Text>
+                    <Text style={[styles.previewEmptyMediaText, { color: theme.mutedTextColor }]}>Upload artwork above to see the carbon-fiber treatment on a real post surface.</Text>
                   </View>
                 </View>
               ) : (
