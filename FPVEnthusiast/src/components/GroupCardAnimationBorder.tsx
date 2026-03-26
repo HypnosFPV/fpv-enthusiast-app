@@ -18,6 +18,39 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+function hexToRgb(input: string) {
+  const hex = input.trim().replace('#', '');
+  const normalized = hex.length === 3
+    ? hex.split('').map((part) => part + part).join('')
+    : hex.slice(0, 6);
+
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return { r: 255, g: 255, b: 255 };
+  }
+
+  return {
+    r: parseInt(normalized.slice(0, 2), 16),
+    g: parseInt(normalized.slice(2, 4), 16),
+    b: parseInt(normalized.slice(4, 6), 16),
+  };
+}
+
+function mixColors(colorA: string, colorB: string, weight = 0.5) {
+  const a = hexToRgb(colorA);
+  const b = hexToRgb(colorB);
+  const t = clamp(weight, 0, 1);
+  const r = Math.round(a.r + (b.r - a.r) * t);
+  const g = Math.round(a.g + (b.g - a.g) * t);
+  const bValue = Math.round(a.b + (b.b - a.b) * t);
+  return `rgb(${r}, ${g}, ${bValue})`;
+}
+
+function withAlpha(color: string, alpha: number) {
+  const { r, g, b } = hexToRgb(color);
+  const safeAlpha = clamp(alpha, 0, 1);
+  return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+}
+
 function buildSegmentTranslate(anim: Animated.Value, segmentStart: number, distance: number, reverse = false) {
   const from = reverse ? distance : 0;
   const to = reverse ? 0 : distance;
@@ -235,9 +268,20 @@ export default function GroupCardAnimationBorder({
   const bottomOpacity = buildSegmentOpacity(orbitAnim, 2, 0.82);
   const leftOpacity = buildSegmentOpacity(orbitAnim, 3, 0.82);
 
-  const premiumGold = '#f0c45e';
-  const premiumGoldBright = '#fff4c8';
-  const premiumGoldDeep = '#8d6218';
+  const premiumTone = useMemo(
+    () => ({
+      outerGlow: withAlpha(accentColor, 0.18),
+      outerGlowSoft: withAlpha(mixColors(accentColor, '#ffffff', 0.18), 0.14),
+      midGlow: withAlpha(mixColors(accentColor, borderColor, 0.32), 0.24),
+      nearGlow: withAlpha(mixColors(accentColor, '#ffffff', 0.42), 0.32),
+      frameDeep: mixColors(borderColor, '#000000', 0.12),
+      frameBase: mixColors(accentColor, borderColor, 0.22),
+      frameBright: mixColors(accentColor, '#ffffff', 0.62),
+      accentBright: mixColors(accentColor, '#ffffff', 0.76),
+      accentSoft: mixColors(accentColor, '#ffffff', 0.38),
+    }),
+    [accentColor, borderColor],
+  );
 
   const premiumCanvasWidth = width + outerSpread * 2;
   const premiumCanvasHeight = height + outerSpread * 2;
@@ -350,17 +394,23 @@ export default function GroupCardAnimationBorder({
     const frameH = Math.max(height - 1, 0);
     const frameR = cornerRadius + 1;
 
+    const outerFarX = outerSpread - 14;
+    const outerFarY = outerSpread - 14;
+    const outerFarW = width + 28;
+    const outerFarH = height + 28;
+    const outerFarR = cornerRadius + 14;
+
     const outerX = outerSpread - 10;
     const outerY = outerSpread - 10;
     const outerW = width + 20;
     const outerH = height + 20;
     const outerR = cornerRadius + 10;
 
-    const midX = outerSpread - 5;
-    const midY = outerSpread - 5;
-    const midW = width + 10;
-    const midH = height + 10;
-    const midR = cornerRadius + 6;
+    const midX = outerSpread - 6;
+    const midY = outerSpread - 6;
+    const midW = width + 12;
+    const midH = height + 12;
+    const midR = cornerRadius + 7;
 
     const nearX = outerSpread - 2;
     const nearY = outerSpread - 2;
@@ -401,7 +451,8 @@ export default function GroupCardAnimationBorder({
           ]}
         >
           <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Rect x={outerX} y={outerY} width={outerW} height={outerH} rx={outerR} ry={outerR} stroke={accentColor} strokeWidth={18} fill="none" />
+            <Rect x={outerFarX} y={outerFarY} width={outerFarW} height={outerFarH} rx={outerFarR} ry={outerFarR} stroke={premiumTone.outerGlowSoft} strokeWidth={24} fill="none" />
+            <Rect x={outerX} y={outerY} width={outerW} height={outerH} rx={outerR} ry={outerR} stroke={premiumTone.outerGlow} strokeWidth={18} fill="none" />
           </Svg>
         </Animated.View>
 
@@ -416,7 +467,8 @@ export default function GroupCardAnimationBorder({
           ]}
         >
           <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Rect x={outerX} y={outerY} width={outerW} height={outerH} rx={outerR} ry={outerR} stroke={premiumGold} strokeWidth={14} fill="none" />
+            <Rect x={outerX} y={outerY} width={outerW} height={outerH} rx={outerR} ry={outerR} stroke={premiumTone.midGlow} strokeWidth={14} fill="none" />
+            <Rect x={midX} y={midY} width={midW} height={midH} rx={midR} ry={midR} stroke={premiumTone.nearGlow} strokeWidth={8} fill="none" />
           </Svg>
         </Animated.View>
 
@@ -431,8 +483,8 @@ export default function GroupCardAnimationBorder({
           ]}
         >
           <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Rect x={midX} y={midY} width={midW} height={midH} rx={midR} ry={midR} stroke={premiumGoldBright} strokeWidth={6} fill="none" />
-            <Rect x={nearX} y={nearY} width={nearW} height={nearH} rx={nearR} ry={nearR} stroke={premiumGold} strokeWidth={2.5} fill="none" />
+            <Rect x={midX} y={midY} width={midW} height={midH} rx={midR} ry={midR} stroke={premiumTone.accentSoft} strokeWidth={4.5} fill="none" />
+            <Rect x={nearX} y={nearY} width={nearW} height={nearH} rx={nearR} ry={nearR} stroke={premiumTone.frameBase} strokeWidth={2.2} fill="none" />
           </Svg>
         </Animated.View>
 
@@ -440,11 +492,11 @@ export default function GroupCardAnimationBorder({
           <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
             <Defs>
               <SvgLinearGradient id={premiumGradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-                <Stop offset="0%" stopColor={premiumGoldDeep} />
-                <Stop offset="16%" stopColor={premiumGold} />
-                <Stop offset="50%" stopColor={premiumGoldBright} />
-                <Stop offset="84%" stopColor={premiumGold} />
-                <Stop offset="100%" stopColor={premiumGoldDeep} />
+                <Stop offset="0%" stopColor={premiumTone.frameDeep} />
+                <Stop offset="18%" stopColor={premiumTone.frameBase} />
+                <Stop offset="52%" stopColor={premiumTone.frameBright} />
+                <Stop offset="82%" stopColor={premiumTone.frameBase} />
+                <Stop offset="100%" stopColor={premiumTone.frameDeep} />
               </SvgLinearGradient>
             </Defs>
             <Rect
@@ -463,17 +515,17 @@ export default function GroupCardAnimationBorder({
 
         <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumAccentOpacity }]}>
           <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Line x1={topLeftHX1} y1={frameY} x2={topLeftHX2} y2={frameY} stroke={premiumGoldBright} strokeWidth={1.1} strokeLinecap="round" />
-            <Line x1={frameX} y1={topLeftVY1} x2={frameX} y2={topLeftVY2} stroke={premiumGoldBright} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={topLeftHX1} y1={frameY} x2={topLeftHX2} y2={frameY} stroke={premiumTone.accentBright} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={frameX} y1={topLeftVY1} x2={frameX} y2={topLeftVY2} stroke={premiumTone.accentBright} strokeWidth={1.1} strokeLinecap="round" />
 
-            <Line x1={topRightHX1} y1={frameY} x2={topRightHX2} y2={frameY} stroke={premiumGoldBright} strokeWidth={1.1} strokeLinecap="round" />
-            <Line x1={frameX + frameW} y1={topRightVY1} x2={frameX + frameW} y2={topRightVY2} stroke={premiumGoldBright} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={topRightHX1} y1={frameY} x2={topRightHX2} y2={frameY} stroke={premiumTone.accentBright} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={frameX + frameW} y1={topRightVY1} x2={frameX + frameW} y2={topRightVY2} stroke={premiumTone.accentBright} strokeWidth={1.1} strokeLinecap="round" />
 
-            <Line x1={bottomLeftHX1} y1={frameY + frameH} x2={bottomLeftHX2} y2={frameY + frameH} stroke={premiumGold} strokeWidth={1.1} strokeLinecap="round" />
-            <Line x1={frameX} y1={bottomLeftVY1} x2={frameX} y2={bottomLeftVY2} stroke={premiumGold} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={bottomLeftHX1} y1={frameY + frameH} x2={bottomLeftHX2} y2={frameY + frameH} stroke={premiumTone.accentSoft} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={frameX} y1={bottomLeftVY1} x2={frameX} y2={bottomLeftVY2} stroke={premiumTone.accentSoft} strokeWidth={1.1} strokeLinecap="round" />
 
-            <Line x1={bottomRightHX1} y1={frameY + frameH} x2={bottomRightHX2} y2={frameY + frameH} stroke={premiumGold} strokeWidth={1.1} strokeLinecap="round" />
-            <Line x1={frameX + frameW} y1={bottomRightVY1} x2={frameX + frameW} y2={bottomRightVY2} stroke={premiumGold} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={bottomRightHX1} y1={frameY + frameH} x2={bottomRightHX2} y2={frameY + frameH} stroke={premiumTone.accentSoft} strokeWidth={1.1} strokeLinecap="round" />
+            <Line x1={frameX + frameW} y1={bottomRightVY1} x2={frameX + frameW} y2={bottomRightVY2} stroke={premiumTone.accentSoft} strokeWidth={1.1} strokeLinecap="round" />
           </Svg>
         </Animated.View>
       </Animated.View>
