@@ -117,7 +117,7 @@ export default function GroupCardAnimationBorder({
   const isStandard = variant === 'standard';
   const isPremium = variant === 'premium';
 
-  const outerSpread = isPremium ? 28 : isStandard ? 8 : 3;
+  const outerSpread = isPremium ? 18 : isStandard ? 8 : 3;
   const frameInset = Math.max(Math.round(cornerRadius * 0.72), 10);
   const verticalInset = Math.max(Math.round(cornerRadius * 0.82), 12);
 
@@ -131,6 +131,8 @@ export default function GroupCardAnimationBorder({
   const basicCometWidth = clamp(horizontalTrackLength * 0.22, 48, 86);
   const standardHorizontalCometWidth = clamp(horizontalTrackLength * 0.16, 44, 70);
   const standardVerticalCometHeight = clamp(verticalTrackLength * 0.18, 42, 64);
+  const premiumHorizontalCometWidth = clamp(horizontalTrackLength * 0.14, 36, 56);
+  const premiumVerticalCometHeight = clamp(verticalTrackLength * 0.15, 34, 52);
 
   useEffect(() => {
     pulseLoopRef.current?.stop?.();
@@ -203,8 +205,8 @@ export default function GroupCardAnimationBorder({
       orbitLoopRef.current = Animated.loop(
         Animated.sequence([
           Animated.timing(orbitAnim, {
-            toValue: 1,
-            duration: 4600,
+            toValue: 4,
+            duration: 6800,
             easing: Easing.linear,
             useNativeDriver: true,
           }),
@@ -247,25 +249,17 @@ export default function GroupCardAnimationBorder({
     outputRange: [0.08, 0.16],
   });
 
-  const premiumAuraOpacity = pulseAnim.interpolate({
+  const premiumCarbonOpacity = pulseAnim.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.12, 0.24, 0.12],
+    outputRange: [0.92, 1, 0.92],
   });
-  const premiumFrameOpacity = pulseAnim.interpolate({
+  const premiumRailOpacity = pulseAnim.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.84, 1, 0.84],
+    outputRange: [0.24, 0.42, 0.24],
   });
-  const premiumHighlightOpacity = pulseAnim.interpolate({
+  const premiumGlowOpacity = pulseAnim.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.28, 0.52, 0.28],
-  });
-  const premiumCornerOpacity = pulseAnim.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0.62, 0.9, 0.62],
-  });
-  const premiumSheenOpacity = orbitAnim.interpolate({
-    inputRange: [0, 0.12, 0.5, 0.88, 1],
-    outputRange: [0, 0.18, 0.76, 0.18, 0],
+    outputRange: [0.08, 0.18, 0.08],
   });
 
   const basicTopX = orbitAnim.interpolate({
@@ -284,24 +278,28 @@ export default function GroupCardAnimationBorder({
   const bottomOpacity = buildSegmentOpacity(orbitAnim, 2, 0.82);
   const leftOpacity = buildSegmentOpacity(orbitAnim, 3, 0.82);
 
-  const premiumTone = useMemo(() => {
-    const champagne = '#f4e7d2';
-    const warmMetal = mixColors(accentColor, champagne, 0.26);
+  const premiumTopX = buildSegmentTranslate(orbitAnim, 0, horizontalTrackLength - premiumHorizontalCometWidth, false);
+  const premiumRightY = buildSegmentTranslate(orbitAnim, 1, verticalTrackLength - premiumVerticalCometHeight, false);
+  const premiumBottomX = buildSegmentTranslate(orbitAnim, 2, horizontalTrackLength - premiumHorizontalCometWidth, true);
+  const premiumLeftY = buildSegmentTranslate(orbitAnim, 3, verticalTrackLength - premiumVerticalCometHeight, true);
 
-    return {
-      metalShadow: mixColors(borderColor, '#000000', 0.68),
-      metalBase: mixColors(borderColor, warmMetal, 0.52),
-      metalLift: mixColors(accentColor, champagne, 0.62),
-      metalHot: mixColors(accentColor, '#ffffff', 0.88),
-      edgeSoft: mixColors(accentColor, champagne, 0.74),
-      edgeHot: mixColors(accentColor, '#ffffff', 0.95),
-      auraTop: withAlpha(mixColors(accentColor, '#ffffff', 0.52), 0.11),
-      auraSoft: withAlpha(mixColors(accentColor, champagne, 0.34), 0.04),
-      cornerFlare: withAlpha(mixColors(accentColor, '#ffffff', 0.7), 0.24),
-      sheenSoft: withAlpha(mixColors(accentColor, '#ffffff', 0.82), 0.18),
-      sheenHot: withAlpha('#ffffff', 0.82),
-    };
-  }, [accentColor, borderColor]);
+  const premiumTopOpacity = buildSegmentOpacity(orbitAnim, 0, 0.96);
+  const premiumRightOpacity = buildSegmentOpacity(orbitAnim, 1, 0.96);
+  const premiumBottomOpacity = buildSegmentOpacity(orbitAnim, 2, 0.96);
+  const premiumLeftOpacity = buildSegmentOpacity(orbitAnim, 3, 0.96);
+
+  const premiumTone = useMemo(() => ({
+    carbonShadow: mixColors(borderColor, '#000000', 0.82),
+    carbonBase: mixColors(mixColors(borderColor, accentColor, 0.08), '#101214', 0.72),
+    carbonMid: mixColors(mixColors(borderColor, accentColor, 0.12), '#24282c', 0.46),
+    carbonEdge: mixColors(borderColor, '#4c5259', 0.18),
+    carbonHatch: withAlpha(mixColors('#c7ccd1', accentColor, 0.08), 0.18),
+    electricBase: accentColor,
+    electricHot: mixColors(accentColor, '#ffffff', 0.76),
+    electricSoft: withAlpha(accentColor, 0.58),
+    electricGlow: withAlpha(accentColor, 0.18),
+    electricGlowStrong: withAlpha(mixColors(accentColor, '#ffffff', 0.42), 0.28),
+  }), [accentColor, borderColor]);
 
   const premiumCanvasWidth = width + outerSpread * 2;
   const premiumCanvasHeight = height + outerSpread * 2;
@@ -408,137 +406,208 @@ export default function GroupCardAnimationBorder({
   );
 
   if (isPremium) {
-    const outerFrameX = outerSpread + 0.5;
-    const outerFrameY = outerSpread + 0.5;
-    const outerFrameW = Math.max(width - 1, 0);
-    const outerFrameH = Math.max(height - 1, 0);
-    const outerFrameR = cornerRadius + 1;
+    const frameX = outerSpread + 0.5;
+    const frameY = outerSpread + 0.5;
+    const frameW = Math.max(width - 1, 0);
+    const frameH = Math.max(height - 1, 0);
+    const frameR = cornerRadius + 1;
 
-    const innerInset = 1.8;
-    const innerFrameX = outerFrameX + innerInset;
-    const innerFrameY = outerFrameY + innerInset;
-    const innerFrameW = Math.max(outerFrameW - innerInset * 2, 0);
-    const innerFrameH = Math.max(outerFrameH - innerInset * 2, 0);
-    const innerFrameR = Math.max(outerFrameR - innerInset, 1);
+    const innerInset = 2;
+    const innerFrameX = frameX + innerInset;
+    const innerFrameY = frameY + innerInset;
+    const innerFrameW = Math.max(frameW - innerInset * 2, 0);
+    const innerFrameH = Math.max(frameH - innerInset * 2, 0);
+    const innerFrameR = Math.max(frameR - innerInset, 1);
 
-    const topAuraX = outerSpread + 18;
-    const topAuraY = outerSpread - 4;
-    const topAuraW = Math.max(width - 36, 36);
-    const topAuraH = 10;
+    const stripInset = 6;
+    const stripThickness = 7;
+    const topStripX = frameX + stripInset;
+    const topStripY = frameY + 2;
+    const topStripW = Math.max(frameW - stripInset * 2, 24);
+    const bottomStripY = frameY + frameH - stripThickness - 2;
+    const leftStripX = frameX + 2;
+    const rightStripX = frameX + frameW - stripThickness - 2;
+    const sideStripY = frameY + 8;
+    const sideStripH = Math.max(frameH - 16, 28);
 
-    const cornerFlareSize = clamp(cornerRadius + 10, 24, 34);
-    const topLeftFlareX = outerSpread + 2;
-    const topLeftFlareY = outerSpread - 2;
-    const topRightFlareX = outerSpread + width - cornerFlareSize - 2;
-    const topRightFlareY = outerSpread - 2;
-
-    const topEdgeInset = Math.max(frameInset - 2, 12);
-    const topEdgeX1 = outerFrameX + topEdgeInset;
-    const topEdgeX2 = outerFrameX + outerFrameW - topEdgeInset;
-    const topEdgeY = outerFrameY + 0.6;
-
-    const cornerInset = 12;
-    const cornerHorizontal = clamp(width * 0.08, 14, 24);
-    const cornerVertical = clamp(height * 0.06, 12, 20);
-
-    const sheenTrackX = outerSpread + topEdgeInset;
-    const sheenTrackY = outerSpread + 1;
-    const sheenTrackW = Math.max(width - topEdgeInset * 2, 40);
-    const sheenTrackH = clamp(Math.round(height * 0.14), 12, 20);
-    const sheenBandW = clamp(Math.round(width * 0.11), 24, 44);
-    const premiumSheenX = orbitAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [-sheenBandW, sheenTrackW + sheenBandW],
-    });
+    const hatchSpacing = 10;
+    const topHatchCount = Math.ceil((topStripW + stripThickness * 2) / hatchSpacing);
+    const sideHatchCount = Math.ceil((sideStripH + stripThickness * 2) / hatchSpacing);
+    const cornerBracket = 14;
 
     return (
       <Animated.View pointerEvents="none" style={[styles.wrap, dynamicStyles.wrap, dynamicStyles.premiumCanvas]}>
-        <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumAuraOpacity }]}>
+        <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumCarbonOpacity }]}>
           <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Defs>
-              <SvgLinearGradient id={`${premiumIdBase}-top-aura`} x1="0%" y1="0%" x2="0%" y2="100%">
-                <Stop offset="0%" stopColor={premiumTone.auraTop} />
-                <Stop offset="46%" stopColor={premiumTone.auraSoft} />
-                <Stop offset="100%" stopColor={withAlpha(premiumTone.metalHot, 0)} />
-              </SvgLinearGradient>
-              <SvgRadialGradient id={`${premiumIdBase}-corner-left`} cx="72%" cy="74%" r="82%">
-                <Stop offset="0%" stopColor={premiumTone.cornerFlare} />
-                <Stop offset="44%" stopColor={withAlpha(premiumTone.metalLift, 0.06)} />
-                <Stop offset="100%" stopColor={withAlpha(premiumTone.metalLift, 0)} />
-              </SvgRadialGradient>
-              <SvgRadialGradient id={`${premiumIdBase}-corner-right`} cx="28%" cy="74%" r="82%">
-                <Stop offset="0%" stopColor={premiumTone.cornerFlare} />
-                <Stop offset="44%" stopColor={withAlpha(premiumTone.metalLift, 0.06)} />
-                <Stop offset="100%" stopColor={withAlpha(premiumTone.metalLift, 0)} />
-              </SvgRadialGradient>
-            </Defs>
+            <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} stroke={premiumTone.carbonShadow} strokeWidth={1.4} fill="none" />
+            <Rect x={innerFrameX} y={innerFrameY} width={innerFrameW} height={innerFrameH} rx={innerFrameR} ry={innerFrameR} stroke={premiumTone.carbonEdge} strokeWidth={1} fill="none" />
 
-            <Rect x={topAuraX} y={topAuraY} width={topAuraW} height={topAuraH} rx={topAuraH / 2} ry={topAuraH / 2} fill={`url(#${premiumIdBase}-top-aura)`} />
-            <Rect x={topLeftFlareX} y={topLeftFlareY} width={cornerFlareSize} height={cornerFlareSize} rx={cornerFlareSize / 2} ry={cornerFlareSize / 2} fill={`url(#${premiumIdBase}-corner-left)`} />
-            <Rect x={topRightFlareX} y={topRightFlareY} width={cornerFlareSize} height={cornerFlareSize} rx={cornerFlareSize / 2} ry={cornerFlareSize / 2} fill={`url(#${premiumIdBase}-corner-right)`} />
+            <Rect x={topStripX} y={topStripY} width={topStripW} height={stripThickness} rx={3} ry={3} fill={premiumTone.carbonBase} />
+            <Rect x={topStripX} y={bottomStripY} width={topStripW} height={stripThickness} rx={3} ry={3} fill={premiumTone.carbonBase} />
+            <Rect x={leftStripX} y={sideStripY} width={stripThickness} height={sideStripH} rx={3} ry={3} fill={premiumTone.carbonMid} />
+            <Rect x={rightStripX} y={sideStripY} width={stripThickness} height={sideStripH} rx={3} ry={3} fill={premiumTone.carbonMid} />
+
+            {Array.from({ length: topHatchCount }).map((_, index) => {
+              const x = topStripX - stripThickness + index * hatchSpacing;
+              return (
+                <Line
+                  key={`top-hatch-${index}`}
+                  x1={x}
+                  y1={topStripY + stripThickness}
+                  x2={x + stripThickness}
+                  y2={topStripY}
+                  stroke={premiumTone.carbonHatch}
+                  strokeWidth={1}
+                  strokeLinecap="round"
+                />
+              );
+            })}
+            {Array.from({ length: topHatchCount }).map((_, index) => {
+              const x = topStripX - stripThickness + index * hatchSpacing;
+              return (
+                <Line
+                  key={`bottom-hatch-${index}`}
+                  x1={x}
+                  y1={bottomStripY}
+                  x2={x + stripThickness}
+                  y2={bottomStripY + stripThickness}
+                  stroke={premiumTone.carbonHatch}
+                  strokeWidth={1}
+                  strokeLinecap="round"
+                />
+              );
+            })}
+            {Array.from({ length: sideHatchCount }).map((_, index) => {
+              const y = sideStripY - stripThickness + index * hatchSpacing;
+              return (
+                <Line
+                  key={`left-hatch-${index}`}
+                  x1={leftStripX}
+                  y1={y}
+                  x2={leftStripX + stripThickness}
+                  y2={y + stripThickness}
+                  stroke={premiumTone.carbonHatch}
+                  strokeWidth={1}
+                  strokeLinecap="round"
+                />
+              );
+            })}
+            {Array.from({ length: sideHatchCount }).map((_, index) => {
+              const y = sideStripY - stripThickness + index * hatchSpacing;
+              return (
+                <Line
+                  key={`right-hatch-${index}`}
+                  x1={rightStripX + stripThickness}
+                  y1={y}
+                  x2={rightStripX}
+                  y2={y + stripThickness}
+                  stroke={premiumTone.carbonHatch}
+                  strokeWidth={1}
+                  strokeLinecap="round"
+                />
+              );
+            })}
+
+            <Line x1={frameX + 10} y1={frameY} x2={frameX + 10 + cornerBracket} y2={frameY} stroke={premiumTone.carbonEdge} strokeWidth={1.2} strokeLinecap="round" />
+            <Line x1={frameX} y1={frameY + 10} x2={frameX} y2={frameY + 10 + cornerBracket} stroke={premiumTone.carbonEdge} strokeWidth={1.2} strokeLinecap="round" />
+            <Line x1={frameX + frameW - 10 - cornerBracket} y1={frameY} x2={frameX + frameW - 10} y2={frameY} stroke={premiumTone.carbonEdge} strokeWidth={1.2} strokeLinecap="round" />
+            <Line x1={frameX + frameW} y1={frameY + 10} x2={frameX + frameW} y2={frameY + 10 + cornerBracket} stroke={premiumTone.carbonEdge} strokeWidth={1.2} strokeLinecap="round" />
           </Svg>
         </Animated.View>
 
-        <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumFrameOpacity }]}>
-          <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Defs>
-              <SvgLinearGradient id={`${premiumIdBase}-outer-frame`} x1="0%" y1="0%" x2="0%" y2="100%">
-                <Stop offset="0%" stopColor={premiumTone.metalLift} />
-                <Stop offset="28%" stopColor={premiumTone.metalBase} />
-                <Stop offset="100%" stopColor={premiumTone.metalShadow} />
-              </SvgLinearGradient>
-              <SvgLinearGradient id={`${premiumIdBase}-inner-frame`} x1="0%" y1="0%" x2="100%" y2="0%">
-                <Stop offset="0%" stopColor={premiumTone.metalShadow} />
-                <Stop offset="18%" stopColor={premiumTone.edgeSoft} />
-                <Stop offset="50%" stopColor={premiumTone.edgeHot} />
-                <Stop offset="82%" stopColor={premiumTone.edgeSoft} />
-                <Stop offset="100%" stopColor={premiumTone.metalShadow} />
-              </SvgLinearGradient>
-              <SvgLinearGradient id={`${premiumIdBase}-top-rim`} x1="0%" y1="0%" x2="100%" y2="0%">
-                <Stop offset="0%" stopColor={withAlpha(premiumTone.edgeSoft, 0)} />
-                <Stop offset="28%" stopColor={withAlpha(premiumTone.edgeSoft, 0.56)} />
-                <Stop offset="50%" stopColor={premiumTone.edgeHot} />
-                <Stop offset="72%" stopColor={withAlpha(premiumTone.edgeSoft, 0.56)} />
-                <Stop offset="100%" stopColor={withAlpha(premiumTone.edgeSoft, 0)} />
-              </SvgLinearGradient>
-            </Defs>
+        <Animated.View
+          style={[
+            styles.standardGlow,
+            {
+              top: outerSpread - 1,
+              right: outerSpread - 1,
+              bottom: outerSpread - 1,
+              left: outerSpread - 1,
+              borderRadius: cornerRadius + 3,
+              borderColor: premiumTone.electricBase,
+              shadowColor: premiumTone.electricBase,
+              opacity: premiumGlowOpacity,
+            },
+          ]}
+        />
 
-            <Rect x={outerFrameX} y={outerFrameY} width={outerFrameW} height={outerFrameH} rx={outerFrameR} ry={outerFrameR} stroke={`url(#${premiumIdBase}-outer-frame)`} strokeWidth={1.1} fill="none" />
-            <Rect x={innerFrameX} y={innerFrameY} width={innerFrameW} height={innerFrameH} rx={innerFrameR} ry={innerFrameR} stroke={`url(#${premiumIdBase}-inner-frame)`} strokeWidth={0.95} fill="none" />
-            <Line x1={topEdgeX1} y1={topEdgeY} x2={topEdgeX2} y2={topEdgeY} stroke={`url(#${premiumIdBase}-top-rim)`} strokeWidth={1.05} strokeLinecap="round" />
-          </Svg>
+        <Animated.View style={[styles.frameHorizontal, dynamicStyles.standardTopFrame, { opacity: premiumRailOpacity }]}>
+          <LinearGradient colors={[withAlpha(accentColor, 0), premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, withAlpha(accentColor, 0)]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
+        </Animated.View>
+        <Animated.View style={[styles.frameVertical, dynamicStyles.standardRightFrame, { opacity: premiumRailOpacity }]}>
+          <LinearGradient colors={[withAlpha(accentColor, 0), premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, withAlpha(accentColor, 0)]} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
+        </Animated.View>
+        <Animated.View style={[styles.frameHorizontal, dynamicStyles.standardBottomFrame, { opacity: premiumRailOpacity }]}>
+          <LinearGradient colors={[withAlpha(accentColor, 0), premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, withAlpha(accentColor, 0)]} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
+        </Animated.View>
+        <Animated.View style={[styles.frameVertical, dynamicStyles.standardLeftFrame, { opacity: premiumRailOpacity }]}>
+          <LinearGradient colors={[withAlpha(accentColor, 0), premiumTone.electricSoft, premiumTone.electricHot, premiumTone.electricSoft, withAlpha(accentColor, 0)]} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
         </Animated.View>
 
-        <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumCornerOpacity }]}>
-          <Svg width={premiumCanvasWidth} height={premiumCanvasHeight}>
-            <Line x1={outerFrameX + cornerInset} y1={outerFrameY} x2={outerFrameX + cornerInset + cornerHorizontal} y2={outerFrameY} stroke={premiumTone.edgeHot} strokeWidth={1.05} strokeLinecap="round" />
-            <Line x1={outerFrameX} y1={outerFrameY + cornerInset} x2={outerFrameX} y2={outerFrameY + cornerInset + cornerVertical} stroke={premiumTone.edgeSoft} strokeWidth={1.05} strokeLinecap="round" />
-            <Line x1={outerFrameX + outerFrameW - cornerInset - cornerHorizontal} y1={outerFrameY} x2={outerFrameX + outerFrameW - cornerInset} y2={outerFrameY} stroke={premiumTone.edgeHot} strokeWidth={1.05} strokeLinecap="round" />
-            <Line x1={outerFrameX + outerFrameW} y1={outerFrameY + cornerInset} x2={outerFrameX + outerFrameW} y2={outerFrameY + cornerInset + cornerVertical} stroke={premiumTone.edgeSoft} strokeWidth={1.05} strokeLinecap="round" />
-          </Svg>
-        </Animated.View>
-
-        <Animated.View style={[styles.premiumLayer, dynamicStyles.premiumLayer, { opacity: premiumHighlightOpacity }]}>
-          <View style={[styles.premiumSheenTrack, { left: sheenTrackX, top: sheenTrackY, width: sheenTrackW, height: sheenTrackH }]}>
-            <Animated.View
-              style={[
-                styles.premiumSheenBand,
-                {
-                  width: sheenBandW,
-                  opacity: premiumSheenOpacity,
-                  transform: [{ translateX: premiumSheenX }],
-                },
-              ]}
-            >
-              <LinearGradient
-                colors={['transparent', premiumTone.sheenSoft, premiumTone.sheenHot, premiumTone.sheenSoft, 'transparent']}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={styles.fill}
-              />
-            </Animated.View>
-          </View>
-        </Animated.View>
+        <View style={[styles.standardTrack, dynamicStyles.standardTopTrack]}>
+          <Animated.View
+            style={[
+              styles.horizontalComet,
+              {
+                width: premiumHorizontalCometWidth,
+                height: 2.6,
+                opacity: premiumTopOpacity,
+                shadowColor: accentColor,
+                transform: [{ translateX: premiumTopX }],
+              },
+            ]}
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricHot, '#ffffff', premiumTone.electricHot, premiumTone.electricSoft, 'transparent']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={styles.fill} />
+          </Animated.View>
+        </View>
+        <View style={[styles.standardVerticalTrack, dynamicStyles.standardRightTrack]}>
+          <Animated.View
+            style={[
+              styles.verticalComet,
+              {
+                width: 2.6,
+                height: premiumVerticalCometHeight,
+                opacity: premiumRightOpacity,
+                shadowColor: accentColor,
+                transform: [{ translateY: premiumRightY }],
+              },
+            ]}
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricHot, '#ffffff', premiumTone.electricHot, premiumTone.electricSoft, 'transparent']} start={{ x: 0.5, y: 0 }} end={{ x: 0.5, y: 1 }} style={styles.fill} />
+          </Animated.View>
+        </View>
+        <View style={[styles.standardTrack, dynamicStyles.standardBottomTrack]}>
+          <Animated.View
+            style={[
+              styles.horizontalComet,
+              {
+                width: premiumHorizontalCometWidth,
+                height: 2.6,
+                opacity: premiumBottomOpacity,
+                shadowColor: accentColor,
+                transform: [{ translateX: premiumBottomX }],
+              },
+            ]}
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricHot, '#ffffff', premiumTone.electricHot, premiumTone.electricSoft, 'transparent']} start={{ x: 1, y: 0.5 }} end={{ x: 0, y: 0.5 }} style={styles.fill} />
+          </Animated.View>
+        </View>
+        <View style={[styles.standardVerticalTrack, dynamicStyles.standardLeftTrack]}>
+          <Animated.View
+            style={[
+              styles.verticalComet,
+              {
+                width: 2.6,
+                height: premiumVerticalCometHeight,
+                opacity: premiumLeftOpacity,
+                shadowColor: accentColor,
+                transform: [{ translateY: premiumLeftY }],
+              },
+            ]}
+          >
+            <LinearGradient colors={['transparent', premiumTone.electricSoft, premiumTone.electricHot, '#ffffff', premiumTone.electricHot, premiumTone.electricSoft, 'transparent']} start={{ x: 0.5, y: 1 }} end={{ x: 0.5, y: 0 }} style={styles.fill} />
+          </Animated.View>
+        </View>
       </Animated.View>
     );
   }
