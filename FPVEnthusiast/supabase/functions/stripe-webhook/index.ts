@@ -78,21 +78,26 @@ serve(async (req) => {
 
       const { data: existingPreference } = await supabase
         .from('social_group_theme_preferences')
-        .select('active_animation_variant_id')
+        .select('active_theme_type, active_theme_id, active_animation_variant_id')
         .eq('user_id', customTheme.owner_user_id)
         .eq('group_id', customTheme.group_id)
         .maybeSingle();
 
-      await supabase
-        .from('social_group_theme_preferences')
-        .upsert({
-          user_id: customTheme.owner_user_id,
-          group_id: customTheme.group_id,
-          active_theme_type: 'custom',
-          active_theme_id: customTheme.id,
-          active_animation_variant_id: existingPreference?.active_animation_variant_id ?? 'none',
-          updated_at: now,
-        }, { onConflict: 'user_id,group_id' });
+      const shouldAutoActivateTheme = !existingPreference
+        || (existingPreference.active_theme_type === 'custom' && existingPreference.active_theme_id === customTheme.id);
+
+      if (shouldAutoActivateTheme) {
+        await supabase
+          .from('social_group_theme_preferences')
+          .upsert({
+            user_id: customTheme.owner_user_id,
+            group_id: customTheme.group_id,
+            active_theme_type: 'custom',
+            active_theme_id: customTheme.id,
+            active_animation_variant_id: existingPreference?.active_animation_variant_id ?? 'none',
+            updated_at: now,
+          }, { onConflict: 'user_id,group_id' });
+      }
 
       return json({ received: true });
     }

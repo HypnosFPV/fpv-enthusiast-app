@@ -7,7 +7,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const CUSTOM_THEME_PRICE_CENTS = 299;
+const CUSTOM_THEME_PRICE_CENTS = 499;
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });

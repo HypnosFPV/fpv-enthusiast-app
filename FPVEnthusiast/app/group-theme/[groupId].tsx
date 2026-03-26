@@ -785,7 +785,7 @@ export default function GroupThemeScreen() {
             ) : (
               <>
                 <Ionicons name="sparkles-outline" size={16} color="#fff" />
-                <Text style={styles.primaryBtnText}>Preview approved — unlock for $2.99</Text>
+                <Text style={styles.primaryBtnText}>Preview approved — unlock for $4.99</Text>
               </>
             )}
           </TouchableOpacity>
