@@ -279,19 +279,14 @@ export default function GroupThemeScreen() {
     () => (ownedAnimationVariantIds.has('basic') ? 'basic' : 'none'),
     [ownedAnimationVariantIds],
   );
-  const activeAnimationLabel = useMemo(() => getGroupCardAnimationVariant(activeAnimationVariantId).name, [activeAnimationVariantId]);
+  const activeAnimationDetails = useMemo(() => getGroupCardAnimationVariant(activeAnimationVariantId), [activeAnimationVariantId]);
+  const activeAnimationLabel = activeAnimationDetails.name;
   const activeBaseThemeLabel = activeTheme.name;
   const activeBaseThemeTypeLabel = activePreference?.active_theme_type === 'custom' ? 'Custom theme' : 'Preset theme';
-  const activeAnimationSummary = activePreference?.active_theme_type === 'custom'
-    ? activeAnimationVariantId === 'basic'
-      ? 'Subtle outer edge pulse'
-      : 'Static card'
-    : activeAnimationLabel;
+  const activeAnimationSummary = activeAnimationLabel;
   const activeBaseThemeMeta = activePreference?.active_theme_type === 'custom'
-    ? activeAnimationVariantId === 'basic'
-      ? 'This custom theme stays mostly image-led. Edge pulse only rides the outside border so the uploaded card art still does most of the visual work.'
-      : 'This custom theme is intentionally mostly static so the uploaded card art does most of the visual work.'
-    : 'Preset themes can still be paired with whichever animation tier you have selected for this group.';
+    ? `${activeAnimationDetails.description} Custom themes still look best when the uploaded art stays readable underneath the border treatment.`
+    : activeAnimationDetails.description;
   const latestPendingCustomTheme = useMemo(
     () => customThemes.find((theme) => theme.status === 'pending_payment') ?? null,
     [customThemes],
@@ -322,14 +317,6 @@ export default function GroupThemeScreen() {
   useEffect(() => {
     setPreviewAnimationVariantId(activeAnimationVariantId);
   }, [activeAnimationVariantId]);
-
-  useEffect(() => {
-    if (loadingThemes) return;
-    const shouldNormalizeCustomThemeAnimation = activePreference?.active_theme_type === 'custom'
-      && (activeAnimationVariantId === 'standard' || activeAnimationVariantId === 'premium');
-    if (!shouldNormalizeCustomThemeAnimation) return;
-    void saveAnimationPreference(preferredCustomThemeAnimationVariantId);
-  }, [activeAnimationVariantId, activePreference?.active_theme_type, loadingThemes, preferredCustomThemeAnimationVariantId, saveAnimationPreference]);
 
   const handleUploadBranding = useCallback(async (kind: 'avatar' | 'cover') => {
     const result = await uploadImage(kind, kind === 'avatar' ? [1, 1] : [16, 9]);
@@ -813,7 +800,7 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Feed animation variants</Text>
-          <Text style={styles.sectionHint}>Cards stay static unless you unlock an animation. Custom themes work best with Static or Edge pulse so the uploaded art stays dominant; stronger effects can overpower the artwork.</Text>
+          <Text style={styles.sectionHint}>Cards stay static unless you unlock an animation. You can pair any unlocked tier with the current group theme, including custom themes; Edge pulse stays the most restrained, while the stronger tiers put more motion around the card.</Text>
           <AnimationVariantPreviewCard
             theme={activeTheme}
             groupName={group.name}
