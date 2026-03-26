@@ -11,6 +11,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -31,12 +32,20 @@ interface GroupAppearanceSummary {
   cover_url?: string | null;
 }
 
-const ACCENT_SWATCHES = ['#6c8cff', '#ff7a3d', '#40c98a', '#ffb648', '#d15bff', '#86c3ff', '#ff5f87'];
+const ACCENT_SWATCHES = [
+  { color: '#6c8cff', label: 'Electric blue' },
+  { color: '#ff7a3d', label: 'Ignition orange' },
+  { color: '#40c98a', label: 'Signal green' },
+  { color: '#ffb648', label: 'Gold rush' },
+  { color: '#d15bff', label: 'Nitro violet' },
+  { color: '#86c3ff', label: 'Sky line' },
+  { color: '#ff5f87', label: 'Hot coral' },
+];
 const SURFACE_SWATCHES = [
-  { surface: '#161933', secondary: '#101327', border: '#32407a', chip: 'rgba(108,140,255,0.18)', chipText: '#d0dcff', muted: '#b8bfd9' },
-  { surface: '#241510', secondary: '#160d0a', border: '#6a351d', chip: 'rgba(255,122,61,0.18)', chipText: '#ffd1bc', muted: '#d8b2a1' },
-  { surface: '#0f221b', secondary: '#0a1612', border: '#23533f', chip: 'rgba(64,201,138,0.18)', chipText: '#b8f3d7', muted: '#9bc9b6' },
-  { surface: '#23122f', secondary: '#140c1c', border: '#6d2f89', chip: 'rgba(209,91,255,0.18)', chipText: '#f0c5ff', muted: '#d2afd9' },
+  { label: 'Midnight carbon', surface: '#161933', secondary: '#101327', border: '#32407a', chip: 'rgba(108,140,255,0.18)', chipText: '#d0dcff', muted: '#b8bfd9' },
+  { label: 'Burnt ember', surface: '#241510', secondary: '#160d0a', border: '#6a351d', chip: 'rgba(255,122,61,0.18)', chipText: '#ffd1bc', muted: '#d8b2a1' },
+  { label: 'Forest grid', surface: '#0f221b', secondary: '#0a1612', border: '#23533f', chip: 'rgba(64,201,138,0.18)', chipText: '#b8f3d7', muted: '#9bc9b6' },
+  { label: 'Violet smoke', surface: '#23122f', secondary: '#140c1c', border: '#6d2f89', chip: 'rgba(209,91,255,0.18)', chipText: '#f0c5ff', muted: '#d2afd9' },
 ];
 const OVERLAY_OPTIONS = [
   { label: 'Soft', value: 56 },
@@ -69,6 +78,51 @@ function previewThemeFromDraft(draft: GroupThemeDraft): GroupThemeTokens {
 function resolveOverlayOpacity(strength?: number | null, min = 0.14, max = 0.5) {
   const normalized = (strength ?? 72) / 180;
   return Math.max(min, Math.min(max, normalized));
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = (hex || '').replace('#', '');
+  const safe = normalized.length === 3
+    ? normalized.split('').map((char) => `${char}${char}`).join('')
+    : normalized.padEnd(6, '0').slice(0, 6);
+  const intValue = Number.parseInt(safe, 16);
+  const r = (intValue >> 16) & 255;
+  const g = (intValue >> 8) & 255;
+  const b = intValue & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function tintHex(hex: string, amount: number) {
+  const normalized = (hex || '').replace('#', '');
+  const safe = normalized.length === 3
+    ? normalized.split('').map((char) => `${char}${char}`).join('')
+    : normalized.padEnd(6, '0').slice(0, 6);
+  const intValue = Number.parseInt(safe, 16);
+  const r = Math.min(255, Math.round(((intValue >> 16) & 255) + 255 * amount));
+  const g = Math.min(255, Math.round(((intValue >> 8) & 255) + 255 * amount));
+  const b = Math.min(255, Math.round((intValue & 255) + 255 * amount));
+  return `#${[r, g, b].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function getOverlayLabel(value: number) {
+  return OVERLAY_OPTIONS.find((option) => option.value === value)?.label ?? 'Balanced';
+}
+
+function draftFromCustomTheme(theme: GroupCustomTheme): GroupThemeDraft {
+  return {
+    name: theme.name,
+    accentColor: theme.accent_color,
+    surfaceColor: theme.surface_color,
+    surfaceSecondaryColor: theme.surface_secondary_color,
+    borderColor: theme.border_color,
+    chipBackgroundColor: theme.chip_background_color,
+    chipTextColor: theme.chip_text_color,
+    textColor: theme.text_color,
+    mutedTextColor: theme.muted_text_color,
+    bannerImageUrl: theme.banner_image_url ?? null,
+    cardImageUrl: theme.card_image_url ?? null,
+    overlayStrength: theme.overlay_strength ?? 72,
+  };
 }
 
 function Avatar({ uri, size = 58 }: { uri?: string | null; size?: number }) {
@@ -152,6 +206,7 @@ export default function GroupThemeScreen() {
   const { groupId } = useLocalSearchParams<{ groupId: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { width: windowWidth } = useWindowDimensions();
   const scrollRef = useRef<ScrollView | null>(null);
   const [group, setGroup] = useState<GroupAppearanceSummary | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);
@@ -160,7 +215,8 @@ export default function GroupThemeScreen() {
   const [draft, setDraft] = useState<GroupThemeDraft>(() => createDraftFromPreset('midnight'));
   const [previewAnimationVariantId, setPreviewAnimationVariantId] = useState<GroupCardAnimationVariantId>('none');
   const [recentlyUnlockedCustomThemeId, setRecentlyUnlockedCustomThemeId] = useState<string | null>(null);
-  const [customCollectionOffsetY, setCustomCollectionOffsetY] = useState(0);
+  const [studioOffsetY, setStudioOffsetY] = useState(0);
+  const isCompactWidth = windowWidth < 390;
 
   const {
     customThemes,
@@ -229,6 +285,15 @@ export default function GroupThemeScreen() {
     () => customThemes.find((theme) => theme.status === 'pending_payment') ?? null,
     [customThemes],
   );
+  const selectedAccentOption = useMemo(
+    () => ACCENT_SWATCHES.find((option) => option.color === draft.accentColor) ?? ACCENT_SWATCHES[0],
+    [draft.accentColor],
+  );
+  const selectedSurfaceOption = useMemo(
+    () => SURFACE_SWATCHES.find((option) => option.surface === draft.surfaceColor) ?? SURFACE_SWATCHES[0],
+    [draft.surfaceColor],
+  );
+  const selectedOverlayLabel = useMemo(() => getOverlayLabel(draft.overlayStrength), [draft.overlayStrength]);
   const sortedCustomThemes = useMemo(() => {
     const rank = (theme: GroupCustomTheme) => {
       if (theme.id === recentlyUnlockedCustomThemeId) return 0;
@@ -283,6 +348,46 @@ export default function GroupThemeScreen() {
       cardImageUrl: kind === 'theme_card' ? result.url : prev.cardImageUrl,
     }));
   }, [uploadImage]);
+
+  const handleSeedDraftFromPreset = useCallback((themeId: string) => {
+    const seededDraft = createDraftFromPreset(themeId);
+    setDraft((prev) => ({
+      ...seededDraft,
+      name: prev.name.trim() ? prev.name : seededDraft.name,
+      bannerImageUrl: prev.bannerImageUrl,
+      cardImageUrl: prev.cardImageUrl,
+    }));
+  }, []);
+
+  const handleSelectAccentColor = useCallback((accentColor: string) => {
+    setDraft((prev) => ({
+      ...prev,
+      accentColor,
+      chipBackgroundColor: hexToRgba(accentColor, 0.2),
+      chipTextColor: tintHex(accentColor, 0.62),
+    }));
+  }, []);
+
+  const handleSelectSurfaceStyle = useCallback((option: (typeof SURFACE_SWATCHES)[number]) => {
+    setDraft((prev) => ({
+      ...prev,
+      surfaceColor: option.surface,
+      surfaceSecondaryColor: option.secondary,
+      borderColor: option.border,
+      mutedTextColor: option.muted,
+    }));
+  }, []);
+
+  const handleLoadThemeIntoBuilder = useCallback((theme: GroupCustomTheme) => {
+    setDraft(draftFromCustomTheme(theme));
+    if (studioOffsetY > 0) {
+      scrollRef.current?.scrollTo({ y: Math.max(studioOffsetY - 16, 0), animated: true });
+    }
+  }, [studioOffsetY]);
+
+  const handleResetDraft = useCallback(() => {
+    setDraft(createDraftFromPreset(activePreference?.active_theme_type === 'preset' ? activePreference.active_theme_id : 'midnight'));
+  }, [activePreference?.active_theme_id, activePreference?.active_theme_type]);
 
   const handleApplyPreset = useCallback(async (themeId: string) => {
     const ok = await saveThemePreference('preset', themeId);
@@ -381,8 +486,8 @@ export default function GroupThemeScreen() {
     resetCheckout();
     if (!unlocked) {
       setRecentlyUnlockedCustomThemeId(completed.customThemeId);
-      if (customCollectionOffsetY > 0) {
-        scrollRef.current?.scrollTo({ y: Math.max(customCollectionOffsetY - 24, 0), animated: true });
+      if (studioOffsetY > 0) {
+        scrollRef.current?.scrollTo({ y: Math.max(studioOffsetY - 16, 0), animated: true });
       }
       Alert.alert('Checkout processing', 'Your payment sheet completed, but the theme is still waiting on final confirmation. It should stay in your collection as Pending for this group and switch over automatically once the webhook finishes. If it still does not move after about a minute, tap Refresh appearance data.');
       return;
@@ -390,12 +495,12 @@ export default function GroupThemeScreen() {
 
     await saveThemePreference('custom', completed.customThemeId);
     setRecentlyUnlockedCustomThemeId(completed.customThemeId);
-    if (customCollectionOffsetY > 0) {
-      scrollRef.current?.scrollTo({ y: Math.max(customCollectionOffsetY - 24, 0), animated: true });
+    if (studioOffsetY > 0) {
+      scrollRef.current?.scrollTo({ y: Math.max(studioOffsetY - 16, 0), animated: true });
     }
-    Alert.alert('Theme unlocked', 'Your custom theme is now unlocked and active for this group. We also jumped you to the custom theme collection so the active selection is easier to see.');
+    Alert.alert('Theme unlocked', 'Your custom theme is now unlocked and active for this group. We also jumped you back to the custom theme studio so the active selection and builder are in the same place.');
     setDraft(createDraftFromPreset(activePreference?.active_theme_type === 'preset' ? activePreference.active_theme_id : 'midnight'));
-  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, customCollectionOffsetY, draft, groupId, initCheckout, resetCheckout, saveThemePreference, waitForThemePurchase]);
+  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, draft, groupId, initCheckout, resetCheckout, saveThemePreference, studioOffsetY, waitForThemePurchase]);
 
   if (loadingGroup || !group) {
     return (
@@ -421,70 +526,6 @@ export default function GroupThemeScreen() {
           </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Quick start</Text>
-          <Text style={styles.sectionHint}>The key actions are surfaced here so you do not have to hunt through the studio to update the group look.</Text>
-          <View style={styles.quickActionsGrid}>
-            <TouchableOpacity style={styles.quickActionCard} disabled={!canManageBranding || savingBranding || uploadingImage} onPress={() => void handleUploadBranding('avatar')}>
-              <View style={styles.quickActionIconWrap}>
-                <Ionicons name="camera-outline" size={18} color="#ff9b68" />
-              </View>
-              <Text style={styles.quickActionTitle}>Group photo</Text>
-              <Text style={styles.quickActionMeta}>{group.avatar_url ? 'Replace the current avatar' : 'Add a square avatar'}</Text>
-              <View style={styles.quickActionBadge}>
-                <Text style={styles.quickActionBadgeText}>{group.avatar_url ? 'Set' : 'Missing'}</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.quickActionCard} disabled={!canManageBranding || savingBranding || uploadingImage} onPress={() => void handleUploadBranding('cover')}>
-              <View style={styles.quickActionIconWrap}>
-                <Ionicons name="image-outline" size={18} color="#ff9b68" />
-              </View>
-              <Text style={styles.quickActionTitle}>Group banner</Text>
-              <Text style={styles.quickActionMeta}>{group.cover_url ? 'Replace the current banner' : 'Add a wide cover image'}</Text>
-              <View style={styles.quickActionBadge}>
-                <Text style={styles.quickActionBadgeText}>{group.cover_url ? 'Set' : 'Missing'}</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.quickActionCard} onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}>
-              <View style={styles.quickActionIconWrap}>
-                <Ionicons name="sparkles-outline" size={18} color="#ff9b68" />
-              </View>
-              <Text style={styles.quickActionTitle}>Custom theme</Text>
-              <Text style={styles.quickActionMeta}>Jump to the carbon-fiber builder and preview the card treatment.</Text>
-              <View style={styles.quickActionBadge}>
-                <Text style={styles.quickActionBadgeText}>{customThemes.length > 0 ? `${customThemes.length} saved` : 'Build now'}</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Group identity</Text>
-          <Text style={styles.sectionHint}>Avatar and banner shape the community identity for everyone. Only owners and admins can update them.</Text>
-
-          <View style={styles.identityPreviewWrap}>
-            {group.cover_url ? <Image source={{ uri: group.cover_url }} style={styles.groupBanner} /> : <View style={[styles.groupBanner, styles.groupBannerFallback]} />}
-            <View style={styles.groupAvatarWrap}>
-              <Avatar uri={group.avatar_url} size={68} />
-            </View>
-          </View>
-
-          {canManageBranding ? (
-            <View style={styles.identityActionRow}>
-              <TouchableOpacity style={styles.secondaryBtn} disabled={savingBranding || uploadingImage} onPress={() => void handleUploadBranding('avatar')}>
-                <Ionicons name="camera-outline" size={16} color="#ff9b68" />
-                <Text style={styles.secondaryBtnText}>Change avatar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryBtn} disabled={savingBranding || uploadingImage} onPress={() => void handleUploadBranding('cover')}>
-                <Ionicons name="image-outline" size={16} color="#ff9b68" />
-                <Text style={styles.secondaryBtnText}>Change banner</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <Text style={styles.lockedText}>Branding is managed by the group owner/admins.</Text>
-          )}
-        </View>
-
-        <View style={styles.card}>
           <Text style={styles.sectionTitle}>Currently live on this group</Text>
           <Text style={styles.sectionHint}>Only one base theme is active at a time. Preset and custom themes never stack on top of each other; the selected animation sits on top of whichever base theme is live.</Text>
           <View style={styles.statusCallout}>
@@ -497,6 +538,228 @@ export default function GroupThemeScreen() {
               <Text style={styles.statusCalloutSubtle}>{activeBaseThemeMeta}</Text>
             </View>
           </View>
+        </View>
+
+        <View style={styles.card} onLayout={(event) => setStudioOffsetY(event.nativeEvent.layout.y)}>
+          <Text style={styles.sectionTitle}>Custom theme studio</Text>
+          <Text style={styles.sectionHint}>Everything for custom themes now lives in this one spot: your saved custom themes, the builder, the live preview, and the unlock/apply actions. No more hunting up and down the screen.</Text>
+          <View style={styles.studioCallout}>
+            <Ionicons name="sparkles-outline" size={18} color="#ffb48d" />
+            <Text style={styles.studioCalloutText}>Use the top half of this card to apply a custom theme you already bought. Use the bottom half to build a new one, preview it instantly, and unlock it when it looks right.</Text>
+          </View>
+          <View style={styles.studioStepRow}>
+            <View style={styles.studioStepChip}>
+              <Text style={styles.studioStepNumber}>1</Text>
+              <Text style={styles.studioStepText}>Choose or apply</Text>
+            </View>
+            <View style={styles.studioStepChip}>
+              <Text style={styles.studioStepNumber}>2</Text>
+              <Text style={styles.studioStepText}>Pick colors + art</Text>
+            </View>
+            <View style={styles.studioStepChip}>
+              <Text style={styles.studioStepNumber}>3</Text>
+              <Text style={styles.studioStepText}>Preview + unlock</Text>
+            </View>
+          </View>
+
+          <View style={styles.sectionDivider} />
+
+          <Text style={styles.subsectionTitle}>Your custom themes</Text>
+          <Text style={styles.subsectionHint}>New purchases land here first, and you can apply or load them into the builder without leaving this card.</Text>
+          {recentlyUnlockedCustomThemeId ? (
+            <View style={styles.collectionHelperBanner}>
+              <Ionicons name="sparkles-outline" size={16} color="#ffb48d" />
+              <Text style={styles.collectionHelperBannerText}>Your newest unlocked custom theme is pinned below. If it is not already active, tap Apply now. If you want to riff on it, tap Load into builder.</Text>
+            </View>
+          ) : null}
+          {loadingThemes ? (
+            <ActivityIndicator color="#ff6a2f" size="small" />
+          ) : sortedCustomThemes.length === 0 ? (
+            <Text style={styles.emptyText}>No custom themes yet for this group. Start with the builder below.</Text>
+          ) : (
+            sortedCustomThemes.map((theme) => {
+              const tokens = customThemeToTokens(theme);
+              const isActive = activePreference?.active_theme_type === 'custom' && activePreference.active_theme_id === theme.id;
+              const isRecentlyUnlocked = theme.id === recentlyUnlockedCustomThemeId;
+              return (
+                <View key={theme.id} style={[styles.collectionRowStack, (isActive || isRecentlyUnlocked) && styles.collectionRowHighlighted]}>
+                  <View style={styles.collectionRowTop}>
+                    <View style={[styles.collectionSwatch, { backgroundColor: tokens.surfaceColor, borderColor: tokens.borderColor }]}>
+                      <View style={[styles.collectionSwatchAccent, { backgroundColor: tokens.accentColor }]} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.collectionTitleRow}>
+                        <Text style={styles.collectionTitle}>{theme.name}</Text>
+                        {isRecentlyUnlocked && !isActive ? (
+                          <View style={styles.collectionNewPill}><Text style={styles.collectionNewPillText}>New unlock</Text></View>
+                        ) : null}
+                      </View>
+                      <Text style={styles.collectionMeta}>{theme.status === 'paid' ? (isActive ? 'Active in this group now' : isRecentlyUnlocked ? 'Unlocked successfully — tap Apply now to make it live right away.' : 'Purchased for this group') : 'Payment pending'}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.collectionActionRow}>
+                    {theme.status === 'paid' ? (
+                      <TouchableOpacity style={[styles.secondaryBtn, (isActive || isRecentlyUnlocked) && styles.secondaryBtnActive]} disabled={savingPreference} onPress={() => void handleApplyCustom(theme.id)}>
+                        <Text style={[styles.secondaryBtnText, (isActive || isRecentlyUnlocked) && styles.secondaryBtnTextActive]}>{isActive ? 'Active now' : isRecentlyUnlocked ? 'Apply now' : 'Use on this group'}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.pendingPill}><Text style={styles.pendingPillText}>Pending</Text></View>
+                    )}
+                    <TouchableOpacity style={styles.ghostBtn} onPress={() => handleLoadThemeIntoBuilder(theme)}>
+                      <Text style={styles.ghostBtnText}>Load into builder</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })
+          )}
+
+          <View style={styles.sectionDivider} />
+
+          <View style={styles.subsectionHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.subsectionTitle}>Build or refine a custom theme</Text>
+              <Text style={styles.subsectionHint}>Start from a preset, then make the color, surface, art, and overlay choices in this same panel.</Text>
+            </View>
+            <TouchableOpacity style={styles.ghostBtn} onPress={handleResetDraft}>
+              <Text style={styles.ghostBtnText}>Reset draft</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.builderSummaryRow}>
+            <View style={styles.builderSummaryCard}>
+              <Text style={styles.builderSummaryLabel}>Accent</Text>
+              <View style={styles.builderSummaryValueRow}>
+                <View style={[styles.builderSummaryDot, { backgroundColor: selectedAccentOption.color }]} />
+                <Text style={styles.builderSummaryValue}>{selectedAccentOption.label}</Text>
+              </View>
+            </View>
+            <View style={styles.builderSummaryCard}>
+              <Text style={styles.builderSummaryLabel}>Surface</Text>
+              <Text style={styles.builderSummaryValue}>{selectedSurfaceOption.label}</Text>
+            </View>
+            <View style={styles.builderSummaryCard}>
+              <Text style={styles.builderSummaryLabel}>Overlay</Text>
+              <Text style={styles.builderSummaryValue}>{selectedOverlayLabel}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.label}>Theme name</Text>
+          <TextInput
+            style={styles.input}
+            value={draft.name}
+            onChangeText={(value) => setDraft((prev) => ({ ...prev, name: value }))}
+            placeholder="e.g. Desert rip"
+            placeholderTextColor="#666"
+          />
+
+          <Text style={styles.label}>Start from a preset</Text>
+          <Text style={styles.inlineHint}>This seeds the builder without taking you out of the custom-theme section.</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
+            {GROUP_THEME_PRESETS.map((theme) => (
+              <TouchableOpacity key={`seed-${theme.id}`} style={styles.seedChip} onPress={() => handleSeedDraftFromPreset(theme.id)}>
+                <Text style={styles.seedChipText}>{theme.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <Text style={styles.label}>Accent color</Text>
+          <Text style={styles.inlineHint}>The accent now updates the most noticeable parts of the preview — pills, highlights, and action emphasis — so you can actually see the change.</Text>
+          <View style={styles.accentOptionGrid}>
+            {ACCENT_SWATCHES.map((option) => {
+              const isActive = draft.accentColor === option.color;
+              return (
+                <TouchableOpacity
+                  key={option.color}
+                  style={[
+                    styles.accentOptionCard,
+                    !isCompactWidth && styles.accentOptionCardWide,
+                    isActive && styles.accentOptionCardActive,
+                  ]}
+                  onPress={() => handleSelectAccentColor(option.color)}
+                >
+                  <View style={styles.accentOptionHeader}>
+                    <View style={[styles.accentOptionSwatch, { backgroundColor: option.color }]} />
+                    {isActive ? <Ionicons name="checkmark-circle" size={18} color="#fff" /> : null}
+                  </View>
+                  <Text style={styles.accentOptionLabel}>{option.label}</Text>
+                  <Text style={styles.accentOptionMeta}>{isActive ? 'Selected now' : 'Tap to use'}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={styles.label}>Surface style</Text>
+          <View style={styles.surfaceGrid}>
+            {SURFACE_SWATCHES.map((option) => (
+              <TouchableOpacity
+                key={option.surface}
+                style={[styles.surfaceCardLarge, draft.surfaceColor === option.surface && styles.surfaceCardActive]}
+                onPress={() => handleSelectSurfaceStyle(option)}
+              >
+                <View style={[styles.surfacePreview, { backgroundColor: option.surface, borderColor: option.border }]}>
+                  <View style={[styles.surfacePreviewInner, { backgroundColor: option.secondary }]} />
+                </View>
+                <Text style={styles.surfaceCardLabel}>{option.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.label}>Template art</Text>
+          <Text style={styles.assetHint}>Banner art drives the group header. Card art drives the premium feed-card treatment. Both upload controls stay right here so the builder feels like one flow.</Text>
+          <View style={styles.identityActionRow}>
+            <TouchableOpacity style={styles.secondaryBtn} disabled={uploadingImage} onPress={() => void handleUploadDraftImage('theme_banner')}>
+              <Ionicons name="image-outline" size={16} color="#ff9b68" />
+              <Text style={styles.secondaryBtnText}>{draft.bannerImageUrl ? 'Change banner art' : 'Upload banner art'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryBtn} disabled={uploadingImage} onPress={() => void handleUploadDraftImage('theme_card')}>
+              <Ionicons name="albums-outline" size={16} color="#ff9b68" />
+              <Text style={styles.secondaryBtnText}>{draft.cardImageUrl ? 'Change card art' : 'Upload card art'}</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.assetPreviewGrid}>
+            <View style={styles.assetPreviewCard}>
+              <Text style={styles.assetPreviewLabel}>Header banner art</Text>
+              {draft.bannerImageUrl ? <Image source={{ uri: draft.bannerImageUrl }} style={styles.assetPreviewThumb} /> : <View style={[styles.assetPreviewThumb, styles.assetPreviewPlaceholder]}><Ionicons name="image-outline" size={22} color="#666" /></View>}
+              <Text style={styles.assetPreviewMeta}>{draft.bannerImageUrl ? 'Ready for the group header preview.' : 'No banner art yet.'}</Text>
+            </View>
+            <View style={styles.assetPreviewCard}>
+              <Text style={styles.assetPreviewLabel}>Feed card art</Text>
+              {draft.cardImageUrl ? <Image source={{ uri: draft.cardImageUrl }} style={styles.assetPreviewThumb} /> : <View style={[styles.assetPreviewThumb, styles.assetPreviewPlaceholder]}><Ionicons name="albums-outline" size={22} color="#666" /></View>}
+              <Text style={styles.assetPreviewMeta}>{draft.cardImageUrl ? 'Ready for the feed card frame.' : 'No card art yet.'}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.label}>Readability overlay</Text>
+          <View style={styles.choiceRow}>
+            {OVERLAY_OPTIONS.map((option) => (
+              <TouchableOpacity key={option.label} style={[styles.choiceChip, draft.overlayStrength === option.value && styles.choiceChipActive]} onPress={() => setDraft((prev) => ({ ...prev, overlayStrength: option.value }))}>
+                <Text style={[styles.choiceChipText, draft.overlayStrength === option.value && styles.choiceChipTextActive]}>{option.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.previewDraftHint}>Draft preview only — the header and feed card below show what this custom theme would look like if you unlock it. It does not combine with the currently live preset/custom theme.</Text>
+          <ThemePreview group={group} theme={previewTheme} />
+
+          {latestPendingCustomTheme ? (
+            <View style={styles.pendingCheckoutNotice}>
+              <Ionicons name="time-outline" size={16} color="#ffb48d" />
+              <Text style={styles.pendingCheckoutNoticeText}>Pending checkout detected for “{latestPendingCustomTheme.name}”. Let that finish before judging the final live appearance.</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity style={[styles.primaryBtn, checkoutState.status === 'loading' || checkoutState.status === 'processing' ? { opacity: 0.7 } : null]} disabled={checkoutState.status === 'loading' || checkoutState.status === 'processing'} onPress={() => void handlePurchaseCustomTheme()}>
+            {checkoutState.status === 'loading' || checkoutState.status === 'processing' ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <>
+                <Ionicons name="sparkles-outline" size={16} color="#fff" />
+                <Text style={styles.primaryBtnText}>Preview approved — unlock for $2.99</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <Text style={styles.purchaseHint}>The purchase stays locked to {group.name} and will show in your custom-theme list for this group only.</Text>
         </View>
 
         <View style={styles.card}>
@@ -516,51 +779,6 @@ export default function GroupThemeScreen() {
               );
             })}
           </ScrollView>
-        </View>
-
-        <View style={styles.card} onLayout={(event) => setCustomCollectionOffsetY(event.nativeEvent.layout.y)}>
-          <Text style={styles.sectionTitle}>Your custom theme collection</Text>
-          <Text style={styles.sectionHint}>Custom themes are purchased per group and stay locked to this community for your account. Using one replaces the active preset for this group instead of layering on top of it. New unlocks land here first.</Text>
-          {recentlyUnlockedCustomThemeId ? (
-            <View style={styles.collectionHelperBanner}>
-              <Ionicons name="sparkles-outline" size={16} color="#ffb48d" />
-              <Text style={styles.collectionHelperBannerText}>Your newest unlocked custom theme is pinned to the top below. If it is not already marked Active, tap Apply now.</Text>
-            </View>
-          ) : null}
-          {loadingThemes ? (
-            <ActivityIndicator color="#ff6a2f" size="small" />
-          ) : sortedCustomThemes.length === 0 ? (
-            <Text style={styles.emptyText}>No custom themes yet for this group.</Text>
-          ) : (
-            sortedCustomThemes.map((theme) => {
-              const tokens = customThemeToTokens(theme);
-              const isActive = activePreference?.active_theme_type === 'custom' && activePreference.active_theme_id === theme.id;
-              const isRecentlyUnlocked = theme.id === recentlyUnlockedCustomThemeId;
-              return (
-                <View key={theme.id} style={[styles.collectionRow, (isActive || isRecentlyUnlocked) && styles.collectionRowHighlighted]}>
-                  <View style={[styles.collectionSwatch, { backgroundColor: tokens.surfaceColor, borderColor: tokens.borderColor }]}>
-                    <View style={[styles.collectionSwatchAccent, { backgroundColor: tokens.accentColor }]} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.collectionTitleRow}>
-                      <Text style={styles.collectionTitle}>{theme.name}</Text>
-                      {isRecentlyUnlocked && !isActive ? (
-                        <View style={styles.collectionNewPill}><Text style={styles.collectionNewPillText}>New unlock</Text></View>
-                      ) : null}
-                    </View>
-                    <Text style={styles.collectionMeta}>{theme.status === 'paid' ? (isActive ? 'Active in this group now' : isRecentlyUnlocked ? 'Unlocked successfully — tap Apply now if you want this live on the group.' : 'Purchased for this group') : 'Payment pending'}</Text>
-                  </View>
-                  {theme.status === 'paid' ? (
-                    <TouchableOpacity style={[styles.secondaryBtn, (isActive || isRecentlyUnlocked) && styles.secondaryBtnActive]} disabled={savingPreference} onPress={() => void handleApplyCustom(theme.id)}>
-                      <Text style={[styles.secondaryBtnText, (isActive || isRecentlyUnlocked) && styles.secondaryBtnTextActive]}>{isActive ? 'Active' : isRecentlyUnlocked ? 'Apply now' : 'Use'}</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.pendingPill}><Text style={styles.pendingPillText}>Pending</Text></View>
-                  )}
-                </View>
-              );
-            })
-          )}
         </View>
 
         <View style={styles.card}>
@@ -637,116 +855,30 @@ export default function GroupThemeScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Build a premium custom theme</Text>
-          <Text style={styles.sectionHint}>Preview first, then unlock if you like it. This builder is draft-only until checkout succeeds, so it does not affect the live group look while you experiment.</Text>
+          <Text style={styles.sectionTitle}>Group identity</Text>
+          <Text style={styles.sectionHint}>Avatar and banner shape the community identity for everyone. Only owners and admins can update them.</Text>
 
-          <Text style={styles.label}>Theme name</Text>
-          <TextInput
-            style={styles.input}
-            value={draft.name}
-            onChangeText={(value) => setDraft((prev) => ({ ...prev, name: value }))}
-            placeholder="e.g. Desert rip"
-            placeholderTextColor="#666"
-          />
-
-          <Text style={styles.label}>Start from a preset</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
-            {GROUP_THEME_PRESETS.map((theme) => (
-              <TouchableOpacity key={`seed-${theme.id}`} style={styles.seedChip} onPress={() => setDraft(createDraftFromPreset(theme.id))}>
-                <Text style={styles.seedChipText}>{theme.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          <Text style={styles.label}>Accent color</Text>
-          <View style={styles.swatchRow}>
-            {ACCENT_SWATCHES.map((color) => (
-              <TouchableOpacity
-                key={color}
-                style={[styles.colorDot, { backgroundColor: color }, draft.accentColor === color && styles.colorDotActive]}
-                onPress={() => setDraft((prev) => ({ ...prev, accentColor: color }))}
-              />
-            ))}
-          </View>
-
-          <Text style={styles.label}>Surface style</Text>
-          <View style={styles.surfaceGrid}>
-            {SURFACE_SWATCHES.map((option) => (
-              <TouchableOpacity
-                key={option.surface}
-                style={[styles.surfaceCard, draft.surfaceColor === option.surface && styles.surfaceCardActive]}
-                onPress={() => setDraft((prev) => ({
-                  ...prev,
-                  surfaceColor: option.surface,
-                  surfaceSecondaryColor: option.secondary,
-                  borderColor: option.border,
-                  chipBackgroundColor: option.chip,
-                  chipTextColor: prev.accentColor === '#ffb648' ? '#ffe2a7' : prev.chipTextColor,
-                  mutedTextColor: option.muted,
-                }))}
-              >
-                <View style={[styles.surfacePreview, { backgroundColor: option.surface, borderColor: option.border }]}>
-                  <View style={[styles.surfacePreviewInner, { backgroundColor: option.secondary }]} />
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.label}>Template art</Text>
-          <Text style={styles.assetHint}>Banner art is used on the group header. Card art is used in the feed theme and now gets its own framed treatment so it does not disappear into the background.</Text>
-          <View style={styles.identityActionRow}>
-            <TouchableOpacity style={styles.secondaryBtn} disabled={uploadingImage} onPress={() => void handleUploadDraftImage('theme_banner')}>
-              <Ionicons name="image-outline" size={16} color="#ff9b68" />
-              <Text style={styles.secondaryBtnText}>{draft.bannerImageUrl ? 'Change banner art' : 'Upload banner art'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryBtn} disabled={uploadingImage} onPress={() => void handleUploadDraftImage('theme_card')}>
-              <Ionicons name="albums-outline" size={16} color="#ff9b68" />
-              <Text style={styles.secondaryBtnText}>{draft.cardImageUrl ? 'Change card art' : 'Upload card art'}</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.assetPreviewGrid}>
-            <View style={styles.assetPreviewCard}>
-              <Text style={styles.assetPreviewLabel}>Header banner art</Text>
-              {draft.bannerImageUrl ? <Image source={{ uri: draft.bannerImageUrl }} style={styles.assetPreviewThumb} /> : <View style={[styles.assetPreviewThumb, styles.assetPreviewPlaceholder]}><Ionicons name="image-outline" size={22} color="#666" /></View>}
-              <Text style={styles.assetPreviewMeta}>{draft.bannerImageUrl ? 'Ready for the group header preview.' : 'No banner art yet.'}</Text>
-            </View>
-            <View style={styles.assetPreviewCard}>
-              <Text style={styles.assetPreviewLabel}>Feed card art</Text>
-              {draft.cardImageUrl ? <Image source={{ uri: draft.cardImageUrl }} style={styles.assetPreviewThumb} /> : <View style={[styles.assetPreviewThumb, styles.assetPreviewPlaceholder]}><Ionicons name="albums-outline" size={22} color="#666" /></View>}
-              <Text style={styles.assetPreviewMeta}>{draft.cardImageUrl ? 'Ready for the feed card frame.' : 'No card art yet.'}</Text>
+          <View style={styles.identityPreviewWrap}>
+            {group.cover_url ? <Image source={{ uri: group.cover_url }} style={styles.groupBanner} /> : <View style={[styles.groupBanner, styles.groupBannerFallback]} />}
+            <View style={styles.groupAvatarWrap}>
+              <Avatar uri={group.avatar_url} size={68} />
             </View>
           </View>
 
-          <Text style={styles.label}>Readability overlay</Text>
-          <View style={styles.choiceRow}>
-            {OVERLAY_OPTIONS.map((option) => (
-              <TouchableOpacity key={option.label} style={[styles.choiceChip, draft.overlayStrength === option.value && styles.choiceChipActive]} onPress={() => setDraft((prev) => ({ ...prev, overlayStrength: option.value }))}>
-                <Text style={[styles.choiceChipText, draft.overlayStrength === option.value && styles.choiceChipTextActive]}>{option.label}</Text>
+          {canManageBranding ? (
+            <View style={styles.identityActionRow}>
+              <TouchableOpacity style={styles.secondaryBtn} disabled={savingBranding || uploadingImage} onPress={() => void handleUploadBranding('avatar')}>
+                <Ionicons name="camera-outline" size={16} color="#ff9b68" />
+                <Text style={styles.secondaryBtnText}>Change avatar</Text>
               </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={styles.previewDraftHint}>Draft preview only — the header and feed card below show what this custom theme would look like if you unlock it. It does not combine with the currently live preset/custom theme.</Text>
-          <ThemePreview group={group} theme={previewTheme} />
-
-          {latestPendingCustomTheme ? (
-            <View style={styles.pendingCheckoutNotice}>
-              <Ionicons name="time-outline" size={16} color="#ffb48d" />
-              <Text style={styles.pendingCheckoutNoticeText}>Pending checkout detected for “{latestPendingCustomTheme.name}”. Let that finish before judging the final live appearance.</Text>
+              <TouchableOpacity style={styles.secondaryBtn} disabled={savingBranding || uploadingImage} onPress={() => void handleUploadBranding('cover')}>
+                <Ionicons name="image-outline" size={16} color="#ff9b68" />
+                <Text style={styles.secondaryBtnText}>Change banner</Text>
+              </TouchableOpacity>
             </View>
-          ) : null}
-
-          <TouchableOpacity style={[styles.primaryBtn, checkoutState.status === 'loading' || checkoutState.status === 'processing' ? { opacity: 0.7 } : null]} disabled={checkoutState.status === 'loading' || checkoutState.status === 'processing'} onPress={() => void handlePurchaseCustomTheme()}>
-            {checkoutState.status === 'loading' || checkoutState.status === 'processing' ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <>
-                <Ionicons name="sparkles-outline" size={16} color="#fff" />
-                <Text style={styles.primaryBtnText}>Preview approved — unlock for $2.99</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          <Text style={styles.purchaseHint}>The purchase stays locked to {group.name} and will show in your collection for this group only.</Text>
+          ) : (
+            <Text style={styles.lockedText}>Branding is managed by the group owner/admins.</Text>
+          )}
         </View>
 
         <TouchableOpacity style={styles.refreshBtn} onPress={() => void Promise.all([loadGroup(), refreshThemes()])}>
@@ -1151,4 +1283,102 @@ const styles = StyleSheet.create({
   pendingCheckoutNoticeText: { color: '#ffccba', fontSize: 12, lineHeight: 17, flex: 1 },
   refreshBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 },
   refreshBtnText: { color: '#bbb', fontSize: 13, fontWeight: '600' },
+  studioCallout: {
+    marginTop: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#4f2d1d',
+    backgroundColor: 'rgba(255,106,47,0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  studioCalloutText: { color: '#ffccba', fontSize: 12, lineHeight: 17, flex: 1 },
+  studioStepRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
+  studioStepChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2b2b2b',
+    backgroundColor: '#151515',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  studioStepNumber: { color: '#ffb088', fontSize: 12, fontWeight: '800' },
+  studioStepText: { color: '#e7e7e7', fontSize: 12, fontWeight: '700' },
+  sectionDivider: { height: 1, backgroundColor: '#232323', marginTop: 18, marginBottom: 18 },
+  subsectionTitle: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  subsectionHint: { color: '#8b8b8b', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  subsectionHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  collectionRowStack: {
+    marginTop: 14,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#252525',
+    backgroundColor: '#151515',
+    gap: 12,
+  },
+  collectionRowTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  collectionActionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  ghostBtn: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2c2c2c',
+    backgroundColor: '#141414',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ghostBtnText: { color: '#d6d6d6', fontSize: 12, fontWeight: '700' },
+  builderSummaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 16 },
+  builderSummaryCard: {
+    flexGrow: 1,
+    flexBasis: 0,
+    minWidth: 102,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#262626',
+    backgroundColor: '#151515',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    gap: 6,
+  },
+  builderSummaryLabel: { color: '#8b8b8b', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  builderSummaryValueRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  builderSummaryDot: { width: 12, height: 12, borderRadius: 6 },
+  builderSummaryValue: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  inlineHint: { color: '#8f8f8f', fontSize: 12, lineHeight: 17, marginBottom: 2 },
+  accentOptionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  accentOptionCard: {
+    minWidth: 132,
+    flexGrow: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    backgroundColor: '#151515',
+    padding: 12,
+    gap: 8,
+  },
+  accentOptionCardWide: { flexBasis: '48%' },
+  accentOptionCardActive: { borderColor: '#ff6a2f', backgroundColor: '#24130c' },
+  accentOptionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  accentOptionSwatch: { width: 28, height: 28, borderRadius: 14 },
+  accentOptionLabel: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  accentOptionMeta: { color: '#a2a2a2', fontSize: 11, fontWeight: '600' },
+  surfaceCardLarge: {
+    width: 132,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#282828',
+    backgroundColor: '#141414',
+    padding: 10,
+    gap: 10,
+  },
+  surfaceCardLabel: { color: '#e1e1e1', fontSize: 12, fontWeight: '700' },
 });
