@@ -297,7 +297,6 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
         .from('social_group_animation_purchases')
         .select('*')
         .eq('owner_user_id', userId)
-        .eq('group_id', groupId)
         .in('status', ['paid', 'pending_payment'])
         .order('created_at', { ascending: false }),
     ]);

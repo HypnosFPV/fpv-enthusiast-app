@@ -284,7 +284,7 @@ export default function GroupThemeScreen() {
       Alert.alert('Could not update animation', variantId === 'none' ? 'Could not switch this group back to a static card.' : 'Please unlock this variant first or try again.');
       return;
     }
-    Alert.alert('Animation updated', variantId === 'none' ? 'This community is now using the static card treatment for you.' : 'Your selected animation variant is now active for this community.');
+    Alert.alert('Animation updated', variantId === 'none' ? 'This community is now using the static card treatment for you.' : 'Your selected animation variant is now active for this community. You can switch to any unlocked tier on your other groups too.');
   }, [saveAnimationPreference]);
 
   const handlePurchaseAnimation = useCallback(async (variantId: 'basic' | 'standard' | 'premium') => {
@@ -308,12 +308,12 @@ export default function GroupThemeScreen() {
     const unlocked = await waitForAnimationPurchase(completed.purchaseId);
     resetAnimationCheckout();
     if (!unlocked) {
-      Alert.alert('Payment received', 'Your purchase went through. Pull to refresh in a moment if the animation does not appear yet.');
+      Alert.alert('Payment received', 'Your unlock went through. Pull to refresh in a moment if the animation does not appear yet for this group or your other groups.');
       return;
     }
 
     setPreviewAnimationVariantId(variantId);
-    Alert.alert('Animation unlocked', 'This animation variant is now available and should already be active for this group. You can tap any tier to preview it and Use to switch later.');
+    Alert.alert('Animation unlocked', 'This animation variant is now unlocked for your account, should already be active for this group, and can now be used on any other group you belong to. You can tap any tier to preview it and Use to switch later.');
   }, [confirmAnimationCheckout, groupId, initAnimationCheckout, resetAnimationCheckout, waitForAnimationPurchase]);
 
   const handlePurchaseCustomTheme = useCallback(async () => {
@@ -504,7 +504,7 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Feed animation variants</Text>
-          <Text style={styles.sectionHint}>Cards stay static unless you unlock an animation for this group. Buy variants one by one, then swap between anything you own whenever you want.</Text>
+          <Text style={styles.sectionHint}>Cards stay static unless you unlock an animation. Buy each tier once on your account, then activate anything you own on any group you belong to whenever you want.</Text>
           <AnimationVariantPreviewCard
             theme={activeTheme}
             groupName={group.name}
@@ -522,13 +522,13 @@ export default function GroupThemeScreen() {
               ? (isActive
                 ? 'Active for this group'
                 : isPreviewing
-                  ? 'Previewing now — tap Use to make it live in your feed'
-                  : 'Owned — tap the row to preview, then Use to activate')
+                  ? 'Previewing now — tap Use to make it live in this group'
+                  : 'Unlocked on your account — tap the row to preview, then Use to activate here')
               : isPending
                 ? 'Payment pending'
                 : isPreviewing
-                  ? `Previewing now — unlock for ${priceLabel}`
-                  : `Unlock separately for ${priceLabel}`;
+                  ? `Previewing now — unlock once for ${priceLabel}`
+                  : `Unlock once for ${priceLabel} and use it across your groups`;
             return (
               <TouchableOpacity
                 key={variant.id}

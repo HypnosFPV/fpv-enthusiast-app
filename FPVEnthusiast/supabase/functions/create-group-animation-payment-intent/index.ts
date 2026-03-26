@@ -83,13 +83,14 @@ serve(async (req) => {
       .from('social_group_animation_purchases')
       .select('id')
       .eq('owner_user_id', user.id)
-      .eq('group_id', groupId)
       .eq('variant_id', variantId)
       .eq('status', 'paid')
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (existingPaid?.id) {
-      return json({ error: 'You already own this animation variant for this group.' }, 409);
+      return json({ error: 'You already own this animation variant on your account.' }, 409);
     }
 
     const { data: purchase, error: insertErr } = await supabase
@@ -124,7 +125,7 @@ serve(async (req) => {
         group_id: groupId,
         owner_user_id: user.id,
       },
-      description: `FPV Enthusiast group card animation — ${groupData.name ?? 'Community'} / ${VARIANT_LABELS[variantId] ?? variantId}`,
+      description: `FPV Enthusiast account-wide group card animation unlock — ${groupData.name ?? 'Community'} / ${VARIANT_LABELS[variantId] ?? variantId}`,
     });
 
     const { error: updateErr } = await supabase
