@@ -275,12 +275,23 @@ export default function GroupThemeScreen() {
 
   const previewTheme = useMemo(() => previewThemeFromDraft(draft), [draft]);
   const ownedAnimationVariantIds = useMemo(() => new Set(animationPurchases.filter((purchase) => purchase.status === 'paid').map((purchase) => purchase.variant_id)), [animationPurchases]);
+  const preferredCustomThemeAnimationVariantId = useMemo<GroupCardAnimationVariantId>(
+    () => (ownedAnimationVariantIds.has('basic') ? 'basic' : 'none'),
+    [ownedAnimationVariantIds],
+  );
   const activeAnimationLabel = useMemo(() => getGroupCardAnimationVariant(activeAnimationVariantId).name, [activeAnimationVariantId]);
   const activeBaseThemeLabel = activeTheme.name;
   const activeBaseThemeTypeLabel = activePreference?.active_theme_type === 'custom' ? 'Custom theme' : 'Preset theme';
+  const activeAnimationSummary = activePreference?.active_theme_type === 'custom'
+    ? activeAnimationVariantId === 'basic'
+      ? 'Subtle outer edge pulse'
+      : 'Static card'
+    : activeAnimationLabel;
   const activeBaseThemeMeta = activePreference?.active_theme_type === 'custom'
-    ? 'A custom theme is live right now. If you pick a preset, it replaces the custom theme for this group until you switch back.'
-    : 'A preset theme is live right now. If you pick a custom theme, it replaces the preset for this group until you switch back.';
+    ? activeAnimationVariantId === 'basic'
+      ? 'This custom theme stays mostly image-led. Edge pulse only rides the outside border so the uploaded card art still does most of the visual work.'
+      : 'This custom theme is intentionally mostly static so the uploaded card art does most of the visual work.'
+    : 'Preset themes can still be paired with whichever animation tier you have selected for this group.';
   const latestPendingCustomTheme = useMemo(
     () => customThemes.find((theme) => theme.status === 'pending_payment') ?? null,
     [customThemes],
@@ -311,6 +322,14 @@ export default function GroupThemeScreen() {
   useEffect(() => {
     setPreviewAnimationVariantId(activeAnimationVariantId);
   }, [activeAnimationVariantId]);
+
+  useEffect(() => {
+    if (loadingThemes) return;
+    const shouldNormalizeCustomThemeAnimation = activePreference?.active_theme_type === 'custom'
+      && (activeAnimationVariantId === 'standard' || activeAnimationVariantId === 'premium');
+    if (!shouldNormalizeCustomThemeAnimation) return;
+    void saveAnimationPreference(preferredCustomThemeAnimationVariantId);
+  }, [activeAnimationVariantId, activePreference?.active_theme_type, loadingThemes, preferredCustomThemeAnimationVariantId, saveAnimationPreference]);
 
   const handleUploadBranding = useCallback(async (kind: 'avatar' | 'cover') => {
     const result = await uploadImage(kind, kind === 'avatar' ? [1, 1] : [16, 9]);
@@ -399,13 +418,18 @@ export default function GroupThemeScreen() {
   }, [saveThemePreference]);
 
   const handleApplyCustom = useCallback(async (themeId: string) => {
-    const ok = await saveThemePreference('custom', themeId);
+    const ok = await saveThemePreference('custom', themeId, preferredCustomThemeAnimationVariantId);
     if (!ok) {
       Alert.alert('Could not apply theme', 'Please try again.');
       return;
     }
-    Alert.alert('Theme updated', 'Your custom theme is now active for this community.');
-  }, [saveThemePreference]);
+    Alert.alert(
+      'Theme updated',
+      preferredCustomThemeAnimationVariantId === 'basic'
+        ? 'Your custom theme is now active for this community with the subtle Edge pulse border.'
+        : 'Your custom theme is now active for this community with a mostly static card so the uploaded image does most of the visual work.',
+    );
+  }, [preferredCustomThemeAnimationVariantId, saveThemePreference]);
 
   const handleSelectAnimation = useCallback(async (variantId: 'none' | 'basic' | 'standard' | 'premium') => {
     setPreviewAnimationVariantId(variantId);
@@ -493,14 +517,19 @@ export default function GroupThemeScreen() {
       return;
     }
 
-    await saveThemePreference('custom', completed.customThemeId);
+    await saveThemePreference('custom', completed.customThemeId, preferredCustomThemeAnimationVariantId);
     setRecentlyUnlockedCustomThemeId(completed.customThemeId);
     if (studioOffsetY > 0) {
       scrollRef.current?.scrollTo({ y: Math.max(studioOffsetY - 16, 0), animated: true });
     }
-    Alert.alert('Theme unlocked', 'Your custom theme is now unlocked and active for this group. We also jumped you back to the custom theme studio so the active selection and builder are in the same place.');
+    Alert.alert(
+      'Theme unlocked',
+      preferredCustomThemeAnimationVariantId === 'basic'
+        ? 'Your custom theme is now unlocked and active for this group with the subtle Edge pulse border. We also jumped you back to the custom theme studio so the active selection and builder are in the same place.'
+        : 'Your custom theme is now unlocked and active for this group as a mostly static card so the uploaded image does the heavy visual lifting. We also jumped you back to the custom theme studio so the active selection and builder are in the same place.',
+    );
     setDraft(createDraftFromPreset(activePreference?.active_theme_type === 'preset' ? activePreference.active_theme_id : 'midnight'));
-  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, draft, groupId, initCheckout, resetCheckout, saveThemePreference, studioOffsetY, waitForThemePurchase]);
+  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, draft, groupId, initCheckout, preferredCustomThemeAnimationVariantId, resetCheckout, saveThemePreference, studioOffsetY, waitForThemePurchase]);
 
   if (loadingGroup || !group) {
     return (
@@ -527,25 +556,26 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Currently live on this group</Text>
-          <Text style={styles.sectionHint}>Only one base theme is active at a time. Preset and custom themes never stack on top of each other; the selected animation sits on top of whichever base theme is live.</Text>
+          <Text style={styles.sectionHint}>Only one base theme is active at a time. For custom themes, the uploaded artwork should do most of the visual work, while any edge effect is kept separate and subtle.</Text>
           <View style={styles.statusCallout}>
             <View style={[styles.collectionSwatch, { backgroundColor: activeTheme.surfaceColor, borderColor: activeTheme.borderColor }]}> 
               <View style={[styles.collectionSwatchAccent, { backgroundColor: activeTheme.accentColor }]} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.statusCalloutTitle}>{activeBaseThemeLabel}</Text>
-              <Text style={styles.statusCalloutMeta}>{activeBaseThemeTypeLabel} • {activeAnimationLabel}</Text>
-              <Text style={styles.statusCalloutSubtle}>{activeBaseThemeMeta}</Text>
+              <Text style={styles.statusCalloutMeta}>Base theme • {activeBaseThemeTypeLabel}</Text>
+              <Text style={styles.statusCalloutSubtle}>Card edge • {activeAnimationSummary}</Text>
+              <Text style={styles.statusCalloutFootnote}>{activeBaseThemeMeta}</Text>
             </View>
           </View>
         </View>
 
         <View style={styles.card} onLayout={(event) => setStudioOffsetY(event.nativeEvent.layout.y)}>
           <Text style={styles.sectionTitle}>Custom theme studio</Text>
-          <Text style={styles.sectionHint}>Everything for custom themes now lives in this one spot: your saved custom themes, the builder, the live preview, and the unlock/apply actions. No more hunting up and down the screen.</Text>
+          <Text style={styles.sectionHint}>Everything for custom themes now lives in this one spot: your saved custom themes, the builder, the live preview, and the unlock/apply actions. No more hunting up and down the screen. Custom themes are also tuned to stay mostly static so your uploaded art is the main look.</Text>
           <View style={styles.studioCallout}>
             <Ionicons name="sparkles-outline" size={18} color="#ffb48d" />
-            <Text style={styles.studioCalloutText}>Use the top half of this card to apply a custom theme you already bought. Use the bottom half to build a new one, preview it instantly, and unlock it when it looks right.</Text>
+            <Text style={styles.studioCalloutText}>Use the top half of this card to apply a custom theme you already bought. Use the bottom half to build a new one, preview it instantly, and unlock it when it looks right. If you own Edge pulse, custom themes will use that restrained outer border instead of the heavier storm-style effects.</Text>
           </View>
           <View style={styles.studioStepRow}>
             <View style={styles.studioStepChip}>
@@ -783,7 +813,7 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Feed animation variants</Text>
-          <Text style={styles.sectionHint}>Cards stay static unless you unlock an animation. Buy each tier once on your account, then activate anything you own on any group you belong to whenever you want.</Text>
+          <Text style={styles.sectionHint}>Cards stay static unless you unlock an animation. Custom themes work best with Static or Edge pulse so the uploaded art stays dominant; stronger effects can overpower the artwork.</Text>
           <AnimationVariantPreviewCard
             theme={activeTheme}
             groupName={group.name}
@@ -1266,7 +1296,8 @@ const styles = StyleSheet.create({
   },
   statusCalloutTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
   statusCalloutMeta: { color: '#ffb088', fontSize: 12, fontWeight: '700', marginTop: 4 },
-  statusCalloutSubtle: { color: '#8b8b8b', fontSize: 12, lineHeight: 17, marginTop: 6 },
+  statusCalloutSubtle: { color: '#d6d6d6', fontSize: 12, lineHeight: 17, marginTop: 6, fontWeight: '700' },
+  statusCalloutFootnote: { color: '#8b8b8b', fontSize: 12, lineHeight: 17, marginTop: 6 },
   previewDraftHint: { color: '#b8b8b8', fontSize: 12, lineHeight: 18, marginTop: 14 },
   pendingCheckoutNotice: {
     marginTop: 14,

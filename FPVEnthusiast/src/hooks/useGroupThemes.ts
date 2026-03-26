@@ -330,7 +330,11 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
     [activePreference?.active_animation_variant_id],
   );
 
-  const saveThemePreference = useCallback(async (themeType: GroupThemeSelectionType, themeId: string) => {
+  const saveThemePreference = useCallback(async (
+    themeType: GroupThemeSelectionType,
+    themeId: string,
+    animationVariantOverride?: GroupCardAnimationVariantId,
+  ) => {
     if (!userId || !groupId) return false;
     setSavingPreference(true);
     const { error } = await supabase
@@ -340,7 +344,7 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
         group_id: groupId,
         active_theme_type: themeType,
         active_theme_id: themeId,
-        active_animation_variant_id: activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID,
+        active_animation_variant_id: animationVariantOverride ?? activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID,
       }, { onConflict: 'user_id,group_id' });
     setSavingPreference(false);
 
