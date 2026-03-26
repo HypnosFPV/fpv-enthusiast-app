@@ -110,23 +110,23 @@ export default function GroupCardAnimationBorder({
   const isStandard = variant === 'standard';
   const isPremium = variant === 'premium';
 
-  const outerSpread = isPremium ? 12 : isStandard ? 7 : 4;
+  const outerSpread = isPremium ? 16 : isStandard ? 7 : 4;
   const frameInset = Math.max(Math.round(cornerRadius * 0.68), 10);
   const verticalInset = Math.max(Math.round(cornerRadius * 0.8), 12);
 
-  const lineThickness = isPremium ? 1.5 : isStandard ? 1.18 : 1;
-  const outerLineThickness = isPremium ? 1 : 0;
-  const trackThickness = isPremium ? 9 : isStandard ? 7 : 5;
-  const primaryCometThickness = isPremium ? 2.8 : isStandard ? 2.2 : 1.7;
-  const secondaryCometThickness = isPremium ? 1.5 : 0;
+  const lineThickness = isPremium ? 1.2 : isStandard ? 1.18 : 1;
+  const outerLineThickness = isPremium ? 0.9 : 0;
+  const trackThickness = isPremium ? 8 : isStandard ? 7 : 5;
+  const primaryCometThickness = isPremium ? 2.2 : isStandard ? 2.2 : 1.7;
+  const secondaryCometThickness = isPremium ? 1.1 : 0;
 
   const horizontalTrackLength = Math.max(width - frameInset * 2, 40);
   const verticalTrackLength = Math.max(height - verticalInset * 2, 40);
 
-  const primaryHorizontalCometWidth = clamp(horizontalTrackLength * (isPremium ? 0.18 : isStandard ? 0.16 : 0.13), 36, isPremium ? 72 : isStandard ? 56 : 46);
-  const primaryVerticalCometHeight = clamp(verticalTrackLength * (isPremium ? 0.19 : isStandard ? 0.17 : 0.14), 34, isPremium ? 74 : isStandard ? 58 : 46);
-  const secondaryHorizontalCometWidth = clamp(horizontalTrackLength * 0.11, 22, 38);
-  const secondaryVerticalCometHeight = clamp(verticalTrackLength * 0.12, 18, 34);
+  const primaryHorizontalCometWidth = clamp(horizontalTrackLength * (isPremium ? 0.15 : isStandard ? 0.16 : 0.13), 34, isPremium ? 62 : isStandard ? 56 : 46);
+  const primaryVerticalCometHeight = clamp(verticalTrackLength * (isPremium ? 0.16 : isStandard ? 0.17 : 0.14), 30, isPremium ? 62 : isStandard ? 58 : 46);
+  const secondaryHorizontalCometWidth = clamp(horizontalTrackLength * 0.09, 18, 28);
+  const secondaryVerticalCometHeight = clamp(verticalTrackLength * 0.1, 16, 28);
 
   useEffect(() => {
     pulseLoopRef.current?.stop?.();
@@ -152,7 +152,7 @@ export default function GroupCardAnimationBorder({
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: isPremium ? 2400 : isStandard ? 2800 : 3200,
+          duration: isPremium ? 3200 : isStandard ? 2800 : 3200,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
@@ -169,7 +169,7 @@ export default function GroupCardAnimationBorder({
       Animated.sequence([
         Animated.timing(travelAnim, {
           toValue: 4,
-          duration: isPremium ? 5600 : isStandard ? 6600 : 7200,
+          duration: isPremium ? 7600 : isStandard ? 6600 : 6400,
           easing: Easing.linear,
           useNativeDriver: true,
         }),
@@ -185,10 +185,10 @@ export default function GroupCardAnimationBorder({
     if (isPremium) {
       secondaryTravelLoopRef.current = Animated.loop(
         Animated.sequence([
-          Animated.delay(1500),
+          Animated.delay(2600),
           Animated.timing(secondaryTravelAnim, {
             toValue: 4,
-            duration: 6600,
+            duration: 9800,
             easing: Easing.linear,
             useNativeDriver: true,
           }),
@@ -218,7 +218,7 @@ export default function GroupCardAnimationBorder({
 
   const frameOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: isPremium ? [0.78, 1] : isStandard ? [0.44, 0.74] : [0.26, 0.44],
+    outputRange: isPremium ? [0.8, 1] : isStandard ? [0.44, 0.74] : [0.26, 0.44],
   });
   const outerFrameOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
@@ -226,27 +226,27 @@ export default function GroupCardAnimationBorder({
   });
   const ambientOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: isPremium ? [0.14, 0.26] : [0, 0],
+    outputRange: isPremium ? [0.2, 0.34] : [0, 0],
   });
   const auraOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: isPremium ? [0.24, 0.5] : isStandard ? [0.08, 0.16] : [0.02, 0.05],
+    outputRange: isPremium ? [0.34, 0.62] : isStandard ? [0.08, 0.16] : [0.02, 0.05],
   });
   const glowOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: isPremium ? [0.34, 0.72] : isStandard ? [0.14, 0.26] : [0.04, 0.1],
+    outputRange: isPremium ? [0.5, 0.88] : isStandard ? [0.14, 0.26] : [0.04, 0.1],
   });
   const auraScale = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: isPremium ? [0.996, 1.022] : isStandard ? [0.998, 1.008] : [1, 1.003],
+    outputRange: isPremium ? [1.004, 1.03] : isStandard ? [0.998, 1.008] : [1, 1.003],
   });
   const ambientScale = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: isPremium ? [1.01, 1.06] : [1, 1],
+    outputRange: isPremium ? [1.03, 1.1] : [1, 1],
   });
 
-  const primaryOpacityValue = isPremium ? 0.98 : isStandard ? 0.82 : 0.62;
-  const secondaryOpacityValue = isPremium ? 0.6 : 0;
+  const primaryOpacityValue = isPremium ? 0.82 : isStandard ? 0.82 : 0.62;
+  const secondaryOpacityValue = isPremium ? 0.2 : 0;
 
   const topPrimaryX = buildEdgeTravel(travelAnim, 0, horizontalTrackLength - primaryHorizontalCometWidth, false);
   const rightPrimaryY = buildEdgeTravel(travelAnim, 1, verticalTrackLength - primaryVerticalCometHeight, false);
@@ -274,24 +274,14 @@ export default function GroupCardAnimationBorder({
   const cornerBottomLeftOpacity = isPremium ? buildCornerOpacity(travelAnim, 3, 0.84) : pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.04, 0.08] });
   const premiumTopSheenOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: isPremium ? [0.24, 0.46] : [0, 0],
+    outputRange: isPremium ? [0.32, 0.54] : [0, 0],
   });
   const premiumCornerAccentOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: isPremium ? [0.38, 0.7] : [0, 0],
+    outputRange: isPremium ? [0.52, 0.82] : [0, 0],
   });
 
-  const premiumDust = useMemo<DustSpec[]>(() => {
-    if (!isPremium) return [];
-    return [
-      { key: 'd1', size: 3, style: { top: outerSpread - 5, left: outerSpread + 28 }, opacityRange: [0.06, 0.2], scaleRange: [0.92, 1.16] },
-      { key: 'd2', size: 4, style: { top: outerSpread + 10, right: outerSpread + 2 }, opacityRange: [0.08, 0.24], scaleRange: [0.88, 1.2] },
-      { key: 'd3', size: 2, style: { top: outerSpread + 44, left: outerSpread - 2 }, opacityRange: [0.04, 0.14], scaleRange: [0.96, 1.08] },
-      { key: 'd4', size: 3, style: { bottom: outerSpread - 5, right: outerSpread + 32 }, opacityRange: [0.06, 0.18], scaleRange: [0.9, 1.12] },
-      { key: 'd5', size: 2, style: { bottom: outerSpread + 12, left: outerSpread + 10 }, opacityRange: [0.03, 0.1], scaleRange: [0.98, 1.08] },
-      { key: 'd6', size: 2, style: { top: outerSpread - 1, right: outerSpread + 42 }, opacityRange: [0.03, 0.12], scaleRange: [0.96, 1.1] },
-    ];
-  }, [isPremium, outerSpread]);
+  const premiumDust = useMemo<DustSpec[]>(() => [], []);
 
   const dynamicStyles = useMemo(
     () => ({
@@ -302,11 +292,11 @@ export default function GroupCardAnimationBorder({
         left: -outerSpread,
       },
       ambient: {
-        top: outerSpread - 10,
-        right: outerSpread - 10,
-        bottom: outerSpread - 10,
-        left: outerSpread - 10,
-        borderRadius: cornerRadius + 14,
+        top: outerSpread - 18,
+        right: outerSpread - 18,
+        bottom: outerSpread - 18,
+        left: outerSpread - 18,
+        borderRadius: cornerRadius + 22,
       },
       aura: {
         top: outerSpread - 2,
@@ -399,10 +389,10 @@ export default function GroupCardAnimationBorder({
       cornerBottomRight: { bottom: outerSpread - 3, right: outerSpread - 3 },
       cornerBottomLeft: { bottom: outerSpread - 3, left: outerSpread - 3 },
       topSheen: {
-        top: outerSpread - 10,
-        left: outerSpread + frameInset + 8,
-        right: outerSpread + frameInset + 8,
-        height: 24,
+        top: outerSpread - 14,
+        left: outerSpread + frameInset + 2,
+        right: outerSpread + frameInset + 2,
+        height: 28,
       },
       cornerAccentTopLeftH: { top: outerSpread - 1, left: outerSpread + 10, width: 16, height: 1.4 },
       cornerAccentTopLeftV: { top: outerSpread + 10, left: outerSpread - 1, width: 1.4, height: 16 },
@@ -533,8 +523,7 @@ export default function GroupCardAnimationBorder({
         ) : null}
       </View>
 
-      {!isBasic ? (
-        <View style={[styles.rightTrack, dynamicStyles.rightTrack]}>
+      <View style={[styles.rightTrack, dynamicStyles.rightTrack]}>
           <Animated.View
             style={[
               styles.primaryVerticalComet,
@@ -566,10 +555,8 @@ export default function GroupCardAnimationBorder({
             </Animated.View>
           ) : null}
         </View>
-      ) : null}
 
-      {!isBasic ? (
-        <View style={[styles.horizontalTrack, dynamicStyles.bottomTrack]}>
+      <View style={[styles.horizontalTrack, dynamicStyles.bottomTrack]}>
           <Animated.View
             style={[
               styles.primaryHorizontalComet,
@@ -601,10 +588,8 @@ export default function GroupCardAnimationBorder({
             </Animated.View>
           ) : null}
         </View>
-      ) : null}
 
-      {!isBasic ? (
-        <View style={[styles.leftTrack, dynamicStyles.leftTrack]}>
+      <View style={[styles.leftTrack, dynamicStyles.leftTrack]}>
           <Animated.View
             style={[
               styles.primaryVerticalComet,
@@ -636,7 +621,6 @@ export default function GroupCardAnimationBorder({
             </Animated.View>
           ) : null}
         </View>
-      ) : null}
 
       <Animated.View
         style={[
@@ -727,8 +711,8 @@ const styles = StyleSheet.create({
   ambient: {
     position: 'absolute',
     borderRadius: 999,
-    shadowOpacity: 0.3,
-    shadowRadius: 42,
+    shadowOpacity: 0.38,
+    shadowRadius: 56,
     shadowOffset: { width: 0, height: 0 },
   },
   aura: {
@@ -741,16 +725,16 @@ const styles = StyleSheet.create({
   glow: {
     position: 'absolute',
     borderWidth: 1,
-    shadowOpacity: 0.44,
-    shadowRadius: 18,
+    shadowOpacity: 0.5,
+    shadowRadius: 22,
     shadowOffset: { width: 0, height: 0 },
   },
   topSheen: {
     position: 'absolute',
     borderRadius: 999,
     overflow: 'hidden',
-    shadowOpacity: 0.65,
-    shadowRadius: 20,
+    shadowOpacity: 0.78,
+    shadowRadius: 26,
     shadowOffset: { width: 0, height: 0 },
   },
   frameHorizontal: {
@@ -835,8 +819,8 @@ const styles = StyleSheet.create({
   },
   cornerGem: {
     position: 'absolute',
-    width: 10,
-    height: 10,
+    width: 8,
+    height: 8,
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
@@ -845,8 +829,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
   },
   cornerGemCore: {
-    width: 5,
-    height: 5,
+    width: 4,
+    height: 4,
     borderRadius: 999,
     opacity: 0.98,
   },
