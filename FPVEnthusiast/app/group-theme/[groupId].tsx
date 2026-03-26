@@ -17,7 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../src/context/AuthContext';
 import { supabase } from '../../src/services/supabase';
-import { GROUP_CARD_ANIMATION_VARIANTS, GROUP_THEME_PRESETS, GroupCardAnimationVariantId, GroupThemeTokens } from '../../src/constants/groupThemes';
+import { GROUP_CARD_ANIMATION_VARIANTS, GROUP_THEME_PRESETS, GroupCardAnimationVariantId, GroupThemeTokens, getGroupCardAnimationVariant } from '../../src/constants/groupThemes';
 import { createDraftFromPreset, customThemeToTokens, GroupCustomTheme, GroupThemeDraft, useGroupThemes } from '../../src/hooks/useGroupThemes';
 import { useGroupThemeCheckout } from '../../src/hooks/useGroupThemeCheckout';
 import { useGroupAnimationCheckout } from '../../src/hooks/useGroupAnimationCheckout';
@@ -217,6 +217,16 @@ export default function GroupThemeScreen() {
 
   const previewTheme = useMemo(() => previewThemeFromDraft(draft), [draft]);
   const ownedAnimationVariantIds = useMemo(() => new Set(animationPurchases.filter((purchase) => purchase.status === 'paid').map((purchase) => purchase.variant_id)), [animationPurchases]);
+  const activeAnimationLabel = useMemo(() => getGroupCardAnimationVariant(activeAnimationVariantId).name, [activeAnimationVariantId]);
+  const activeBaseThemeLabel = activeTheme.name;
+  const activeBaseThemeTypeLabel = activePreference?.active_theme_type === 'custom' ? 'Custom theme' : 'Preset theme';
+  const activeBaseThemeMeta = activePreference?.active_theme_type === 'custom'
+    ? 'A custom theme is live right now. If you pick a preset, it replaces the custom theme for this group until you switch back.'
+    : 'A preset theme is live right now. If you pick a custom theme, it replaces the preset for this group until you switch back.';
+  const latestPendingCustomTheme = useMemo(
+    () => customThemes.find((theme) => theme.status === 'pending_payment') ?? null,
+    [customThemes],
+  );
 
   useEffect(() => {
     setPreviewAnimationVariantId(activeAnimationVariantId);
@@ -355,7 +365,7 @@ export default function GroupThemeScreen() {
     const unlocked = await waitForThemePurchase(completed.customThemeId);
     resetCheckout();
     if (!unlocked) {
-      Alert.alert('Payment received', 'Your purchase went through. Pull to refresh in a moment if the theme does not appear yet.');
+      Alert.alert('Checkout processing', 'Your payment sheet completed, but the theme is still waiting on final confirmation. It should stay in your collection as Pending for this group and switch over automatically once the webhook finishes. If it still does not move after about a minute, tap Refresh appearance data.');
       return;
     }
 
@@ -451,8 +461,23 @@ export default function GroupThemeScreen() {
         </View>
 
         <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Currently live on this group</Text>
+          <Text style={styles.sectionHint}>Only one base theme is active at a time. Preset and custom themes never stack on top of each other; the selected animation sits on top of whichever base theme is live.</Text>
+          <View style={styles.statusCallout}>
+            <View style={[styles.collectionSwatch, { backgroundColor: activeTheme.surfaceColor, borderColor: activeTheme.borderColor }]}> 
+              <View style={[styles.collectionSwatchAccent, { backgroundColor: activeTheme.accentColor }]} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.statusCalloutTitle}>{activeBaseThemeLabel}</Text>
+              <Text style={styles.statusCalloutMeta}>{activeBaseThemeTypeLabel} • {activeAnimationLabel}</Text>
+              <Text style={styles.statusCalloutSubtle}>{activeBaseThemeMeta}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.card}>
           <Text style={styles.sectionTitle}>Preset themes</Text>
-          <Text style={styles.sectionHint}>These are free and can be switched any time for just this group on your device.</Text>
+          <Text style={styles.sectionHint}>These are free and can be switched any time for just this group. Choosing one replaces any custom theme currently active for this group.</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
             {GROUP_THEME_PRESETS.map((theme) => {
               const isActive = activePreference?.active_theme_type === 'preset' && activePreference.active_theme_id === theme.id;
@@ -471,7 +496,7 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Your custom theme collection</Text>
-          <Text style={styles.sectionHint}>Custom themes are purchased per group and stay locked to this community for your account.</Text>
+          <Text style={styles.sectionHint}>Custom themes are purchased per group and stay locked to this community for your account. Using one replaces the active preset for this group instead of layering on top of it.</Text>
           {loadingThemes ? (
             <ActivityIndicator color="#ff6a2f" size="small" />
           ) : customThemes.length === 0 ? (
@@ -577,7 +602,7 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Build a premium custom theme</Text>
-          <Text style={styles.sectionHint}>Preview first, then unlock if you like it. Artwork now sits in dedicated preview frames so you can judge the banner and feed card treatment before paying.</Text>
+          <Text style={styles.sectionHint}>Preview first, then unlock if you like it. This builder is draft-only until checkout succeeds, so it does not affect the live group look while you experiment.</Text>
 
           <Text style={styles.label}>Theme name</Text>
           <TextInput
@@ -665,7 +690,15 @@ export default function GroupThemeScreen() {
             ))}
           </View>
 
+          <Text style={styles.previewDraftHint}>Draft preview only — the header and feed card below show what this custom theme would look like if you unlock it. It does not combine with the currently live preset/custom theme.</Text>
           <ThemePreview group={group} theme={previewTheme} />
+
+          {latestPendingCustomTheme ? (
+            <View style={styles.pendingCheckoutNotice}>
+              <Ionicons name="time-outline" size={16} color="#ffb48d" />
+              <Text style={styles.pendingCheckoutNoticeText}>Pending checkout detected for “{latestPendingCustomTheme.name}”. Let that finish before judging the final live appearance.</Text>
+            </View>
+          ) : null}
 
           <TouchableOpacity style={[styles.primaryBtn, checkoutState.status === 'loading' || checkoutState.status === 'processing' ? { opacity: 0.7 } : null]} disabled={checkoutState.status === 'loading' || checkoutState.status === 'processing'} onPress={() => void handlePurchaseCustomTheme()}>
             {checkoutState.status === 'loading' || checkoutState.status === 'processing' ? (
@@ -1046,6 +1079,34 @@ const styles = StyleSheet.create({
   primaryBtn: { marginTop: 18, borderRadius: 14, backgroundColor: '#ff6a2f', paddingHorizontal: 14, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   purchaseHint: { color: '#8b8b8b', fontSize: 12, lineHeight: 17, marginTop: 10 },
+  statusCallout: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginTop: 14,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#252525',
+    backgroundColor: '#151515',
+  },
+  statusCalloutTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  statusCalloutMeta: { color: '#ffb088', fontSize: 12, fontWeight: '700', marginTop: 4 },
+  statusCalloutSubtle: { color: '#8b8b8b', fontSize: 12, lineHeight: 17, marginTop: 6 },
+  previewDraftHint: { color: '#b8b8b8', fontSize: 12, lineHeight: 18, marginTop: 14 },
+  pendingCheckoutNotice: {
+    marginTop: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#5d3928',
+    backgroundColor: 'rgba(255,106,47,0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  pendingCheckoutNoticeText: { color: '#ffccba', fontSize: 12, lineHeight: 17, flex: 1 },
   refreshBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12 },
   refreshBtnText: { color: '#bbb', fontSize: 13, fontWeight: '600' },
 });

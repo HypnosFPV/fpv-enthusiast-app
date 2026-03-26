@@ -445,7 +445,7 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
     return true;
   }, [groupId]);
 
-  const waitForThemePurchase = useCallback(async (customThemeId: string, timeoutMs = 25000) => {
+  const waitForThemePurchase = useCallback(async (customThemeId: string, timeoutMs = 60000) => {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
       const { data } = await supabase
@@ -453,10 +453,15 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
         .select('*')
         .eq('id', customThemeId)
         .maybeSingle();
-      if ((data as GroupCustomTheme | null)?.status === 'paid') {
+      const status = (data as GroupCustomTheme | null)?.status;
+      if (status === 'paid') {
         invalidateResolvedGroupTheme(userId, groupId);
         await refreshThemes();
         return true;
+      }
+      if (status === 'cancelled' || status === 'archived') {
+        await refreshThemes();
+        return false;
       }
       await new Promise((resolve) => setTimeout(resolve, 1200));
     }

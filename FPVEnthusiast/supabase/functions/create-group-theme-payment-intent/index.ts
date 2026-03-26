@@ -83,6 +83,13 @@ serve(async (req) => {
       return json({ error: 'You must be a group owner or member to create a custom theme for this group.' }, 403);
     }
 
+    await supabase
+      .from('social_group_custom_themes')
+      .update({ status: 'archived' })
+      .eq('owner_user_id', user.id)
+      .eq('group_id', groupId)
+      .eq('status', 'pending_payment');
+
     const { data: customTheme, error: insertErr } = await supabase
       .from('social_group_custom_themes')
       .insert({

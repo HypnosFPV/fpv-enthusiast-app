@@ -483,6 +483,8 @@ export default function PostCard(props: Props) {
   const activeGroupTheme = isGroupPost ? resolvedGroupTheme : null;
   const groupAnimationVariantId = activeGroupTheme?.animationVariantId ?? 'none';
   const isPremiumGroupCard = !!activeGroupTheme && groupAnimationVariantId === 'premium';
+  const hasPrimaryPostMedia = !!(post.media_url || post.social_url || post.embed_url || post.thumbnail_url || post.media_type === 'social_embed');
+  const shouldShowThemedCardArt = !!activeGroupTheme?.cardImageUrl && !isPremiumGroupCard && !hasPrimaryPostMedia;
   const themedCardStyle = useMemo(() => activeGroupTheme ? ({
     backgroundColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.surfaceColor,
     borderColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.borderColor,
@@ -1162,10 +1164,10 @@ export default function PostCard(props: Props) {
           setCardFrame((prev) => (prev.width === nextWidth && prev.height === nextHeight ? prev : { width: nextWidth, height: nextHeight }));
         }}
       >
-        {activeGroupTheme?.cardImageUrl && !isPremiumGroupCard ? (
+        {shouldShowThemedCardArt ? (
           <>
-            <Image source={{ uri: activeGroupTheme.cardImageUrl }} style={styles.themedCardImage} resizeMode="cover" />
-            <View style={[styles.themedCardOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.08, Math.min(0.32, (activeGroupTheme.overlayStrength ?? 72) / 180))})` }]} />
+            <Image source={{ uri: activeGroupTheme?.cardImageUrl ?? undefined }} style={styles.themedCardImage} resizeMode="cover" />
+            <View style={[styles.themedCardOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.08, Math.min(0.32, ((activeGroupTheme?.overlayStrength ?? 72) / 180)))})` }]} />
           </>
         ) : null}
         <View style={styles.header}>
