@@ -251,11 +251,11 @@ export default function GroupCardAnimationBorder({
 
   const basicRailOpacity = pulseAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.14, 0.24],
+    outputRange: [0.1, 0.18],
   });
   const basicSweepOpacity = pulseAnim.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.45, 0.7, 0.5],
+    outputRange: [0.34, 0.52, 0.38],
   });
 
   const standardRailOpacity = pulseAnim.interpolate({
@@ -273,11 +273,11 @@ export default function GroupCardAnimationBorder({
   });
   const premiumRailOpacity = pulseAnim.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.34, 0.9, 0.34],
+    outputRange: [0.48, 1, 0.52],
   });
-  const premiumGlowOpacity = pulseAnim.interpolate({
+  const premiumRailCoreOpacity = pulseAnim.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.1, 0.24, 0.1],
+    outputRange: [0.28, 0.72, 0.32],
   });
 
   const basicTopX = orbitAnim.interpolate({
@@ -301,26 +301,26 @@ export default function GroupCardAnimationBorder({
   const premiumBottomX = buildSegmentTranslate(orbitAnim, 2, horizontalTrackLength - premiumHorizontalCometWidth, true);
   const premiumLeftY = buildSegmentTranslate(orbitAnim, 3, verticalTrackLength - premiumVerticalCometHeight, true);
 
-  const premiumTopOpacity = buildSegmentOpacity(orbitAnim, 0, 0.96);
-  const premiumRightOpacity = buildSegmentOpacity(orbitAnim, 1, 0.96);
-  const premiumBottomOpacity = buildSegmentOpacity(orbitAnim, 2, 0.96);
-  const premiumLeftOpacity = buildSegmentOpacity(orbitAnim, 3, 0.96);
+  const premiumTopOpacity = buildSegmentOpacity(orbitAnim, 0, 1);
+  const premiumRightOpacity = buildSegmentOpacity(orbitAnim, 1, 1);
+  const premiumBottomOpacity = buildSegmentOpacity(orbitAnim, 2, 1);
+  const premiumLeftOpacity = buildSegmentOpacity(orbitAnim, 3, 1);
 
   const premiumTone = useMemo(() => ({
-    carbonShadow: mixColors(borderColor, '#000000', 0.94),
-    carbonBase: mixColors(mixColors(accentColor, borderColor, 0.22), '#040406', 0.86),
-    carbonLift: withAlpha(mixColors(accentColor, '#73618a', 0.12), 0.12),
-    carbonWeaveShadow: withAlpha(mixColors(borderColor, '#000000', 0.82), 0.52),
-    carbonWeaveLight: withAlpha(mixColors(accentColor, '#574a66', 0.14), 0.24),
-    carbonWeaveMicro: withAlpha(mixColors(borderColor, '#16131b', 0.42), 0.22),
-    carbonTint: withAlpha(accentColor, 0.08),
-    carbonGloss: withAlpha(mixColors(accentColor, '#c2b4d3', 0.06), 0.06),
-    carbonFrameOuter: withAlpha(mixColors(borderColor, '#000000', 0.28), 0.98),
-    carbonFrameInner: withAlpha(mixColors(accentColor, borderColor, 0.1), 0.46),
-    electricDim: withAlpha(accentColor, 0.26),
-    electricSoft: withAlpha(accentColor, 0.62),
-    electricBase: withAlpha(accentColor, 0.9),
-    electricHot: accentColor,
+    carbonShadow: mixColors(borderColor, '#000000', 0.95),
+    carbonBase: mixColors(mixColors(accentColor, borderColor, 0.2), '#030305', 0.88),
+    carbonLift: withAlpha(mixColors(accentColor, '#8c72ab', 0.14), 0.14),
+    carbonWeaveShadow: withAlpha(mixColors(borderColor, '#000000', 0.84), 0.56),
+    carbonWeaveLight: withAlpha(mixColors(accentColor, '#6d4f8a', 0.18), 0.28),
+    carbonWeaveMicro: withAlpha(mixColors(borderColor, '#18131d', 0.4), 0.24),
+    carbonTint: withAlpha(accentColor, 0.11),
+    carbonGloss: withAlpha(mixColors(accentColor, '#d9c3f5', 0.08), 0.07),
+    carbonFrameOuter: withAlpha(mixColors(borderColor, '#000000', 0.3), 0.98),
+    carbonFrameInner: withAlpha(mixColors(accentColor, borderColor, 0.08), 0.52),
+    electricDim: withAlpha(accentColor, 0.36),
+    electricSoft: withAlpha(accentColor, 0.86),
+    electricBase: withAlpha(accentColor, 0.98),
+    electricHot: mixColors(accentColor, '#f4dcff', 0.18),
   }), [accentColor, borderColor]);
 
   const premiumCanvasWidth = width + outerSpread * 2;
@@ -445,10 +445,11 @@ export default function GroupCardAnimationBorder({
     const patternId = `${premiumIdBase}-carbon-pattern`;
     const fineWeaveCount = Math.ceil((frameW + frameH) / 8) + 20;
     const microWeaveCount = Math.ceil((frameW + frameH) / 4) + 34;
-    const topPulseW = clamp(horizontalTrackLength * 0.25, 72, 116);
-    const sidePulseH = clamp(verticalTrackLength * 0.27, 72, 118);
+    const topPulseW = clamp(horizontalTrackLength * 0.31, 86, 138);
+    const sidePulseH = clamp(verticalTrackLength * 0.32, 84, 146);
     const edgeInset = Math.max(frameInset - 4, 8);
     const verticalEdgeInset = Math.max(verticalInset - 4, 8);
+    const cornerFork = clamp(cornerRadius + 8, 16, 28);
 
     const topBoltPoints = buildPolylinePoints([
       [0, 5],
@@ -521,6 +522,7 @@ export default function GroupCardAnimationBorder({
             <G clipPath={`url(#${clipId})`}>
               <Rect x={frameX} y={frameY} width={frameW} height={frameH} fill={`url(#${patternId})`} />
               <Rect x={frameX} y={frameY} width={frameW} height={frameH} fill={premiumTone.carbonTint} />
+              <Rect x={frameX} y={frameY + frameH * 0.18} width={frameW} height={Math.max(frameH * 0.22, 18)} fill={withAlpha(accentColor, 0.035)} />
               {Array.from({ length: fineWeaveCount }).map((_, index) => {
                 const startX = frameX - frameH + index * 8;
                 return (
@@ -573,15 +575,20 @@ export default function GroupCardAnimationBorder({
             <Rect x={frameX} y={frameY} width={frameW} height={frameH} rx={frameR} ry={frameR} stroke={premiumTone.carbonFrameOuter} strokeWidth={1.05} fill="none" />
             <Rect x={innerFrameX} y={innerFrameY} width={innerFrameW} height={innerFrameH} rx={innerFrameR} ry={innerFrameR} stroke={premiumTone.carbonFrameInner} strokeWidth={0.85} fill="none" />
 
-            <Line x1={frameX + edgeInset} y1={frameY + 0.8} x2={frameX + frameW - edgeInset} y2={frameY + 0.8} stroke={premiumTone.electricDim} strokeWidth={1.05} strokeLinecap="round" />
-            <Line x1={frameX + edgeInset} y1={frameY + frameH - 0.8} x2={frameX + frameW - edgeInset} y2={frameY + frameH - 0.8} stroke={premiumTone.electricDim} strokeWidth={1.05} strokeLinecap="round" />
-            <Line x1={frameX + 0.8} y1={frameY + verticalEdgeInset} x2={frameX + 0.8} y2={frameY + frameH - verticalEdgeInset} stroke={premiumTone.electricDim} strokeWidth={1.05} strokeLinecap="round" />
-            <Line x1={frameX + frameW - 0.8} y1={frameY + verticalEdgeInset} x2={frameX + frameW - 0.8} y2={frameY + frameH - verticalEdgeInset} stroke={premiumTone.electricDim} strokeWidth={1.05} strokeLinecap="round" />
+            <Line x1={frameX + edgeInset} y1={frameY + 0.8} x2={frameX + frameW - edgeInset} y2={frameY + 0.8} stroke={premiumTone.electricDim} strokeWidth={1.15} strokeLinecap="square" />
+            <Line x1={frameX + edgeInset} y1={frameY + frameH - 0.8} x2={frameX + frameW - edgeInset} y2={frameY + frameH - 0.8} stroke={premiumTone.electricDim} strokeWidth={1.15} strokeLinecap="square" />
+            <Line x1={frameX + 0.8} y1={frameY + verticalEdgeInset} x2={frameX + 0.8} y2={frameY + frameH - verticalEdgeInset} stroke={premiumTone.electricDim} strokeWidth={1.15} strokeLinecap="square" />
+            <Line x1={frameX + frameW - 0.8} y1={frameY + verticalEdgeInset} x2={frameX + frameW - 0.8} y2={frameY + frameH - verticalEdgeInset} stroke={premiumTone.electricDim} strokeWidth={1.15} strokeLinecap="square" />
+            <Line x1={frameX + 1.8} y1={frameY + cornerFork} x2={frameX + cornerFork} y2={frameY + 1.8} stroke={premiumTone.electricBase} strokeOpacity={0.34} strokeWidth={1.5} strokeLinecap="square" />
+            <Line x1={frameX + frameW - cornerFork} y1={frameY + 1.8} x2={frameX + frameW - 1.8} y2={frameY + cornerFork} stroke={premiumTone.electricBase} strokeOpacity={0.34} strokeWidth={1.5} strokeLinecap="square" />
+            <Line x1={frameX + 1.8} y1={frameY + frameH - cornerFork} x2={frameX + cornerFork} y2={frameY + frameH - 1.8} stroke={premiumTone.electricBase} strokeOpacity={0.34} strokeWidth={1.5} strokeLinecap="square" />
+            <Line x1={frameX + frameW - cornerFork} y1={frameY + frameH - 1.8} x2={frameX + frameW - 1.8} y2={frameY + frameH - cornerFork} stroke={premiumTone.electricBase} strokeOpacity={0.34} strokeWidth={1.5} strokeLinecap="square" />
           </Svg>
         </Animated.View>
 
         <View style={[styles.premiumEdgeTrack, { top: outerSpread - 3, left: outerSpread + edgeInset, width: horizontalTrackLength }]}>
           <Animated.View style={[styles.premiumRail, { backgroundColor: premiumTone.electricDim, opacity: premiumRailOpacity }]} />
+          <Animated.View style={[styles.premiumRailCore, { backgroundColor: premiumTone.electricBase, opacity: premiumRailCoreOpacity }]} />
           <Animated.View
             style={[
               styles.premiumPulseCluster,
@@ -592,9 +599,10 @@ export default function GroupCardAnimationBorder({
               },
             ]}
           >
-            <Svg width={topPulseW} height={10}>
-              <Polyline points={topBoltPoints} fill="none" stroke={premiumTone.electricSoft} strokeWidth={2.4} strokeOpacity={0.26} strokeLinecap="round" strokeLinejoin="round" />
-              <Polyline points={topBoltPoints} fill="none" stroke={premiumTone.electricBase} strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" />
+            <Svg width={topPulseW} height={12}>
+              <Polyline points={topBoltPoints} fill="none" stroke={premiumTone.electricSoft} strokeWidth={3.2} strokeOpacity={0.34} strokeLinecap="square" strokeLinejoin="miter" />
+              <Polyline points={topBoltPoints} fill="none" stroke={premiumTone.electricBase} strokeWidth={2.05} strokeLinecap="square" strokeLinejoin="miter" />
+              <Polyline points={topBoltPoints} fill="none" stroke={premiumTone.electricHot} strokeWidth={1.05} strokeLinecap="square" strokeLinejoin="miter" />
               <Line x1={topPulseW * 0.16} y1={6.1} x2={topPulseW * 0.12} y2={1.9} stroke={premiumTone.electricSoft} strokeWidth={1.1} strokeLinecap="round" />
               <Line x1={topPulseW * 0.36} y1={6.3} x2={topPulseW * 0.31} y2={8.3} stroke={premiumTone.electricBase} strokeWidth={1.05} strokeLinecap="round" />
               <Line x1={topPulseW * 0.48} y1={2.8} x2={topPulseW * 0.44} y2={0.9} stroke={premiumTone.electricHot} strokeWidth={1} strokeLinecap="round" />
@@ -608,6 +616,7 @@ export default function GroupCardAnimationBorder({
 
         <View style={[styles.premiumEdgeTrackVertical, { top: outerSpread + verticalEdgeInset, right: outerSpread - 3, height: verticalTrackLength }]}>
           <Animated.View style={[styles.premiumRailVertical, { backgroundColor: premiumTone.electricDim, opacity: premiumRailOpacity }]} />
+          <Animated.View style={[styles.premiumRailVerticalCore, { backgroundColor: premiumTone.electricBase, opacity: premiumRailCoreOpacity }]} />
           <Animated.View
             style={[
               styles.premiumPulseClusterVertical,
@@ -618,9 +627,10 @@ export default function GroupCardAnimationBorder({
               },
             ]}
           >
-            <Svg width={10} height={sidePulseH}>
-              <Polyline points={rightBoltPoints} fill="none" stroke={premiumTone.electricSoft} strokeWidth={2.4} strokeOpacity={0.26} strokeLinecap="round" strokeLinejoin="round" />
-              <Polyline points={rightBoltPoints} fill="none" stroke={premiumTone.electricBase} strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" />
+            <Svg width={12} height={sidePulseH}>
+              <Polyline points={rightBoltPoints} fill="none" stroke={premiumTone.electricSoft} strokeWidth={3.2} strokeOpacity={0.34} strokeLinecap="square" strokeLinejoin="miter" />
+              <Polyline points={rightBoltPoints} fill="none" stroke={premiumTone.electricBase} strokeWidth={2.05} strokeLinecap="square" strokeLinejoin="miter" />
+              <Polyline points={rightBoltPoints} fill="none" stroke={premiumTone.electricHot} strokeWidth={1.05} strokeLinecap="square" strokeLinejoin="miter" />
               <Line x1={3.9} y1={sidePulseH * 0.1} x2={1.7} y2={sidePulseH * 0.06} stroke={premiumTone.electricSoft} strokeWidth={1.05} strokeLinecap="round" />
               <Line x1={6.2} y1={sidePulseH * 0.2} x2={8.1} y2={sidePulseH * 0.17} stroke={premiumTone.electricBase} strokeWidth={1.05} strokeLinecap="round" />
               <Line x1={3.2} y1={sidePulseH * 0.31} x2={1.5} y2={sidePulseH * 0.35} stroke={premiumTone.electricHot} strokeWidth={1} strokeLinecap="round" />
@@ -633,6 +643,7 @@ export default function GroupCardAnimationBorder({
 
         <View style={[styles.premiumEdgeTrack, { bottom: outerSpread - 3, left: outerSpread + edgeInset, width: horizontalTrackLength }]}>
           <Animated.View style={[styles.premiumRail, { backgroundColor: premiumTone.electricDim, opacity: premiumRailOpacity }]} />
+          <Animated.View style={[styles.premiumRailCore, { backgroundColor: premiumTone.electricBase, opacity: premiumRailCoreOpacity }]} />
           <Animated.View
             style={[
               styles.premiumPulseCluster,
@@ -643,9 +654,10 @@ export default function GroupCardAnimationBorder({
               },
             ]}
           >
-            <Svg width={topPulseW} height={10}>
-              <Polyline points={bottomBoltPoints} fill="none" stroke={premiumTone.electricSoft} strokeWidth={2.4} strokeOpacity={0.24} strokeLinecap="round" strokeLinejoin="round" />
-              <Polyline points={bottomBoltPoints} fill="none" stroke={premiumTone.electricBase} strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" />
+            <Svg width={topPulseW} height={12}>
+              <Polyline points={bottomBoltPoints} fill="none" stroke={premiumTone.electricSoft} strokeWidth={3.2} strokeOpacity={0.32} strokeLinecap="square" strokeLinejoin="miter" />
+              <Polyline points={bottomBoltPoints} fill="none" stroke={premiumTone.electricBase} strokeWidth={2.05} strokeLinecap="square" strokeLinejoin="miter" />
+              <Polyline points={bottomBoltPoints} fill="none" stroke={premiumTone.electricHot} strokeWidth={1.05} strokeLinecap="square" strokeLinejoin="miter" />
               <Line x1={topPulseW * 0.1} y1={6.1} x2={topPulseW * 0.05} y2={8.1} stroke={premiumTone.electricSoft} strokeWidth={1.05} strokeLinecap="round" />
               <Line x1={topPulseW * 0.31} y1={6.4} x2={topPulseW * 0.27} y2={2} stroke={premiumTone.electricBase} strokeWidth={1.05} strokeLinecap="round" />
               <Line x1={topPulseW * 0.42} y1={3.1} x2={topPulseW * 0.39} y2={1} stroke={premiumTone.electricHot} strokeWidth={1} strokeLinecap="round" />
@@ -658,6 +670,7 @@ export default function GroupCardAnimationBorder({
 
         <View style={[styles.premiumEdgeTrackVertical, { top: outerSpread + verticalEdgeInset, left: outerSpread - 3, height: verticalTrackLength }]}>
           <Animated.View style={[styles.premiumRailVertical, { backgroundColor: premiumTone.electricDim, opacity: premiumRailOpacity }]} />
+          <Animated.View style={[styles.premiumRailVerticalCore, { backgroundColor: premiumTone.electricBase, opacity: premiumRailCoreOpacity }]} />
           <Animated.View
             style={[
               styles.premiumPulseClusterVertical,
@@ -668,9 +681,10 @@ export default function GroupCardAnimationBorder({
               },
             ]}
           >
-            <Svg width={10} height={sidePulseH}>
-              <Polyline points={leftBoltPoints} fill="none" stroke={premiumTone.electricSoft} strokeWidth={2.4} strokeOpacity={0.24} strokeLinecap="round" strokeLinejoin="round" />
-              <Polyline points={leftBoltPoints} fill="none" stroke={premiumTone.electricBase} strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" />
+            <Svg width={12} height={sidePulseH}>
+              <Polyline points={leftBoltPoints} fill="none" stroke={premiumTone.electricSoft} strokeWidth={3.2} strokeOpacity={0.32} strokeLinecap="square" strokeLinejoin="miter" />
+              <Polyline points={leftBoltPoints} fill="none" stroke={premiumTone.electricBase} strokeWidth={2.05} strokeLinecap="square" strokeLinejoin="miter" />
+              <Polyline points={leftBoltPoints} fill="none" stroke={premiumTone.electricHot} strokeWidth={1.05} strokeLinecap="square" strokeLinejoin="miter" />
               <Line x1={6} y1={sidePulseH * 0.09} x2={8.1} y2={sidePulseH * 0.05} stroke={premiumTone.electricSoft} strokeWidth={1.05} strokeLinecap="round" />
               <Line x1={3.4} y1={sidePulseH * 0.19} x2={1.6} y2={sidePulseH * 0.23} stroke={premiumTone.electricBase} strokeWidth={1.05} strokeLinecap="round" />
               <Line x1={6.3} y1={sidePulseH * 0.33} x2={8.1} y2={sidePulseH * 0.37} stroke={premiumTone.electricHot} strokeWidth={1} strokeLinecap="round" />
@@ -813,13 +827,13 @@ const styles = StyleSheet.create({
   },
   premiumEdgeTrack: {
     position: 'absolute',
-    height: 10,
+    height: 12,
     overflow: 'hidden',
     justifyContent: 'center',
   },
   premiumEdgeTrackVertical: {
     position: 'absolute',
-    width: 10,
+    width: 12,
     overflow: 'hidden',
     alignItems: 'center',
   },
@@ -827,29 +841,45 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    top: 5,
+    height: 1.5,
+    borderRadius: 1,
+  },
+  premiumRailCore: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     top: 4,
-    height: 1.3,
-    borderRadius: 999,
+    height: 2.2,
+    borderRadius: 1,
   },
   premiumRailVertical: {
     position: 'absolute',
     top: 0,
     bottom: 0,
+    left: 5,
+    width: 1.5,
+    borderRadius: 1,
+  },
+  premiumRailVerticalCore: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
     left: 4,
-    width: 1.3,
-    borderRadius: 999,
+    width: 2.2,
+    borderRadius: 1,
   },
   premiumPulseCluster: {
     position: 'absolute',
     left: 0,
     top: 0,
-    height: 10,
+    height: 12,
   },
   premiumPulseClusterVertical: {
     position: 'absolute',
     top: 0,
     left: 0,
-    width: 10,
+    width: 12,
   },
   basicTopFrame: {
     position: 'absolute',
