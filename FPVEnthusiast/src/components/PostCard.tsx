@@ -484,12 +484,15 @@ export default function PostCard(props: Props) {
   const groupAnimationVariantId = activeGroupTheme?.animationVariantId ?? 'none';
   const isPremiumGroupCard = !!activeGroupTheme && groupAnimationVariantId === 'premium';
   const hasPrimaryPostMedia = !!(post.media_url || post.social_url || post.embed_url || post.thumbnail_url || post.media_type === 'social_embed');
-  const shouldShowThemedCardArt = !!activeGroupTheme?.cardImageUrl && !isPremiumGroupCard && !hasPrimaryPostMedia;
+  const shouldShowThemedCardArt = !!activeGroupTheme?.cardImageUrl && !isPremiumGroupCard;
+  const shouldInsetPrimaryMedia = !!activeGroupTheme && hasPrimaryPostMedia;
   const themedCardStyle = useMemo(() => activeGroupTheme ? ({
     backgroundColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.surfaceColor,
     borderColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.borderColor,
     borderWidth: isPremiumGroupCard ? 0 : 1,
-  }) : null, [activeGroupTheme, isPremiumGroupCard]);
+    minHeight: hasPrimaryPostMedia ? undefined : 284,
+  }) : null, [activeGroupTheme, hasPrimaryPostMedia, isPremiumGroupCard]);
+  const themedCardImageStyle = useMemo(() => ({ opacity: hasPrimaryPostMedia ? 0.24 : 0.42 }), [hasPrimaryPostMedia]);
   const themedHeaderText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
   const themedMutedText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.mutedTextColor }) : null, [activeGroupTheme]);
   const themedGroupChipStyle = useMemo(() => activeGroupTheme ? ({
@@ -1166,7 +1169,7 @@ export default function PostCard(props: Props) {
       >
         {shouldShowThemedCardArt ? (
           <>
-            <Image source={{ uri: activeGroupTheme?.cardImageUrl ?? undefined }} style={styles.themedCardImage} resizeMode="cover" />
+            <Image source={{ uri: activeGroupTheme?.cardImageUrl ?? undefined }} style={[styles.themedCardImage, themedCardImageStyle]} resizeMode="cover" />
             <View style={[styles.themedCardOverlay, { backgroundColor: `rgba(0,0,0,${Math.max(0.08, Math.min(0.32, ((activeGroupTheme?.overlayStrength ?? 72) / 180)))})` }]} />
           </>
         ) : null}
@@ -1202,7 +1205,11 @@ export default function PostCard(props: Props) {
         ) : null}
       </View>
 
-      {renderMedia()}
+      {hasPrimaryPostMedia ? (
+        <View style={[styles.mediaFrame, shouldInsetPrimaryMedia && styles.themedMediaFrame, shouldInsetPrimaryMedia && activeGroupTheme ? { borderColor: activeGroupTheme.borderColor } : null]}>
+          {renderMedia()}
+        </View>
+      ) : renderMedia()}
 
       {post.caption
         ? <View style={styles.captionWrap}><MentionText text={post.caption ?? ''} style={[styles.caption, themedCaptionStyle]} /></View>
@@ -1497,6 +1504,15 @@ const styles = StyleSheet.create({
   },
   groupLinkText: { color: '#9cc8ff', fontSize: 11, fontWeight: '700', flexShrink: 1 },
   menuBtn: { padding: 6 },
+  mediaFrame: { width: '100%' },
+  themedMediaFrame: {
+    marginHorizontal: 14,
+    marginBottom: 10,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    backgroundColor: 'rgba(8,10,16,0.24)',
+  },
   videoContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative' },
   webView: { flex: 1, backgroundColor: '#000' },
   muteBtn: { position: 'absolute', bottom: 10, right: 48, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 20, padding: 6 },
