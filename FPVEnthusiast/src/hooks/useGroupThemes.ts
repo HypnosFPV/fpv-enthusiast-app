@@ -92,7 +92,7 @@ async function readStoredResolvedGroupTheme(userId?: string | null, groupId?: st
     const raw = await AsyncStorage.getItem(resolvedThemeStorageKey(userId, groupId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
-    return isGroupThemeTokens(parsed) ? parsed : null;
+    return isGroupThemeTokens(parsed) ? sanitizeResolvedTheme(parsed) : null;
   } catch (error: any) {
     console.warn('[useGroupThemes] readStoredResolvedGroupTheme error:', error?.message ?? error);
     return null;
@@ -101,21 +101,18 @@ async function readStoredResolvedGroupTheme(userId?: string | null, groupId?: st
 
 async function persistResolvedGroupTheme(userId: string, groupId: string, theme: GroupThemeTokens) {
   try {
-    await AsyncStorage.setItem(resolvedThemeStorageKey(userId, groupId), JSON.stringify(theme));
+    await AsyncStorage.setItem(resolvedThemeStorageKey(userId, groupId), JSON.stringify(sanitizeResolvedTheme(theme)));
   } catch (error: any) {
     console.warn('[useGroupThemes] persistResolvedGroupTheme error:', error?.message ?? error);
   }
 }
 
 function isAnimationVariantCompatible(
-  _themeType?: GroupThemeSelectionType | null,
+  themeType?: GroupThemeSelectionType | null,
   variantId?: GroupCardAnimationVariantId | null,
 ) {
-  return variantId == null
-    || variantId === 'none'
-    || variantId === 'basic'
-    || variantId === 'standard'
-    || variantId === 'premium';
+  if (themeType !== 'custom') return true;
+  return variantId === 'none' || variantId === 'basic' || variantId === 'standard' || variantId == null;
 }
 
 function resolveAnimationVariantId(
@@ -132,6 +129,10 @@ function applyAnimationVariant(theme: GroupThemeTokens, variantId?: string | nul
     ...theme,
     animationVariantId: resolveAnimationVariantId(theme.source, (variantId as GroupCardAnimationVariantId | null | undefined) ?? null),
   };
+}
+
+function sanitizeResolvedTheme(theme: GroupThemeTokens): GroupThemeTokens {
+  return applyAnimationVariant(theme, theme.animationVariantId ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID);
 }
 
 export function customThemeToTokens(theme: GroupCustomTheme): GroupThemeTokens {
@@ -185,6 +186,11 @@ export function invalidateResolvedGroupTheme(userId?: string | null, groupId?: s
   const key = cacheKey(userId, groupId);
   resolvedThemeCache.delete(key);
   resolvedThemePromiseCache.delete(key);
+  if (userId && groupId) {
+    void AsyncStorage.removeItem(resolvedThemeStorageKey(userId, groupId)).catch((error: any) => {
+      console.warn('[useGroupThemes] invalidateResolvedGroupTheme removeItem error:', error?.message ?? error);
+    });
+  }
 }
 
 export async function fetchResolvedGroupTheme(userId?: string | null, groupId?: string | null): Promise<GroupThemeTokens> {
