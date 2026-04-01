@@ -281,8 +281,10 @@ export default function GroupThemeScreen() {
   const activeBaseThemeLabel = activeTheme.name;
   const activeBaseThemeTypeLabel = activePreference?.active_theme_type === 'custom' ? 'Custom theme' : 'Preset theme';
   const activeAnimationSummary = activeAnimationLabel;
-  const activeBaseThemeMeta = activePreference?.active_theme_type === 'custom'
-    ? `${activeAnimationDetails.description} Custom themes still look best when the uploaded art stays readable underneath the border treatment.`
+  const animationsDisabledForCustomTheme = activePreference?.active_theme_type === 'custom';
+  const effectivePreviewAnimationVariantId = animationsDisabledForCustomTheme ? 'none' : previewAnimationVariantId;
+  const activeBaseThemeMeta = animationsDisabledForCustomTheme
+    ? 'Custom themes now stay fully independent. Their uploaded card art, colors, and border render on their own with no preset animation layered on top.'
     : activeAnimationDetails.description;
   const latestPendingCustomTheme = useMemo(
     () => customThemes.find((theme) => theme.status === 'pending_payment') ?? null,
@@ -407,10 +409,16 @@ export default function GroupThemeScreen() {
       Alert.alert('Could not apply theme', 'Please try again.');
       return;
     }
-    Alert.alert('Theme updated', 'Your custom theme is now active for this community. Your current animation selection stays exactly as chosen.');
+    Alert.alert('Theme updated', 'Your custom theme is now active for this community. Any preset animation has been cleared so the custom treatment stays on its own.');
   }, [saveThemePreference]);
 
   const handleSelectAnimation = useCallback(async (variantId: 'none' | 'basic' | 'standard' | 'premium') => {
+    if (animationsDisabledForCustomTheme && variantId !== 'none') {
+      setPreviewAnimationVariantId('none');
+      Alert.alert('Custom theme active', 'Animations only run on preset themes. Switch to a preset base theme first if you want to use Electric Storm or another animation tier.');
+      return;
+    }
+
     setPreviewAnimationVariantId(variantId);
     const ok = await saveAnimationPreference(variantId);
     if (!ok) {
@@ -418,7 +426,7 @@ export default function GroupThemeScreen() {
       return;
     }
     Alert.alert('Animation updated', variantId === 'none' ? 'This community is now using the static card treatment for you.' : 'Your selected animation variant is now active for this community. You can switch to any unlocked tier on your other groups too.');
-  }, [saveAnimationPreference]);
+  }, [animationsDisabledForCustomTheme, saveAnimationPreference]);
 
   const handlePurchaseAnimation = useCallback(async (variantId: 'basic' | 'standard' | 'premium') => {
     if (!groupId) return;
@@ -501,7 +509,7 @@ export default function GroupThemeScreen() {
     if (studioOffsetY > 0) {
       scrollRef.current?.scrollTo({ y: Math.max(studioOffsetY - 16, 0), animated: true });
     }
-    Alert.alert('Theme unlocked', 'Your custom theme is now unlocked and active for this group. We kept your current animation tier unchanged and jumped you back to the custom theme studio so the active selection and builder stay together.');
+    Alert.alert('Theme unlocked', 'Your custom theme is now unlocked and active for this group. Any preset animation has been cleared so the custom treatment stays fully independent.');
     setDraft(createDraftFromPreset(activePreference?.active_theme_type === 'preset' ? activePreference.active_theme_id : 'midnight'));
   }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, draft, groupId, initCheckout, resetCheckout, saveThemePreference, studioOffsetY, waitForThemePurchase]);
 
@@ -530,7 +538,7 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Currently live on this group</Text>
-          <Text style={styles.sectionHint}>Only one base theme is active at a time. Custom themes keep your uploaded artwork, and the currently selected animation tier stays paired with it instead of silently falling back.</Text>
+          <Text style={styles.sectionHint}>Only one visual treatment is active at a time. Preset themes can use the animation tiers, while custom themes stay fully independent and clear those preset effects.</Text>
           <View style={styles.statusCallout}>
             <View style={[styles.collectionSwatch, { backgroundColor: activeTheme.surfaceColor, borderColor: activeTheme.borderColor }]}> 
               <View style={[styles.collectionSwatchAccent, { backgroundColor: activeTheme.accentColor }]} />
@@ -546,10 +554,10 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card} onLayout={(event) => setStudioOffsetY(event.nativeEvent.layout.y)}>
           <Text style={styles.sectionTitle}>Custom theme studio</Text>
-          <Text style={styles.sectionHint}>Everything for custom themes now lives in this one spot: your saved custom themes, the builder, the live preview, and the unlock/apply actions. No more hunting up and down the screen. Applying a custom theme now preserves whichever animation tier you already selected.</Text>
+          <Text style={styles.sectionHint}>Everything for custom themes now lives in this one spot: your saved custom themes, the builder, the live preview, and the unlock/apply actions. No more hunting up and down the screen. Applying a custom theme now clears preset animation so the custom treatment stands alone.</Text>
           <View style={styles.studioCallout}>
             <Ionicons name="sparkles-outline" size={18} color="#ffb48d" />
-            <Text style={styles.studioCalloutText}>Use the top half of this card to apply a custom theme you already bought. Use the bottom half to build a new one, preview it instantly, and unlock it when it looks right. Whatever animation tier you already chose for this group stays active when you switch themes.</Text>
+            <Text style={styles.studioCalloutText}>Use the top half of this card to apply a custom theme you already bought. Use the bottom half to build a new one, preview it instantly, and unlock it when it looks right. When a custom theme is active, Electric Storm and the other preset animation tiers are turned off.</Text>
           </View>
           <View style={styles.studioStepRow}>
             <View style={styles.studioStepChip}>
@@ -787,37 +795,40 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Feed animation variants</Text>
-          <Text style={styles.sectionHint}>Animations are separate from the base theme. Only one base theme is active at a time, and any unlocked animation tier can be paired with that current base theme; Edge pulse stays the most restrained, while the stronger tiers put more motion around the card.</Text>
+          <Text style={styles.sectionHint}>{animationsDisabledForCustomTheme ? 'Animations are unavailable while a custom theme is active. Switch to a preset base theme first if you want to use Electric Storm or another animation tier.' : 'Animations only apply to preset themes. Edge pulse stays the most restrained, while the stronger tiers put more motion around the card.'}</Text>
           <AnimationVariantPreviewCard
             theme={activeTheme}
             groupName={group.name}
-            variantId={previewAnimationVariantId}
+            variantId={effectivePreviewAnimationVariantId}
             activeVariantId={activeAnimationVariantId}
           />
           {GROUP_CARD_ANIMATION_VARIANTS.map((variant) => {
             const isOwned = variant.id === 'none' || ownedAnimationVariantIds.has(variant.id);
             const isActive = activeAnimationVariantId === variant.id;
-            const isPreviewing = previewAnimationVariantId === variant.id;
+            const isPreviewing = effectivePreviewAnimationVariantId === variant.id;
             const isPending = animationPurchases.some((purchase) => purchase.variant_id === variant.id && purchase.status === 'pending_payment');
             const isBusy = savingPreference || animationCheckoutState.status === 'loading' || animationCheckoutState.status === 'processing';
+            const isAnimationLocked = animationsDisabledForCustomTheme && variant.id !== 'none';
             const priceLabel = variant.priceCents > 0 ? `$${(variant.priceCents / 100).toFixed(2)}` : 'Included';
-            const metaLabel = isOwned
-              ? (isActive
-                ? 'Active animation for this group'
-                : isPreviewing
-                  ? 'Previewing now — tap Use to make it live in this group'
-                  : 'Unlocked on your account — tap the row to preview, then Use to activate here')
-              : isPending
-                ? 'Payment pending'
-                : isPreviewing
-                  ? `Previewing now — unlock once for ${priceLabel}`
-                  : `Unlock once for ${priceLabel} and use it across your groups`;
+            const metaLabel = isAnimationLocked
+              ? 'Custom theme is active — switch to a preset base theme before using this animation tier'
+              : isOwned
+                ? (isActive
+                  ? 'Active animation for this group'
+                  : isPreviewing
+                    ? 'Previewing now — tap Use to make it live in this group'
+                    : 'Unlocked on your account — tap the row to preview, then Use to activate here')
+                : isPending
+                  ? 'Payment pending'
+                  : isPreviewing
+                    ? `Previewing now — unlock once for ${priceLabel}`
+                    : `Unlock once for ${priceLabel} and use it across your groups`;
             return (
               <TouchableOpacity
                 key={variant.id}
                 activeOpacity={0.92}
                 style={[styles.variantRow, isPreviewing && styles.variantRowPreviewing, isActive && styles.variantRowActive]}
-                onPress={() => setPreviewAnimationVariantId(variant.id)}
+                onPress={() => setPreviewAnimationVariantId(isAnimationLocked ? 'none' : variant.id)}
               >
                 <View style={{ flex: 1 }}>
                   <View style={styles.variantTitleRow}>
@@ -843,14 +854,14 @@ export default function GroupThemeScreen() {
                   <Text style={styles.variantMeta}>{metaLabel}</Text>
                 </View>
                 {isOwned ? (
-                  <TouchableOpacity style={[styles.secondaryBtn, isActive && styles.secondaryBtnActive]} disabled={isBusy} onPress={() => void handleSelectAnimation(variant.id)}>
-                    <Text style={[styles.secondaryBtnText, isActive && styles.secondaryBtnTextActive]}>{isActive ? 'Animation active' : 'Use animation'}</Text>
+                  <TouchableOpacity style={[styles.secondaryBtn, isActive && styles.secondaryBtnActive, isAnimationLocked && { opacity: 0.5 }]} disabled={isBusy || isAnimationLocked} onPress={() => void handleSelectAnimation(variant.id)}>
+                    <Text style={[styles.secondaryBtnText, isActive && styles.secondaryBtnTextActive]}>{isAnimationLocked ? 'Preset required' : isActive ? 'Animation active' : 'Use animation'}</Text>
                   </TouchableOpacity>
                 ) : isPending ? (
                   <View style={styles.pendingPill}><Text style={styles.pendingPillText}>Pending</Text></View>
                 ) : (
-                  <TouchableOpacity style={styles.secondaryBtn} disabled={isBusy} onPress={() => void handlePurchaseAnimation(variant.id as 'basic' | 'standard' | 'premium')}>
-                    <Text style={styles.secondaryBtnText}>Unlock {priceLabel}</Text>
+                  <TouchableOpacity style={[styles.secondaryBtn, isAnimationLocked && { opacity: 0.5 }]} disabled={isBusy || isAnimationLocked} onPress={() => void handlePurchaseAnimation(variant.id as 'basic' | 'standard' | 'premium')}>
+                    <Text style={styles.secondaryBtnText}>{isAnimationLocked ? 'Preset required' : `Unlock ${priceLabel}`}</Text>
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
@@ -910,7 +921,7 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
         borderColor: 'rgba(255,255,255,0.05)',
       };
   const previewBodyText = hasCardArt
-    ? 'Pinned a new look for Admin test — this is how the carbon-fiber card treatment will read in the feed with your uploaded art, overlay, and electric edge applied.'
+    ? 'Pinned a new look for Admin test — this is how the custom card treatment will read in the feed with your uploaded art and overlay, without any preset animation layered on top.'
     : '';
 
   return (

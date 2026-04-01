@@ -67,10 +67,18 @@ function cacheKey(userId?: string | null, groupId?: string | null) {
   return `${userId ?? 'anon'}:${groupId ?? 'none'}`;
 }
 
+function resolveAnimationVariantId(
+  themeType?: GroupThemeSelectionType | null,
+  variantId?: GroupCardAnimationVariantId | null,
+): GroupCardAnimationVariantId {
+  if (themeType === 'custom') return DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID;
+  return variantId ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID;
+}
+
 function applyAnimationVariant(theme: GroupThemeTokens, variantId?: string | null): GroupThemeTokens {
   return {
     ...theme,
-    animationVariantId: (variantId as GroupCardAnimationVariantId | null | undefined) ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID,
+    animationVariantId: resolveAnimationVariantId(theme.source, (variantId as GroupCardAnimationVariantId | null | undefined) ?? null),
   };
 }
 
@@ -146,8 +154,10 @@ export async function fetchResolvedGroupTheme(userId?: string | null, groupId?: 
       .eq('group_id', groupId)
       .maybeSingle();
 
-    const activeAnimationVariantId = (preference?.active_animation_variant_id as GroupCardAnimationVariantId | null | undefined)
-      ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID;
+    const activeAnimationVariantId = resolveAnimationVariantId(
+      preference?.active_theme_type as GroupThemeSelectionType | null | undefined,
+      (preference?.active_animation_variant_id as GroupCardAnimationVariantId | null | undefined) ?? null,
+    );
 
     if (!preference?.active_theme_id) {
       const fallback = applyAnimationVariant(DEFAULT_GROUP_THEME, activeAnimationVariantId);
@@ -312,7 +322,10 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
   }, [refreshThemes]);
 
   const activeTheme = useMemo(() => {
-    const activeAnimationVariantId = activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID;
+    const activeAnimationVariantId = resolveAnimationVariantId(
+      activePreference?.active_theme_type,
+      activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID,
+    );
     let baseTheme: GroupThemeTokens;
     if (!activePreference?.active_theme_id) {
       baseTheme = DEFAULT_GROUP_THEME;
@@ -326,8 +339,8 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
   }, [activePreference, customThemes]);
 
   const activeAnimationVariantId = useMemo(
-    () => (activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID),
-    [activePreference?.active_animation_variant_id],
+    () => resolveAnimationVariantId(activePreference?.active_theme_type, activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID),
+    [activePreference?.active_animation_variant_id, activePreference?.active_theme_type],
   );
 
   const saveThemePreference = useCallback(async (
@@ -344,7 +357,10 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
         group_id: groupId,
         active_theme_type: themeType,
         active_theme_id: themeId,
-        active_animation_variant_id: animationVariantOverride ?? activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID,
+        active_animation_variant_id: resolveAnimationVariantId(
+          themeType,
+          animationVariantOverride ?? activePreference?.active_animation_variant_id ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID,
+        ),
       }, { onConflict: 'user_id,group_id' });
     setSavingPreference(false);
 
@@ -360,6 +376,10 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
 
   const saveAnimationPreference = useCallback(async (variantId: GroupCardAnimationVariantId) => {
     if (!userId || !groupId) return false;
+
+    if (activePreference?.active_theme_type === 'custom' && variantId !== 'none') {
+      return false;
+    }
 
     const canUseVariant = variantId === 'none'
       || animationPurchases.some((purchase) => purchase.variant_id === variantId && purchase.status === 'paid');

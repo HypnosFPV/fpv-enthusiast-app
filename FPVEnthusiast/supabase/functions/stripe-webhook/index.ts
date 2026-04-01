@@ -94,7 +94,7 @@ serve(async (req) => {
             group_id: customTheme.group_id,
             active_theme_type: 'custom',
             active_theme_id: customTheme.id,
-            active_animation_variant_id: existingPreference?.active_animation_variant_id ?? 'none',
+            active_animation_variant_id: 'none',
             updated_at: now,
           }, { onConflict: 'user_id,group_id' });
       }
