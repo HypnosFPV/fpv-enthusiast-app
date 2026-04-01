@@ -24,6 +24,9 @@ import { useMute }          from '../../src/hooks/useMute';
 import MuteListModal        from '../../src/components/MuteListModal';
 import { PropsToast, usePropsToast } from '../../src/components/PropsToast';
 import { useStripeConnect } from '../../src/hooks/useStripeConnect';
+import ProfileAvatarDecoration from '../../src/components/ProfileAvatarDecoration';
+import ProfileBannerMedia from '../../src/components/ProfileBannerMedia';
+import { useResolvedProfileAppearance } from '../../src/hooks/useProfileAppearance';
 
 const { width: W } = Dimensions.get('window');
 const CELL = (W - 4) / 3;
@@ -308,8 +311,10 @@ export default function ProfileScreen() {
   const {
     profile, loading: profileLoading, updating,
     fetchProfile, updateProfile, validateUsername,
-    uploadAvatar, uploadHeaderImage, updateSocialLinks,
+    uploadAvatar, uploadHeaderImage, uploadHeaderVideo, updateSocialLinks,
   } = useProfile(user?.id ?? undefined);
+
+  const { appearance: profileAppearance } = useResolvedProfileAppearance(user?.id ?? undefined);
 
   const {
     linked: ytLinked, loading: ytAuthLoading,
@@ -722,11 +727,27 @@ export default function ProfileScreen() {
     ]);
   }, []);
 
-  const handleBannerPress = useCallback(async () => {
-    const result = await uploadHeaderImage();
-    if (result?.error) { Alert.alert('Banner Upload Failed', result.error); return; }
-    if (!result?.canceled) await fetchProfile();
-  }, [uploadHeaderImage, fetchProfile]);
+  const handleBannerPress = useCallback(() => {
+    Alert.alert('Profile header', 'Choose how your profile header should look to visitors.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Photo',
+        onPress: async () => {
+          const result = await uploadHeaderImage();
+          if (result?.error) { Alert.alert('Banner Upload Failed', result.error); return; }
+          if (!result?.canceled) await fetchProfile();
+        },
+      },
+      {
+        text: 'Loop Video',
+        onPress: async () => {
+          const result = await uploadHeaderVideo();
+          if (result?.error) { Alert.alert('Header Video Upload Failed', result.error); return; }
+          if (!result?.canceled) await fetchProfile();
+        },
+      },
+    ]);
+  }, [uploadHeaderImage, uploadHeaderVideo, fetchProfile]);
 
   const handleMgpValidate = useCallback(async () => {
     if (!mgpKeyInput.trim()) { Alert.alert('Enter your API key first'); return; }
@@ -865,12 +886,12 @@ export default function ProfileScreen() {
         return (
           <TouchableOpacity
             key={tab.key}
-            style={[styles.tabItem, active && styles.tabItemActive]}
+            style={[styles.tabItem, active && styles.tabItemActive, active && { borderBottomColor: profileAppearance.theme.accentColor, backgroundColor: `${profileAppearance.theme.accentColor}12` }]}
             onPress={() => setActiveTab(tab.key)}
             activeOpacity={0.7}
           >
-            <Ionicons name={tab.icon as any} size={16} color={active ? '#00d4ff' : '#555'} />
-            <Text style={active ? styles.tabLabelActive : styles.tabLabel}>
+            <Ionicons name={tab.icon as any} size={16} color={active ? profileAppearance.theme.accentColor : '#555'} />
+            <Text style={active ? [styles.tabLabelActive, { color: profileAppearance.theme.accentColor }] : styles.tabLabel}>
               {tab.label}
             </Text>
           </TouchableOpacity>
@@ -888,36 +909,39 @@ export default function ProfileScreen() {
         {/* BANNER */}
         <TouchableOpacity onPress={handleBannerPress} activeOpacity={0.85}>
           <View style={styles.bannerWrap}>
-            {profile?.header_image_url ? (
-              <Image key={profile.header_image_url} source={{ uri: profile.header_image_url }} style={styles.banner} resizeMode="cover" />
-            ) : (
-              <View style={[styles.banner, styles.bannerPlaceholder]}>
-                <Ionicons name="camera" size={28} color="#555" />
-                <Text style={styles.bannerHint}>Tap to add banner</Text>
-              </View>
-            )}
+            <ProfileBannerMedia
+              imageUrl={profile?.header_image_url}
+              videoUrl={profile?.header_video_url}
+              height={200}
+              startColor={profileAppearance.theme.bannerStartColor}
+              endColor={profileAppearance.theme.bannerEndColor}
+              emptyHint="Tap to add a banner image or short loop video"
+              editable
+            />
           </View>
         </TouchableOpacity>
 
         {/* HEADER ROW */}
         <View style={styles.headerRow}>
           {/* 🥚 Avatar — short press = upload, long press (rapid 7×) = easter egg */}
-          <TouchableOpacity
-            style={styles.avatarWrap}
-            onPress={uploadAvatar}
-            onLongPress={handleAvatarEggTap}
-            delayLongPress={120}
-            activeOpacity={0.85}
-          >
-            {profile?.avatar_url
-              ? <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
-              : <View style={[styles.avatar, styles.avatarPlaceholder]}><Ionicons name="person" size={34} color="#555" /></View>
-            }
-            <View style={styles.cameraBadge}><Ionicons name="camera" size={13} color="#fff" /></View>
-          </TouchableOpacity>
+          <View style={styles.avatarWrap}>
+            <ProfileAvatarDecoration
+              appearance={profileAppearance}
+              avatarUrl={profile?.avatar_url}
+              size={84}
+              editable
+              onPress={uploadAvatar}
+              onLongPress={handleAvatarEggTap}
+              delayLongPress={120}
+              fallbackIconSize={34}
+            />
+          </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.editBtn} onPress={() => setShowEditProfile(true)}>
-              <Text style={styles.editBtnText}>Edit Profile</Text>
+            <TouchableOpacity style={[styles.editBtn, { borderColor: profileAppearance.theme.accentColor }]} onPress={() => setShowEditProfile(true)}>
+              <Text style={[styles.editBtnText, { color: profileAppearance.theme.accentColor }]}>Edit Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.editBtn, { borderColor: profileAppearance.theme.borderColor, paddingHorizontal: 14 }]} onPress={() => router.push('/profile-appearance')}>
+              <Text style={[styles.editBtnText, { color: '#fff' }]}>Studio</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.gearBtn} onPress={() => router.push('/settings')}>
               <Ionicons name="settings-outline" size={20} color="#aaa" />
@@ -927,14 +951,19 @@ export default function ProfileScreen() {
 
         {/* BIO */}
         <View style={styles.bioSection}>
-          <Text style={styles.displayName}>{profile?.username ?? 'FPV Pilot'}</Text>
-          {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+          <Text style={[styles.displayName, { color: profileAppearance.theme.textColor }]}>{profile?.username ?? 'FPV Pilot'}</Text>
+          {profile?.bio ? <Text style={[styles.bio, { color: profileAppearance.theme.mutedTextColor }]}>{profile.bio}</Text> : null}
+          <View style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: `${profileAppearance.theme.accentColor}55`, backgroundColor: `${profileAppearance.theme.accentColor}12` }}>
+            <Text style={{ color: profileAppearance.theme.accentColor, fontSize: 11, fontWeight: '700' }}>Live profile style visible to visitors</Text>
+          </View>
           <Animated.View
             style={[
               styles.statsCard,
               {
                 opacity: cardOpacity,
                 transform: [{ translateY: cardSlideY }],
+                backgroundColor: profileAppearance.theme.surfaceColor,
+                borderColor: profileAppearance.theme.borderColor,
               },
             ]}
           >
@@ -960,7 +989,7 @@ export default function ProfileScreen() {
                 displayValue={followersCount}
                 label="Followers"
                 tappable
-                accentColor="#00d4ff"
+                accentColor={profileAppearance.theme.accentColor}
                 animatedValue={countFollowers}
                 scaleAnim={scaleFollowers}
                 accentAnim={accentFollowers}
@@ -981,7 +1010,7 @@ export default function ProfileScreen() {
                 displayValue={followingCount}
                 label="Following"
                 tappable
-                accentColor="#00d4ff"
+                accentColor={profileAppearance.theme.accentColor}
                 animatedValue={countFollowing}
                 scaleAnim={scaleFollowing}
                 accentAnim={accentFollowing}
@@ -1013,11 +1042,11 @@ export default function ProfileScreen() {
               { icon: 'globe-outline',  url: profile?.website_url },
             ] as { icon: string; url?: string | null }[]).filter(s => !!s.url).map(s => (
               <TouchableOpacity key={s.icon} style={styles.socialChip}>
-                <Ionicons name={s.icon as any} size={18} color="#00d4ff" />
+                <Ionicons name={s.icon as any} size={18} color={profileAppearance.theme.accentColor} />
               </TouchableOpacity>
             ))}
-            <TouchableOpacity style={styles.socialChip} onPress={() => setShowSocialLinks(true)}>
-              <Ionicons name="add-circle-outline" size={18} color="#555" />
+            <TouchableOpacity style={[styles.socialChip, { borderWidth: 1, borderColor: profileAppearance.theme.borderColor }]} onPress={() => setShowSocialLinks(true)}>
+              <Ionicons name="add-circle-outline" size={18} color={profileAppearance.theme.accentColor} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1032,7 +1061,7 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00d4ff" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={profileAppearance.theme.accentColor} />
         }
       >
         {(dataLoading && !loadedTabsRef.current.has(activeTab)) ? (

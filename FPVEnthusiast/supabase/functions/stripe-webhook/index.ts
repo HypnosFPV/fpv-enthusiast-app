@@ -136,6 +136,44 @@ serve(async (req) => {
       return json({ received: true });
     }
 
+    if (paymentKind === 'profile_appearance') {
+      const { data: appearancePurchase, error: appearanceErr } = await supabase
+        .from('user_profile_appearance_purchases')
+        .update({ status: 'paid', updated_at: now })
+        .eq('stripe_payment_intent', pi.id)
+        .select('id, owner_user_id, item_type, item_id')
+        .single();
+
+      if (appearanceErr || !appearancePurchase) {
+        console.error('Profile appearance purchase not found for PI', pi.id, appearanceErr);
+        return json({ received: true });
+      }
+
+      const { data: existingPreference } = await supabase
+        .from('user_profile_appearance_preferences')
+        .select('active_theme_id, active_avatar_frame_id, active_avatar_effect_id')
+        .eq('user_id', appearancePurchase.owner_user_id)
+        .maybeSingle();
+
+      await supabase
+        .from('user_profile_appearance_preferences')
+        .upsert({
+          user_id: appearancePurchase.owner_user_id,
+          active_theme_id: appearancePurchase.item_type === 'theme'
+            ? appearancePurchase.item_id
+            : existingPreference?.active_theme_id ?? 'default',
+          active_avatar_frame_id: appearancePurchase.item_type === 'frame'
+            ? appearancePurchase.item_id
+            : existingPreference?.active_avatar_frame_id ?? 'none',
+          active_avatar_effect_id: appearancePurchase.item_type === 'effect'
+            ? appearancePurchase.item_id
+            : existingPreference?.active_avatar_effect_id ?? 'none',
+          updated_at: now,
+        }, { onConflict: 'user_id' });
+
+      return json({ received: true });
+    }
+
     const { data: order, error: fetchErr } = await supabase
       .from('marketplace_orders')
       .select('id, listing_id, seller_id, buyer_id, amount_cents')
@@ -183,6 +221,14 @@ serve(async (req) => {
     if (paymentKind === 'group_card_animation') {
       await supabase
         .from('social_group_animation_purchases')
+        .update({ status: 'cancelled', updated_at: now })
+        .eq('stripe_payment_intent', pi.id);
+      return json({ received: true });
+    }
+
+    if (paymentKind === 'profile_appearance') {
+      await supabase
+        .from('user_profile_appearance_purchases')
         .update({ status: 'cancelled', updated_at: now })
         .eq('stripe_payment_intent', pi.id);
       return json({ received: true });

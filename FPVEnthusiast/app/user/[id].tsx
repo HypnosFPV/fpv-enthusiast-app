@@ -16,6 +16,9 @@ import { supabase }     from '../../src/services/supabase';
 import { useAuth }      from '../../src/context/AuthContext';
 import { useFollows }   from '../../src/hooks/useFollows';
 import type { UserProfile } from '../../src/types/profile';
+import ProfileAvatarDecoration from '../../src/components/ProfileAvatarDecoration';
+import ProfileBannerMedia from '../../src/components/ProfileBannerMedia';
+import { useResolvedProfileAppearance } from '../../src/hooks/useProfileAppearance';
 import {
   CATEGORIES, CONDITIONS,
 } from '../../src/hooks/useMarketplace';
@@ -169,6 +172,7 @@ export default function UserProfileScreen() {
   const [activeTab,    setActiveTab]    = useState<Tab>('posts');
   const [liveFollowersCount, setLiveFollowersCount] = useState(0);
   const [liveFollowingCount, setLiveFollowingCount] = useState(0);
+  const { appearance } = useResolvedProfileAppearance(profile?.id);
 
   const tabAnim = useRef(new Animated.Value(0)).current; // 0=posts, 1=listings
 
@@ -312,23 +316,27 @@ export default function UserProfileScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#ff4500" />}
       >
         {/* banner */}
-        {profile.header_image_url
-          ? <Image source={{ uri: profile.header_image_url }} style={styles.banner} />
-          : <View style={styles.bannerPlaceholder} />
-        }
+        <ProfileBannerMedia
+          imageUrl={profile.header_image_url}
+          videoUrl={profile.header_video_url}
+          height={160}
+          startColor={appearance.theme.bannerStartColor}
+          endColor={appearance.theme.bannerEndColor}
+          emptyHint="Profile banner"
+        />
 
         {/* profile info */}
         <View style={styles.infoBlock}>
           <View style={styles.avatarRow}>
-            {profile.avatar_url
-              ? <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
-              : <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                  <Ionicons name="person" size={32} color="#555" />
-                </View>
-            }
+            <ProfileAvatarDecoration
+              appearance={appearance}
+              avatarUrl={profile.avatar_url}
+              size={80}
+              fallbackIconSize={32}
+            />
             {!isOwnProfile && (
               <TouchableOpacity
-                style={[styles.followBtn, isFollowing && styles.followBtnActive]}
+                style={[styles.followBtn, { backgroundColor: appearance.theme.accentColor }, isFollowing && styles.followBtnActive]}
                 onPress={toggleFollow}
                 disabled={toggling}
               >
@@ -340,8 +348,8 @@ export default function UserProfileScreen() {
             )}
           </View>
 
-          <Text style={styles.username}>@{profile.username ?? 'user'}</Text>
-          {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+          <Text style={[styles.username, { color: appearance.theme.textColor }]}>@{profile.username ?? 'user'}</Text>
+          {profile.bio ? <Text style={[styles.bio, { color: appearance.theme.mutedTextColor }]}>{profile.bio}</Text> : null}
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -358,7 +366,7 @@ export default function UserProfileScreen() {
             </View>
             {sellerStats && sellerStats.total_sales > 0 && (
               <View style={styles.statItem}>
-                <Text style={[styles.statNum, { color: '#ffd700' }]}>{sellerStats.total_sales}</Text>
+                <Text style={[styles.statNum, { color: appearance.theme.accentColor }]}>{sellerStats.total_sales}</Text>
                 <Text style={styles.statLabel}>Sales</Text>
               </View>
             )}
@@ -383,7 +391,7 @@ export default function UserProfileScreen() {
             </Text>
           </TouchableOpacity>
           {/* sliding indicator */}
-          <Animated.View style={[styles.tabIndicator, { transform: [{ translateX: tabIndicatorX }] }]} />
+          <Animated.View style={[styles.tabIndicator, { backgroundColor: appearance.theme.accentColor, transform: [{ translateX: tabIndicatorX }] }]} />
         </View>
 
         {/* ── Posts tab ── */}

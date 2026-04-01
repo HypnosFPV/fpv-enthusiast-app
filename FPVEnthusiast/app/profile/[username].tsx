@@ -14,6 +14,9 @@ import { supabase } from '../../src/services/supabase';
 import { useFollow } from '../../src/hooks/useFollow';
 import { useAuth } from '../../src/context/AuthContext';
 import PostCard from '../../src/components/PostCard';
+import ProfileAvatarDecoration from '../../src/components/ProfileAvatarDecoration';
+import ProfileBannerMedia from '../../src/components/ProfileBannerMedia';
+import { useResolvedProfileAppearance } from '../../src/hooks/useProfileAppearance';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CELL = SCREEN_W / 3;
@@ -43,6 +46,8 @@ interface Profile {
   id: string;
   username: string;
   avatar_url: string | null;
+  header_image_url: string | null;
+  header_video_url: string | null;
   bio: string | null;
   followers_count: number;
   following_count: number;
@@ -148,6 +153,7 @@ export default function UserProfileScreen() {
   const [activeTab, setActiveTab] = useState<'grid' | 'feed'>('grid');
   const [selectedPost, setSelectedPost] = useState<PostData | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const { appearance } = useResolvedProfileAppearance(profile?.id);
 
   // useFollow(profileUserId, currentUserId) — matches the real hook signature
   const {
@@ -165,7 +171,7 @@ export default function UserProfileScreen() {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('users')
-          .select('id, username, avatar_url, bio, followers_count, following_count, posts_count')
+          .select('id, username, avatar_url, header_image_url, header_video_url, bio, followers_count, following_count, posts_count')
           .eq('username', username)
           .single();
 
@@ -316,21 +322,29 @@ export default function UserProfileScreen() {
           <View style={{ width: 40 }} />
         </View>
 
+        <ProfileBannerMedia
+          imageUrl={profile.header_image_url}
+          videoUrl={profile.header_video_url}
+          height={176}
+          startColor={appearance.theme.bannerStartColor}
+          endColor={appearance.theme.bannerEndColor}
+          emptyHint="Profile banner"
+        />
+
         {/* Avatar + Bio */}
-        <View style={styles.bioSection}>
-          {profile.avatar_url ? (
-            <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
-          ) : (
-            <View style={[styles.avatar, styles.avatarFallback]}>
-              <Ionicons name="person" size={40} color="#aaa" />
-            </View>
-          )}
-          <Text style={styles.usernameText}>@{profile.username}</Text>
-          {profile.bio ? <Text style={styles.bioText}>{profile.bio}</Text> : null}
+        <View style={[styles.bioSection, { marginTop: -44 }]}>
+          <ProfileAvatarDecoration
+            appearance={appearance}
+            avatarUrl={profile.avatar_url}
+            size={88}
+            fallbackIconSize={40}
+          />
+          <Text style={[styles.usernameText, { color: appearance.theme.textColor }]}>@{profile.username}</Text>
+          {profile.bio ? <Text style={[styles.bioText, { color: appearance.theme.mutedTextColor }]}>{profile.bio}</Text> : null}
         </View>
 
         {/* Stats */}
-        <View style={styles.statsRow}>
+        <View style={[styles.statsRow, { borderColor: appearance.theme.borderColor }]}>
           <StatBox value={profile.posts_count ?? 0} label="Posts" />
           <StatBox value={followersCount} label="Followers" />
           <StatBox value={profile.following_count ?? 0} label="Following" />
@@ -339,7 +353,7 @@ export default function UserProfileScreen() {
         {/* Follow button — hide on own profile */}
         {!isOwnProfile && (
           <TouchableOpacity
-            style={[styles.followBtn, isFollowing && styles.followingBtn]}
+            style={[styles.followBtn, { backgroundColor: appearance.theme.accentColor }, isFollowing && styles.followingBtn]}
             onPress={toggleFollow}
             activeOpacity={0.8}
           >
@@ -350,16 +364,16 @@ export default function UserProfileScreen() {
         {/* Tab bar */}
         <View style={styles.tabBar}>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'grid' && styles.activeTab]}
+            style={[styles.tab, activeTab === 'grid' && styles.activeTab, activeTab === 'grid' && { borderBottomColor: appearance.theme.accentColor }]}
             onPress={() => setActiveTab('grid')}
           >
-            <Ionicons name="grid-outline" size={20} color={activeTab === 'grid' ? '#ff4500' : '#888'} />
+            <Ionicons name="grid-outline" size={20} color={activeTab === 'grid' ? appearance.theme.accentColor : '#888'} />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'feed' && styles.activeTab]}
+            style={[styles.tab, activeTab === 'feed' && styles.activeTab, activeTab === 'feed' && { borderBottomColor: appearance.theme.accentColor }]}
             onPress={() => setActiveTab('feed')}
           >
-            <Ionicons name="list-outline" size={20} color={activeTab === 'feed' ? '#ff4500' : '#888'} />
+            <Ionicons name="list-outline" size={20} color={activeTab === 'feed' ? appearance.theme.accentColor : '#888'} />
           </TouchableOpacity>
         </View>
 
