@@ -899,6 +899,7 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
   const heroOverlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.16, 0.46);
   const cardOverlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.08, 0.32);
   const hasCardArt = !!theme.cardImageUrl;
+  const shouldUseContentPlate = theme.source !== 'custom';
   const contentPlateStyle = hasCardArt
     ? {
         backgroundColor: `rgba(8,10,16,${Math.min(0.76, cardOverlayOpacity + 0.34)})`,
@@ -941,7 +942,7 @@ function ThemePreview({ group, theme }: { group: GroupAppearanceSummary; theme: 
             <Text style={[styles.previewArtBadgeText, { color: theme.chipTextColor }]}>{hasCardArt ? 'Full-card art preview' : 'Premium frame preview'}</Text>
           </View>
           <View style={styles.previewPostContent}>
-            <View style={[styles.previewPostContentPlate, contentPlateStyle]}>
+            <View style={shouldUseContentPlate ? [styles.previewPostContentPlate, contentPlateStyle] : styles.previewPostContentBare}>
               <View style={styles.previewPostHeader}>
                 <Avatar uri={group.avatar_url} size={34} />
                 <View style={{ flex: 1 }}>
@@ -1208,6 +1209,7 @@ const styles = StyleSheet.create({
   previewPostImage: { ...StyleSheet.absoluteFillObject, opacity: 0.6 },
   previewPostOverlay: { ...StyleSheet.absoluteFillObject },
   previewPostContent: { padding: 14, paddingTop: 64, zIndex: 1 },
+  previewPostContentBare: { paddingHorizontal: 14, paddingVertical: 14, gap: 12 },
   previewPostContentPlate: { borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 14, gap: 12 },
   previewEmptyMediaCard: {
     borderRadius: 14,
