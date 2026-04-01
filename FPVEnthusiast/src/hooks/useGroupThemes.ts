@@ -67,12 +67,21 @@ function cacheKey(userId?: string | null, groupId?: string | null) {
   return `${userId ?? 'anon'}:${groupId ?? 'none'}`;
 }
 
+function isAnimationVariantCompatible(
+  themeType?: GroupThemeSelectionType | null,
+  variantId?: GroupCardAnimationVariantId | null,
+) {
+  if (themeType !== 'custom') return true;
+  return variantId === 'none' || variantId === 'basic' || variantId === 'standard' || variantId == null;
+}
+
 function resolveAnimationVariantId(
   themeType?: GroupThemeSelectionType | null,
   variantId?: GroupCardAnimationVariantId | null,
 ): GroupCardAnimationVariantId {
-  if (themeType === 'custom') return DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID;
-  return variantId ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID;
+  const normalized = variantId ?? DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID;
+  if (!isAnimationVariantCompatible(themeType, normalized)) return DEFAULT_GROUP_CARD_ANIMATION_VARIANT_ID;
+  return normalized;
 }
 
 function applyAnimationVariant(theme: GroupThemeTokens, variantId?: string | null): GroupThemeTokens {
@@ -377,7 +386,7 @@ export function useGroupThemes(userId?: string | null, groupId?: string | null) 
   const saveAnimationPreference = useCallback(async (variantId: GroupCardAnimationVariantId) => {
     if (!userId || !groupId) return false;
 
-    if (activePreference?.active_theme_type === 'custom' && variantId !== 'none') {
+    if (!isAnimationVariantCompatible(activePreference?.active_theme_type, variantId)) {
       return false;
     }
 

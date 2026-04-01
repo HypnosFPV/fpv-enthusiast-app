@@ -136,6 +136,63 @@ function Avatar({ uri, size = 58 }: { uri?: string | null; size?: number }) {
   );
 }
 
+function isAnimationCompatibleWithThemeType(
+  themeType: 'preset' | 'custom' | null | undefined,
+  variantId: GroupCardAnimationVariantId,
+) {
+  if (themeType !== 'custom') return true;
+  return variantId === 'none' || variantId === 'basic' || variantId === 'standard';
+}
+
+function getCompatibleAnimationVariantId(
+  themeType: 'preset' | 'custom' | null | undefined,
+  variantId: GroupCardAnimationVariantId,
+): GroupCardAnimationVariantId {
+  return isAnimationCompatibleWithThemeType(themeType, variantId) ? variantId : 'none';
+}
+
+function SectionAccordion({
+  title,
+  summary,
+  badge,
+  accentColor,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  title: string;
+  summary: string;
+  badge?: string;
+  accentColor?: string | null;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.card}>
+      <TouchableOpacity style={styles.accordionHeader} activeOpacity={0.86} onPress={onToggle}>
+        <View style={styles.accordionHeaderMain}>
+          <View style={styles.accordionTitleRow}>
+            <Text style={styles.sectionTitle}>{title}</Text>
+            {badge ? (
+              <View style={styles.accordionBadge}>
+                <Text style={styles.accordionBadgeText}>{badge}</Text>
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.accordionSummaryRow}>
+            {accentColor ? <View style={[styles.accordionAccentDot, { backgroundColor: accentColor }]} /> : null}
+            <Text style={styles.accordionSummaryText}>{summary}</Text>
+          </View>
+        </View>
+        <View style={[styles.accordionChevron, isOpen && styles.accordionChevronOpen]}>
+          <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={18} color={isOpen ? '#ffb088' : '#9a9a9a'} />
+        </View>
+      </TouchableOpacity>
+      {isOpen ? <View style={styles.accordionBody}>{children}</View> : null}
+    </View>
+  );
+}
 
 function AnimationVariantPreviewCard({
   theme,
@@ -217,6 +274,13 @@ export default function GroupThemeScreen() {
   const [previewAnimationVariantId, setPreviewAnimationVariantId] = useState<GroupCardAnimationVariantId>('none');
   const [recentlyUnlockedCustomThemeId, setRecentlyUnlockedCustomThemeId] = useState<string | null>(null);
   const [studioOffsetY, setStudioOffsetY] = useState(0);
+  const [presetOffsetY, setPresetOffsetY] = useState(0);
+  const [animationOffsetY, setAnimationOffsetY] = useState(0);
+  const [brandingOffsetY, setBrandingOffsetY] = useState(0);
+  const [isCustomSectionOpen, setIsCustomSectionOpen] = useState(false);
+  const [isPresetSectionOpen, setIsPresetSectionOpen] = useState(false);
+  const [isAnimationSectionOpen, setIsAnimationSectionOpen] = useState(false);
+  const [isBrandingSectionOpen, setIsBrandingSectionOpen] = useState(false);
   const isCompactWidth = windowWidth < 390;
 
   const {
@@ -281,11 +345,17 @@ export default function GroupThemeScreen() {
   const activeBaseThemeLabel = activeTheme.name;
   const activeBaseThemeTypeLabel = activePreference?.active_theme_type === 'custom' ? 'Custom theme' : 'Preset theme';
   const activeAnimationSummary = activeAnimationLabel;
-  const animationsDisabledForCustomTheme = activePreference?.active_theme_type === 'custom';
-  const effectivePreviewAnimationVariantId = animationsDisabledForCustomTheme ? 'none' : previewAnimationVariantId;
-  const activeBaseThemeMeta = animationsDisabledForCustomTheme
-    ? 'Custom themes now stay fully independent. Their uploaded card art, colors, and border render on their own with no preset animation layered on top.'
+  const isCustomThemeActive = activePreference?.active_theme_type === 'custom';
+  const effectivePreviewAnimationVariantId = getCompatibleAnimationVariantId(activePreference?.active_theme_type, previewAnimationVariantId);
+  const activeBaseThemeMeta = isCustomThemeActive
+    ? activeAnimationVariantId === 'none'
+      ? 'Custom theme is active on its own. Edge pulse and Perimeter charge can still be layered on if you own them, while Electric Storm still needs a preset base theme.'
+      : `${activeAnimationDetails.name} is currently layered on this custom theme. Electric Storm still needs a preset base theme.`
     : activeAnimationDetails.description;
+  const activeAccentLabel = useMemo(
+    () => ACCENT_SWATCHES.find((option) => option.color.toLowerCase() === activeTheme.accentColor.toLowerCase())?.label ?? activeTheme.accentColor.toUpperCase(),
+    [activeTheme.accentColor],
+  );
   const latestPendingCustomTheme = useMemo(
     () => customThemes.find((theme) => theme.status === 'pending_payment') ?? null,
     [customThemes],
@@ -299,6 +369,8 @@ export default function GroupThemeScreen() {
     [draft.surfaceColor],
   );
   const selectedOverlayLabel = useMemo(() => getOverlayLabel(draft.overlayStrength), [draft.overlayStrength]);
+  const ownedCustomThemeCount = useMemo(() => customThemes.filter((theme) => theme.status === 'paid').length, [customThemes]);
+  const ownedAnimationCount = useMemo(() => animationPurchases.filter((purchase) => purchase.status === 'paid').length, [animationPurchases]);
   const sortedCustomThemes = useMemo(() => {
     const rank = (theme: GroupCustomTheme) => {
       if (theme.id === recentlyUnlockedCustomThemeId) return 0;
@@ -312,10 +384,66 @@ export default function GroupThemeScreen() {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [activePreference?.active_theme_id, activePreference?.active_theme_type, customThemes, recentlyUnlockedCustomThemeId]);
+  const customSectionSummary = ownedCustomThemeCount > 0
+    ? `${ownedCustomThemeCount} owned • builder accent ${selectedAccentOption.label}`
+    : `Builder ready • accent ${selectedAccentOption.label}`;
+  const presetSectionSummary = activePreference?.active_theme_type === 'preset'
+    ? `${activeTheme.name} active • ${GROUP_THEME_PRESETS.length} presets`
+    : `${GROUP_THEME_PRESETS.length} preset looks ready`;
+  const animationSectionSummary = isCustomThemeActive
+    ? `Custom theme active • Edge pulse and Perimeter charge supported`
+    : `Current animation • ${activeAnimationLabel}`;
+  const brandingSectionSummary = group?.avatar_url || group?.cover_url
+    ? 'Avatar and banner configured'
+    : 'Add avatar and banner art';
 
   useEffect(() => {
     setPreviewAnimationVariantId(activeAnimationVariantId);
   }, [activeAnimationVariantId]);
+
+  useEffect(() => {
+    if (recentlyUnlockedCustomThemeId) {
+      setIsCustomSectionOpen(true);
+      setIsPresetSectionOpen(false);
+      setIsAnimationSectionOpen(false);
+      setIsBrandingSectionOpen(false);
+    }
+  }, [recentlyUnlockedCustomThemeId]);
+
+  type StudioSectionId = 'custom' | 'preset' | 'animation' | 'branding';
+
+  const handleToggleSection = useCallback((section: StudioSectionId) => {
+    const nextCustomOpen = section === 'custom' ? !isCustomSectionOpen : false;
+    const nextPresetOpen = section === 'preset' ? !isPresetSectionOpen : false;
+    const nextAnimationOpen = section === 'animation' ? !isAnimationSectionOpen : false;
+    const nextBrandingOpen = section === 'branding' ? !isBrandingSectionOpen : false;
+
+    setIsCustomSectionOpen(nextCustomOpen);
+    setIsPresetSectionOpen(nextPresetOpen);
+    setIsAnimationSectionOpen(nextAnimationOpen);
+    setIsBrandingSectionOpen(nextBrandingOpen);
+  }, [isAnimationSectionOpen, isBrandingSectionOpen, isCustomSectionOpen, isPresetSectionOpen]);
+
+  const handleJumpToSection = useCallback((section: StudioSectionId) => {
+    setIsCustomSectionOpen(section === 'custom');
+    setIsPresetSectionOpen(section === 'preset');
+    setIsAnimationSectionOpen(section === 'animation');
+    setIsBrandingSectionOpen(section === 'branding');
+
+    const targetOffset = section === 'custom'
+      ? studioOffsetY
+      : section === 'preset'
+        ? presetOffsetY
+        : section === 'animation'
+          ? animationOffsetY
+          : brandingOffsetY;
+
+    if (targetOffset > 0) {
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ y: Math.max(targetOffset - 12, 0), animated: true });
+      });
+    }
+  }, [animationOffsetY, brandingOffsetY, presetOffsetY, studioOffsetY]);
 
   const handleUploadBranding = useCallback(async (kind: 'avatar' | 'cover') => {
     const result = await uploadImage(kind, kind === 'avatar' ? [1, 1] : [16, 9]);
@@ -384,11 +512,9 @@ export default function GroupThemeScreen() {
   }, []);
 
   const handleLoadThemeIntoBuilder = useCallback((theme: GroupCustomTheme) => {
+    handleJumpToSection('custom');
     setDraft(draftFromCustomTheme(theme));
-    if (studioOffsetY > 0) {
-      scrollRef.current?.scrollTo({ y: Math.max(studioOffsetY - 16, 0), animated: true });
-    }
-  }, [studioOffsetY]);
+  }, [handleJumpToSection]);
 
   const handleResetDraft = useCallback(() => {
     setDraft(createDraftFromPreset(activePreference?.active_theme_type === 'preset' ? activePreference.active_theme_id : 'midnight'));
@@ -409,13 +535,14 @@ export default function GroupThemeScreen() {
       Alert.alert('Could not apply theme', 'Please try again.');
       return;
     }
-    Alert.alert('Theme updated', 'Your custom theme is now active for this community. Any preset animation has been cleared so the custom treatment stays on its own.');
+    Alert.alert('Theme updated', 'Your custom theme is now active for this community. Edge pulse and Perimeter charge can stay on it if owned, while Electric Storm still requires a preset base theme.');
   }, [saveThemePreference]);
 
   const handleSelectAnimation = useCallback(async (variantId: 'none' | 'basic' | 'standard' | 'premium') => {
-    if (animationsDisabledForCustomTheme && variantId !== 'none') {
-      setPreviewAnimationVariantId('none');
-      Alert.alert('Custom theme active', 'Animations only run on preset themes. Switch to a preset base theme first if you want to use Electric Storm or another animation tier.');
+    if (!isAnimationCompatibleWithThemeType(activePreference?.active_theme_type, variantId)) {
+      setPreviewAnimationVariantId(getCompatibleAnimationVariantId(activePreference?.active_theme_type, activeAnimationVariantId));
+      handleJumpToSection('preset');
+      Alert.alert('Preset base theme required', 'Electric Storm still needs a preset base theme. Edge pulse and Perimeter charge can be used on custom themes if you own them.');
       return;
     }
 
@@ -426,7 +553,7 @@ export default function GroupThemeScreen() {
       return;
     }
     Alert.alert('Animation updated', variantId === 'none' ? 'This community is now using the static card treatment for you.' : 'Your selected animation variant is now active for this community. You can switch to any unlocked tier on your other groups too.');
-  }, [animationsDisabledForCustomTheme, saveAnimationPreference]);
+  }, [activeAnimationVariantId, activePreference?.active_theme_type, handleJumpToSection, saveAnimationPreference]);
 
   const handlePurchaseAnimation = useCallback(async (variantId: 'basic' | 'standard' | 'premium') => {
     if (!groupId) return;
@@ -497,21 +624,17 @@ export default function GroupThemeScreen() {
     resetCheckout();
     if (!unlocked) {
       setRecentlyUnlockedCustomThemeId(completed.customThemeId);
-      if (studioOffsetY > 0) {
-        scrollRef.current?.scrollTo({ y: Math.max(studioOffsetY - 16, 0), animated: true });
-      }
+      handleJumpToSection('custom');
       Alert.alert('Checkout processing', 'Your payment sheet completed, but the theme is still waiting on final confirmation. It should stay in your collection as Pending for this group and switch over automatically once the webhook finishes. If it still does not move after about a minute, tap Refresh appearance data.');
       return;
     }
 
     await saveThemePreference('custom', completed.customThemeId);
     setRecentlyUnlockedCustomThemeId(completed.customThemeId);
-    if (studioOffsetY > 0) {
-      scrollRef.current?.scrollTo({ y: Math.max(studioOffsetY - 16, 0), animated: true });
-    }
-    Alert.alert('Theme unlocked', 'Your custom theme is now unlocked and active for this group. Any preset animation has been cleared so the custom treatment stays fully independent.');
+    handleJumpToSection('custom');
+    Alert.alert('Theme unlocked', 'Your custom theme is now unlocked and active for this group. Compatible edge animations can still be used on it, while Electric Storm still requires a preset base theme.');
     setDraft(createDraftFromPreset(activePreference?.active_theme_type === 'preset' ? activePreference.active_theme_id : 'midnight'));
-  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, draft, groupId, initCheckout, resetCheckout, saveThemePreference, studioOffsetY, waitForThemePurchase]);
+  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, draft, groupId, handleJumpToSection, initCheckout, resetCheckout, saveThemePreference, waitForThemePurchase]);
 
   if (loadingGroup || !group) {
     return (
@@ -538,7 +661,7 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Currently live on this group</Text>
-          <Text style={styles.sectionHint}>Only one visual treatment is active at a time. Preset themes can use the animation tiers, while custom themes stay fully independent and clear those preset effects.</Text>
+          <Text style={styles.sectionHint}>Only one visual treatment is active at a time. Preset themes can use the animation tiers, while custom themes stay fully independent. Use the quick actions below to jump straight to presets, custom builder controls, animations, or branding.</Text>
           <View style={styles.statusCallout}>
             <View style={[styles.collectionSwatch, { backgroundColor: activeTheme.surfaceColor, borderColor: activeTheme.borderColor }]}> 
               <View style={[styles.collectionSwatchAccent, { backgroundColor: activeTheme.accentColor }]} />
@@ -550,15 +673,65 @@ export default function GroupThemeScreen() {
               <Text style={styles.statusCalloutFootnote}>{activeBaseThemeMeta}</Text>
             </View>
           </View>
+          <View style={styles.quickActionsGrid}>
+            <TouchableOpacity style={styles.quickActionCard} activeOpacity={0.9} onPress={() => handleJumpToSection('preset')}>
+              <View style={styles.quickActionIconWrap}>
+                <Ionicons name="color-palette-outline" size={18} color="#ffb088" />
+              </View>
+              <Text style={styles.quickActionTitle}>Preset themes</Text>
+              <Text style={styles.quickActionMeta}>Switch base looks without digging through the rest of the studio.</Text>
+              <View style={styles.quickActionBadge}>
+                <Text style={styles.quickActionBadgeText}>{activeAccentLabel}</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionCard} activeOpacity={0.9} onPress={() => handleJumpToSection('custom')}>
+              <View style={styles.quickActionIconWrap}>
+                <Ionicons name="sparkles-outline" size={18} color="#ffb088" />
+              </View>
+              <Text style={styles.quickActionTitle}>Custom themes</Text>
+              <Text style={styles.quickActionMeta}>Open your owned customs and builder controls together, including color, art, and overlay choices.</Text>
+              <View style={styles.quickActionBadge}>
+                <Text style={styles.quickActionBadgeText}>{ownedCustomThemeCount} owned</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionCard} activeOpacity={0.9} onPress={() => handleJumpToSection('animation')}>
+              <View style={styles.quickActionIconWrap}>
+                <Ionicons name="flash-outline" size={18} color="#ffb088" />
+              </View>
+              <Text style={styles.quickActionTitle}>Animations</Text>
+              <Text style={styles.quickActionMeta}>{isCustomThemeActive ? 'Edge pulse and Perimeter charge work on custom themes. Electric Storm still needs a preset base theme.' : 'Preview and apply owned edge animations on the current base theme.'}</Text>
+              <View style={styles.quickActionBadge}>
+                <Text style={styles.quickActionBadgeText}>{ownedAnimationCount} owned</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionCard} activeOpacity={0.9} onPress={() => handleJumpToSection('branding')}>
+              <View style={styles.quickActionIconWrap}>
+                <Ionicons name="images-outline" size={18} color="#ffb088" />
+              </View>
+              <Text style={styles.quickActionTitle}>Group identity</Text>
+              <Text style={styles.quickActionMeta}>Keep avatar and banner updates separate from personal appearance choices.</Text>
+              <View style={styles.quickActionBadge}>
+                <Text style={styles.quickActionBadgeText}>{canManageBranding ? 'Owner controls' : 'View only'}</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <View style={styles.card} onLayout={(event) => setStudioOffsetY(event.nativeEvent.layout.y)}>
-          <Text style={styles.sectionTitle}>Custom theme studio</Text>
-          <Text style={styles.sectionHint}>Everything for custom themes now lives in this one spot: your saved custom themes, the builder, the live preview, and the unlock/apply actions. No more hunting up and down the screen. Applying a custom theme now clears preset animation so the custom treatment stands alone.</Text>
-          <View style={styles.studioCallout}>
-            <Ionicons name="sparkles-outline" size={18} color="#ffb48d" />
-            <Text style={styles.studioCalloutText}>Use the top half of this card to apply a custom theme you already bought. Use the bottom half to build a new one, preview it instantly, and unlock it when it looks right. When a custom theme is active, Electric Storm and the other preset animation tiers are turned off.</Text>
-          </View>
+        <View onLayout={(event) => setStudioOffsetY(event.nativeEvent.layout.y)}>
+        <SectionAccordion
+          title="Custom themes"
+          summary={customSectionSummary}
+          badge={`${ownedCustomThemeCount} owned`}
+          accentColor={draft.accentColor}
+          isOpen={isCustomSectionOpen}
+          onToggle={() => handleToggleSection('custom')}
+        >
+          <View>
+            <Text style={styles.sectionHint}>Owned custom themes and the builder now live in one cleaner section. Start closed, open when you want to apply, edit, or buy a custom look.</Text>
+            <View style={styles.studioCallout}>
+              <Ionicons name="sparkles-outline" size={18} color="#ffb48d" />
+              <Text style={styles.studioCalloutText}>Custom themes can now pair with Edge pulse and Perimeter charge if you own them. Electric Storm still requires a preset base theme.</Text>
+            </View>
           <View style={styles.studioStepRow}>
             <View style={styles.studioStepChip}>
               <Text style={styles.studioStepNumber}>1</Text>
@@ -772,11 +945,20 @@ export default function GroupThemeScreen() {
             )}
           </TouchableOpacity>
           <Text style={styles.purchaseHint}>The purchase stays locked to {group.name} and will show in your custom-theme list for this group only.</Text>
+          </View>
+        </SectionAccordion>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Preset themes</Text>
-          <Text style={styles.sectionHint}>These are free and can be switched any time for just this group. Choosing one replaces any custom theme currently active for this group.</Text>
+        <View onLayout={(event) => setPresetOffsetY(event.nativeEvent.layout.y)}>
+        <SectionAccordion
+          title="Preset themes"
+          summary={presetSectionSummary}
+          badge="Free"
+          accentColor={activePreference?.active_theme_type === 'preset' ? activeTheme.accentColor : null}
+          isOpen={isPresetSectionOpen}
+          onToggle={() => handleToggleSection('preset')}
+        >
+          <Text style={styles.sectionHint}>Preset themes stay lightweight and swappable. Picking one replaces any active custom theme for this group.</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalList}>
             {GROUP_THEME_PRESETS.map((theme) => {
               const isActive = activePreference?.active_theme_type === 'preset' && activePreference.active_theme_id === theme.id;
@@ -791,11 +973,19 @@ export default function GroupThemeScreen() {
               );
             })}
           </ScrollView>
+        </SectionAccordion>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Feed animation variants</Text>
-          <Text style={styles.sectionHint}>{animationsDisabledForCustomTheme ? 'Animations are unavailable while a custom theme is active. Switch to a preset base theme first if you want to use Electric Storm or another animation tier.' : 'Animations only apply to preset themes. Edge pulse stays the most restrained, while the stronger tiers put more motion around the card.'}</Text>
+        <View onLayout={(event) => setAnimationOffsetY(event.nativeEvent.layout.y)}>
+        <SectionAccordion
+          title="Feed animation variants"
+          summary={animationSectionSummary}
+          badge={`${ownedAnimationCount} owned`}
+          accentColor={activeTheme.accentColor}
+          isOpen={isAnimationSectionOpen}
+          onToggle={() => handleToggleSection('animation')}
+        >
+          <Text style={styles.sectionHint}>{isCustomThemeActive ? 'Custom themes can use Edge pulse and Perimeter charge if you own them. Electric Storm still needs a preset base theme.' : 'Choose the motion layer you want on top of the active preset theme.'}</Text>
           <AnimationVariantPreviewCard
             theme={activeTheme}
             groupName={group.name}
@@ -808,10 +998,10 @@ export default function GroupThemeScreen() {
             const isPreviewing = effectivePreviewAnimationVariantId === variant.id;
             const isPending = animationPurchases.some((purchase) => purchase.variant_id === variant.id && purchase.status === 'pending_payment');
             const isBusy = savingPreference || animationCheckoutState.status === 'loading' || animationCheckoutState.status === 'processing';
-            const isAnimationLocked = animationsDisabledForCustomTheme && variant.id !== 'none';
+            const isAnimationLocked = !isAnimationCompatibleWithThemeType(activePreference?.active_theme_type, variant.id);
             const priceLabel = variant.priceCents > 0 ? `$${(variant.priceCents / 100).toFixed(2)}` : 'Included';
             const metaLabel = isAnimationLocked
-              ? 'Custom theme is active — switch to a preset base theme before using this animation tier'
+              ? 'Electric Storm is owned, but it still needs a preset base theme before it can go live on this group'
               : isOwned
                 ? (isActive
                   ? 'Active animation for this group'
@@ -828,7 +1018,13 @@ export default function GroupThemeScreen() {
                 key={variant.id}
                 activeOpacity={0.92}
                 style={[styles.variantRow, isPreviewing && styles.variantRowPreviewing, isActive && styles.variantRowActive]}
-                onPress={() => setPreviewAnimationVariantId(isAnimationLocked ? 'none' : variant.id)}
+                onPress={() => {
+                  if (isAnimationLocked) {
+                    handleJumpToSection('preset');
+                    return;
+                  }
+                  setPreviewAnimationVariantId(variant.id);
+                }}
               >
                 <View style={{ flex: 1 }}>
                   <View style={styles.variantTitleRow}>
@@ -855,22 +1051,28 @@ export default function GroupThemeScreen() {
                 </View>
                 {isOwned ? (
                   <TouchableOpacity style={[styles.secondaryBtn, isActive && styles.secondaryBtnActive, isAnimationLocked && { opacity: 0.5 }]} disabled={isBusy || isAnimationLocked} onPress={() => void handleSelectAnimation(variant.id)}>
-                    <Text style={[styles.secondaryBtnText, isActive && styles.secondaryBtnTextActive]}>{isAnimationLocked ? 'Preset required' : isActive ? 'Animation active' : 'Use animation'}</Text>
+                    <Text style={[styles.secondaryBtnText, isActive && styles.secondaryBtnTextActive]}>{isAnimationLocked ? 'Needs preset base' : isActive ? 'Animation active' : 'Use animation'}</Text>
                   </TouchableOpacity>
                 ) : isPending ? (
                   <View style={styles.pendingPill}><Text style={styles.pendingPillText}>Pending</Text></View>
                 ) : (
                   <TouchableOpacity style={[styles.secondaryBtn, isAnimationLocked && { opacity: 0.5 }]} disabled={isBusy || isAnimationLocked} onPress={() => void handlePurchaseAnimation(variant.id as 'basic' | 'standard' | 'premium')}>
-                    <Text style={styles.secondaryBtnText}>{isAnimationLocked ? 'Preset required' : `Unlock ${priceLabel}`}</Text>
+                    <Text style={styles.secondaryBtnText}>{isAnimationLocked ? 'Needs preset base' : `Unlock ${priceLabel}`}</Text>
                   </TouchableOpacity>
                 )}
               </TouchableOpacity>
             );
           })}
+        </SectionAccordion>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Group identity</Text>
+        <View onLayout={(event) => setBrandingOffsetY(event.nativeEvent.layout.y)}>
+        <SectionAccordion
+          title="Group identity"
+          summary={brandingSectionSummary}
+          isOpen={isBrandingSectionOpen}
+          onToggle={() => handleToggleSection('branding')}
+        >
           <Text style={styles.sectionHint}>Avatar and banner shape the community identity for everyone. Only owners and admins can update them.</Text>
 
           <View style={styles.identityPreviewWrap}>
@@ -894,6 +1096,7 @@ export default function GroupThemeScreen() {
           ) : (
             <Text style={styles.lockedText}>Branding is managed by the group owner/admins.</Text>
           )}
+        </SectionAccordion>
         </View>
 
         <TouchableOpacity style={styles.refreshBtn} onPress={() => void Promise.all([loadGroup(), refreshThemes()])}>
@@ -1014,6 +1217,33 @@ const styles = StyleSheet.create({
     borderColor: '#1f1f1f',
     padding: 16,
   },
+  accordionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  accordionHeaderMain: { flex: 1, gap: 8 },
+  accordionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  accordionBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#4f2d1d',
+    backgroundColor: '#1d130f',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  accordionBadgeText: { color: '#ffb088', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  accordionSummaryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  accordionAccentDot: { width: 10, height: 10, borderRadius: 5 },
+  accordionSummaryText: { color: '#9a9a9a', fontSize: 12, lineHeight: 17, flex: 1 },
+  accordionChevron: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#272727',
+    backgroundColor: '#151515',
+  },
+  accordionChevronOpen: { borderColor: '#5d3928', backgroundColor: 'rgba(255,106,47,0.08)' },
+  accordionBody: { marginTop: 16 },
   sectionTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
   sectionHint: { color: '#8b8b8b', fontSize: 13, lineHeight: 18, marginTop: 5 },
   quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 14 },
