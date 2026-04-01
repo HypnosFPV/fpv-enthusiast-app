@@ -509,8 +509,7 @@ export default function PostCard(props: Props) {
   const isPremiumGroupCard = !!activeGroupTheme && groupAnimationVariantId === 'premium';
   const hasPrimaryPostMedia = !!(post.media_url || post.social_url || post.embed_url || post.thumbnail_url || post.media_type === 'social_embed');
   const shouldShowThemedCardArt = !!activeGroupTheme?.cardImageUrl;
-  const shouldShowFullCardArt = shouldShowThemedCardArt && !hasPrimaryPostMedia;
-  const shouldShowMediaArtStrip = shouldShowThemedCardArt && hasPrimaryPostMedia;
+  const shouldShowFullCardArt = shouldShowThemedCardArt;
   const shouldInsetPrimaryMedia = !!activeGroupTheme && hasPrimaryPostMedia;
   const themedCardStyle = useMemo(() => activeGroupTheme ? ({
     backgroundColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.surfaceColor,
@@ -519,8 +518,8 @@ export default function PostCard(props: Props) {
     minHeight: hasPrimaryPostMedia ? undefined : 284,
   }) : null, [activeGroupTheme, hasPrimaryPostMedia, isPremiumGroupCard]);
   const themedCardImageStyle = useMemo(() => activeGroupTheme ? ({
-    opacity: hasPrimaryPostMedia ? 0.46 : 0.58,
-    transform: [{ scale: hasPrimaryPostMedia ? 1.04 : 1.03 }],
+    opacity: hasPrimaryPostMedia ? 0.34 : 0.58,
+    transform: [{ scale: hasPrimaryPostMedia ? 1.06 : 1.03 }],
   }) : null, [activeGroupTheme, hasPrimaryPostMedia]);
   const themedCardOverlayStyle = useMemo(() => activeGroupTheme ? ({
     backgroundColor: withAlpha(
@@ -1253,13 +1252,6 @@ export default function PostCard(props: Props) {
         ) : null}
       </View>
 
-      {shouldShowMediaArtStrip ? (
-        <View style={[styles.themedCardArtStrip, themedMediaFrameStyle]}>
-          <Image source={{ uri: activeGroupTheme?.cardImageUrl ?? undefined }} style={[styles.themedCardArtStripImage, themedCardImageStyle]} resizeMode="cover" />
-          <View style={[styles.themedCardArtStripOverlay, themedCardOverlayStyle]} />
-        </View>
-      ) : null}
-
       {hasPrimaryPostMedia ? (
         <View style={[styles.mediaFrame, shouldInsetPrimaryMedia && styles.themedMediaFrame, shouldInsetPrimaryMedia && themedMediaFrameStyle]}>
           {renderMedia()}
@@ -1568,22 +1560,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     backgroundColor: 'rgba(8,10,16,0.18)',
-  },
-  themedCardArtStrip: {
-    marginHorizontal: 14,
-    marginBottom: 10,
-    height: 92,
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: 1,
-    position: 'relative',
-  },
-  themedCardArtStripImage: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.52,
-  },
-  themedCardArtStripOverlay: {
-    ...StyleSheet.absoluteFillObject,
   },
   videoContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative' },
   webView: { flex: 1, backgroundColor: '#000' },
