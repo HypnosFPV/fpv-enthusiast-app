@@ -151,6 +151,7 @@ function AnimationVariantPreviewCard({
   const [cardFrame, setCardFrame] = useState({ width: 0, height: 0 });
   const variantLabel = GROUP_CARD_ANIMATION_VARIANTS.find((variant) => variant.id === variantId)?.name ?? 'Default';
   const isLive = variantId === activeVariantId;
+  const isPremiumPreview = variantId === 'premium';
   const previewTheme = useMemo(() => ({
     ...theme,
     cardImageUrl: null,
@@ -186,7 +187,7 @@ function AnimationVariantPreviewCard({
             cornerRadius={18}
           />
         ) : null}
-        <View style={[styles.animationPreviewCard, { backgroundColor: previewTheme.surfaceColor, borderColor: previewTheme.borderColor }]}>
+        <View style={[styles.animationPreviewCard, { backgroundColor: isPremiumPreview ? 'transparent' : previewTheme.surfaceColor, borderColor: isPremiumPreview ? 'transparent' : previewTheme.borderColor }]}>
           <View style={styles.animationPreviewContent}>
           <View style={[styles.animationPreviewChip, { backgroundColor: previewTheme.chipBackgroundColor, borderColor: previewTheme.borderColor }]}>
             <Ionicons name="sparkles-outline" size={11} color={previewTheme.chipTextColor} />
@@ -275,10 +276,6 @@ export default function GroupThemeScreen() {
 
   const previewTheme = useMemo(() => previewThemeFromDraft(draft), [draft]);
   const ownedAnimationVariantIds = useMemo(() => new Set(animationPurchases.filter((purchase) => purchase.status === 'paid').map((purchase) => purchase.variant_id)), [animationPurchases]);
-  const preferredCustomThemeAnimationVariantId = useMemo<GroupCardAnimationVariantId>(
-    () => (ownedAnimationVariantIds.has('basic') ? 'basic' : 'none'),
-    [ownedAnimationVariantIds],
-  );
   const activeAnimationDetails = useMemo(() => getGroupCardAnimationVariant(activeAnimationVariantId), [activeAnimationVariantId]);
   const activeAnimationLabel = activeAnimationDetails.name;
   const activeBaseThemeLabel = activeTheme.name;
@@ -405,18 +402,13 @@ export default function GroupThemeScreen() {
   }, [saveThemePreference]);
 
   const handleApplyCustom = useCallback(async (themeId: string) => {
-    const ok = await saveThemePreference('custom', themeId, preferredCustomThemeAnimationVariantId);
+    const ok = await saveThemePreference('custom', themeId);
     if (!ok) {
       Alert.alert('Could not apply theme', 'Please try again.');
       return;
     }
-    Alert.alert(
-      'Theme updated',
-      preferredCustomThemeAnimationVariantId === 'basic'
-        ? 'Your custom theme is now active for this community with the subtle Edge pulse border.'
-        : 'Your custom theme is now active for this community with a mostly static card so the uploaded image does most of the visual work.',
-    );
-  }, [preferredCustomThemeAnimationVariantId, saveThemePreference]);
+    Alert.alert('Theme updated', 'Your custom theme is now active for this community. Your current animation selection stays exactly as chosen.');
+  }, [saveThemePreference]);
 
   const handleSelectAnimation = useCallback(async (variantId: 'none' | 'basic' | 'standard' | 'premium') => {
     setPreviewAnimationVariantId(variantId);
@@ -504,19 +496,14 @@ export default function GroupThemeScreen() {
       return;
     }
 
-    await saveThemePreference('custom', completed.customThemeId, preferredCustomThemeAnimationVariantId);
+    await saveThemePreference('custom', completed.customThemeId);
     setRecentlyUnlockedCustomThemeId(completed.customThemeId);
     if (studioOffsetY > 0) {
       scrollRef.current?.scrollTo({ y: Math.max(studioOffsetY - 16, 0), animated: true });
     }
-    Alert.alert(
-      'Theme unlocked',
-      preferredCustomThemeAnimationVariantId === 'basic'
-        ? 'Your custom theme is now unlocked and active for this group with the subtle Edge pulse border. We also jumped you back to the custom theme studio so the active selection and builder are in the same place.'
-        : 'Your custom theme is now unlocked and active for this group as a mostly static card so the uploaded image does the heavy visual lifting. We also jumped you back to the custom theme studio so the active selection and builder are in the same place.',
-    );
+    Alert.alert('Theme unlocked', 'Your custom theme is now unlocked and active for this group. We kept your current animation tier unchanged and jumped you back to the custom theme studio so the active selection and builder stay together.');
     setDraft(createDraftFromPreset(activePreference?.active_theme_type === 'preset' ? activePreference.active_theme_id : 'midnight'));
-  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, draft, groupId, initCheckout, preferredCustomThemeAnimationVariantId, resetCheckout, saveThemePreference, studioOffsetY, waitForThemePurchase]);
+  }, [activePreference?.active_theme_id, activePreference?.active_theme_type, confirmCheckout, draft, groupId, initCheckout, resetCheckout, saveThemePreference, studioOffsetY, waitForThemePurchase]);
 
   if (loadingGroup || !group) {
     return (
@@ -543,7 +530,7 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Currently live on this group</Text>
-          <Text style={styles.sectionHint}>Only one base theme is active at a time. For custom themes, the uploaded artwork should do most of the visual work, while any edge effect is kept separate and subtle.</Text>
+          <Text style={styles.sectionHint}>Only one base theme is active at a time. Custom themes keep your uploaded artwork, and the currently selected animation tier stays paired with it instead of silently falling back.</Text>
           <View style={styles.statusCallout}>
             <View style={[styles.collectionSwatch, { backgroundColor: activeTheme.surfaceColor, borderColor: activeTheme.borderColor }]}> 
               <View style={[styles.collectionSwatchAccent, { backgroundColor: activeTheme.accentColor }]} />
@@ -559,10 +546,10 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card} onLayout={(event) => setStudioOffsetY(event.nativeEvent.layout.y)}>
           <Text style={styles.sectionTitle}>Custom theme studio</Text>
-          <Text style={styles.sectionHint}>Everything for custom themes now lives in this one spot: your saved custom themes, the builder, the live preview, and the unlock/apply actions. No more hunting up and down the screen. Custom themes are also tuned to stay mostly static so your uploaded art is the main look.</Text>
+          <Text style={styles.sectionHint}>Everything for custom themes now lives in this one spot: your saved custom themes, the builder, the live preview, and the unlock/apply actions. No more hunting up and down the screen. Applying a custom theme now preserves whichever animation tier you already selected.</Text>
           <View style={styles.studioCallout}>
             <Ionicons name="sparkles-outline" size={18} color="#ffb48d" />
-            <Text style={styles.studioCalloutText}>Use the top half of this card to apply a custom theme you already bought. Use the bottom half to build a new one, preview it instantly, and unlock it when it looks right. If you own Edge pulse, custom themes will use that restrained outer border instead of the heavier storm-style effects.</Text>
+            <Text style={styles.studioCalloutText}>Use the top half of this card to apply a custom theme you already bought. Use the bottom half to build a new one, preview it instantly, and unlock it when it looks right. Whatever animation tier you already chose for this group stays active when you switch themes.</Text>
           </View>
           <View style={styles.studioStepRow}>
             <View style={styles.studioStepChip}>

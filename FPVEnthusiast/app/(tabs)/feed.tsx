@@ -433,7 +433,7 @@ export default function FeedScreen() {
       privacyLabel,
     ].filter(Boolean).join(' • ');
     const communitySummary = ['Community', groupName, communityMeta].filter(Boolean).join(' • ');
-    const showCommunityBanner = item.id === visiblePostId && !!item.group_id;
+    const showCommunityBanner = false;
 
     return (
       <View>
@@ -613,7 +613,7 @@ export default function FeedScreen() {
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={VIEWABILITY_CONFIG}
         showsVerticalScrollIndicator={false}
-        removeClippedSubviews={Platform.OS === 'android'}
+        removeClippedSubviews={false}
         initialNumToRender={4}
         maxToRenderPerBatch={4}
         windowSize={7}
