@@ -510,6 +510,7 @@ export default function PostCard(props: Props) {
   const hasPrimaryPostMedia = !!(post.media_url || post.social_url || post.embed_url || post.thumbnail_url || post.media_type === 'social_embed');
   const shouldShowThemedCardArt = activeGroupTheme?.source === 'custom' && !!activeGroupTheme?.cardImageUrl;
   const shouldShowFullCardArt = shouldShowThemedCardArt;
+  const shouldUseThemedContentPlate = !!activeGroupTheme;
   const shouldInsetPrimaryMedia = !!activeGroupTheme && hasPrimaryPostMedia;
   const themedCardStyle = useMemo(() => activeGroupTheme ? ({
     backgroundColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.surfaceColor,
@@ -531,6 +532,18 @@ export default function PostCard(props: Props) {
   }) : null, [activeGroupTheme, hasPrimaryPostMedia]);
   const themedHeaderText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
   const themedMutedText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.mutedTextColor }) : null, [activeGroupTheme]);
+  const themedContentPlateStyle = useMemo(() => activeGroupTheme ? ({
+    backgroundColor: withAlpha(
+      activeGroupTheme.surfaceSecondaryColor,
+      shouldShowThemedCardArt
+        ? (isPremiumGroupCard ? 0.78 : 0.72)
+        : (isPremiumGroupCard ? 0.34 : 0.24),
+    ),
+    borderColor: withAlpha(
+      activeGroupTheme.borderColor,
+      shouldShowThemedCardArt ? 0.34 : 0.22,
+    ),
+  }) : null, [activeGroupTheme, isPremiumGroupCard, shouldShowThemedCardArt]);
   const themedGroupChipStyle = useMemo(() => activeGroupTheme ? ({
     backgroundColor: activeGroupTheme.chipBackgroundColor,
     borderColor: activeGroupTheme.borderColor,
@@ -538,17 +551,23 @@ export default function PostCard(props: Props) {
   const themedGroupChipText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.chipTextColor }) : null, [activeGroupTheme]);
   const themedCaptionStyle = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
   const themedMediaFrameStyle = useMemo(() => activeGroupTheme ? ({
-    backgroundColor: withAlpha(activeGroupTheme.surfaceSecondaryColor, isPremiumGroupCard ? 0.26 : 0.16),
-    borderColor: withAlpha(activeGroupTheme.borderColor, isPremiumGroupCard ? 0.94 : 0.88),
+    backgroundColor: withAlpha(
+      activeGroupTheme.surfaceSecondaryColor,
+      shouldUseThemedContentPlate ? (isPremiumGroupCard ? 0.18 : 0.12) : (isPremiumGroupCard ? 0.26 : 0.16),
+    ),
+    borderColor: withAlpha(
+      activeGroupTheme.borderColor,
+      shouldUseThemedContentPlate ? (isPremiumGroupCard ? 0.78 : 0.58) : (isPremiumGroupCard ? 0.94 : 0.88),
+    ),
     shadowColor: activeGroupTheme.accentColor,
-    shadowOpacity: isPremiumGroupCard ? 0.16 : 0.1,
-    shadowRadius: isPremiumGroupCard ? 12 : 10,
-    elevation: isPremiumGroupCard ? 4 : 3,
-  }) : null, [activeGroupTheme, isPremiumGroupCard]);
+    shadowOpacity: shouldUseThemedContentPlate ? (isPremiumGroupCard ? 0.12 : 0.06) : (isPremiumGroupCard ? 0.16 : 0.1),
+    shadowRadius: shouldUseThemedContentPlate ? (isPremiumGroupCard ? 10 : 8) : (isPremiumGroupCard ? 12 : 10),
+    elevation: shouldUseThemedContentPlate ? (isPremiumGroupCard ? 2 : 1) : (isPremiumGroupCard ? 4 : 3),
+  }) : null, [activeGroupTheme, isPremiumGroupCard, shouldUseThemedContentPlate]);
   const themedActionsStyle = useMemo(() => activeGroupTheme ? ({
     borderTopColor: activeGroupTheme.borderColor,
-    backgroundColor: withAlpha(activeGroupTheme.surfaceSecondaryColor, 0.12),
-  }) : null, [activeGroupTheme]);
+    backgroundColor: withAlpha(activeGroupTheme.surfaceSecondaryColor, shouldUseThemedContentPlate ? 0.04 : 0.12),
+  }) : null, [activeGroupTheme, shouldUseThemedContentPlate]);
   const shouldAnimateGroupCard = !!activeGroupTheme && groupAnimationVariantId !== 'none' && isGroupPost && !!props.isVisible;
   const [cardFrame, setCardFrame] = useState({ width: 0, height: 0 });
 
@@ -1193,6 +1212,17 @@ export default function PostCard(props: Props) {
     );
   }
 
+  function renderThemedCardSurface(children: React.ReactNode) {
+    if (!shouldUseThemedContentPlate) return <>{children}</>;
+    return (
+      <View style={styles.themedContentPad}>
+        <View style={[styles.themedContentPlate, themedContentPlateStyle]}>
+          {children}
+        </View>
+      </View>
+    );
+  }
+
   // ── Main render ───────────────────────────────────────────────────────────
   return (
     <View style={styles.cardShell}>
@@ -1220,6 +1250,8 @@ export default function PostCard(props: Props) {
             <View style={[styles.themedCardOverlay, themedCardOverlayStyle]} />
           </>
         ) : null}
+        {renderThemedCardSurface(
+          <>
         <View style={styles.header}>
         <View style={styles.avatarWrap}>
           {post.users?.avatar_url
@@ -1351,6 +1383,8 @@ export default function PostCard(props: Props) {
           </Text>
         </TouchableOpacity>
       </View>
+          </>
+        )}
 
       {/* Comments Modal */}
       <Modal visible={showComments} animationType="slide" transparent onRequestClose={function () { setShowComments(false); }}>
@@ -1500,6 +1534,8 @@ const styles = StyleSheet.create({
   themedCard: { borderWidth: 1 },
   themedCardImage: { ...StyleSheet.absoluteFillObject, opacity: 0.4 },
   themedCardOverlay: { ...StyleSheet.absoluteFillObject },
+  themedContentPad: { padding: 14, zIndex: 1 },
+  themedContentPlate: { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
   groupAnimWrap: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 14,
@@ -1553,7 +1589,7 @@ const styles = StyleSheet.create({
   menuBtn: { padding: 6 },
   mediaFrame: { width: '100%' },
   themedMediaFrame: {
-    marginHorizontal: 14,
+    marginHorizontal: 0,
     marginTop: 4,
     marginBottom: 12,
     borderRadius: 16,
