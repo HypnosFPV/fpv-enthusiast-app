@@ -149,10 +149,12 @@ function AnimationVariantPreviewCard({
   activeVariantId: GroupCardAnimationVariantId;
 }) {
   const [cardFrame, setCardFrame] = useState({ width: 0, height: 0 });
-  const overlayOpacity = resolveOverlayOpacity(theme.overlayStrength, 0.08, 0.32);
   const variantLabel = GROUP_CARD_ANIMATION_VARIANTS.find((variant) => variant.id === variantId)?.name ?? 'Default';
   const isLive = variantId === activeVariantId;
-  const isPremiumPreview = variantId === 'premium';
+  const previewTheme = useMemo(() => ({
+    ...theme,
+    cardImageUrl: null,
+  }), [theme]);
 
   return (
     <View style={styles.animationPreviewShell}>
@@ -184,17 +186,15 @@ function AnimationVariantPreviewCard({
             cornerRadius={18}
           />
         ) : null}
-        <View style={[styles.animationPreviewCard, { backgroundColor: isPremiumPreview ? 'transparent' : theme.surfaceColor, borderColor: isPremiumPreview ? 'transparent' : theme.borderColor }]}>
-          {theme.cardImageUrl && !isPremiumPreview ? <Image source={{ uri: theme.cardImageUrl }} style={styles.animationPreviewImage} resizeMode="cover" /> : null}
-          {theme.cardImageUrl && !isPremiumPreview ? <View style={[styles.animationPreviewImageOverlay, { backgroundColor: `rgba(0,0,0,${overlayOpacity})` }]} /> : null}
+        <View style={[styles.animationPreviewCard, { backgroundColor: previewTheme.surfaceColor, borderColor: previewTheme.borderColor }]}>
           <View style={styles.animationPreviewContent}>
-          <View style={[styles.animationPreviewChip, { backgroundColor: theme.chipBackgroundColor, borderColor: theme.borderColor }]}>
-            <Ionicons name="sparkles-outline" size={11} color={theme.chipTextColor} />
-            <Text style={[styles.animationPreviewChipText, { color: theme.chipTextColor }]}>{variantId === 'none' ? 'Default feed card' : 'Animated feed card'}</Text>
+          <View style={[styles.animationPreviewChip, { backgroundColor: previewTheme.chipBackgroundColor, borderColor: previewTheme.borderColor }]}>
+            <Ionicons name="sparkles-outline" size={11} color={previewTheme.chipTextColor} />
+            <Text style={[styles.animationPreviewChipText, { color: previewTheme.chipTextColor }]}>{variantId === 'none' ? 'Default feed card' : 'Animated feed card'}</Text>
           </View>
-          <Text style={[styles.animationPreviewTitleText, { color: theme.textColor }]}>View group • {groupName}</Text>
-          <Text style={[styles.animationPreviewBodyText, { color: theme.textColor }]}>This is how the border motion will read on a real post card for your current theme.</Text>
-          <Text style={[styles.animationPreviewMetaText, { color: theme.mutedTextColor }]}>{isLive ? 'Currently active in your feed.' : 'Preview only until you tap Use or complete checkout.'}</Text>
+          <Text style={[styles.animationPreviewTitleText, { color: previewTheme.textColor }]}>View group • {groupName}</Text>
+          <Text style={[styles.animationPreviewBodyText, { color: previewTheme.textColor }]}>This is how the border motion will read on a clean post card for your current theme colors.</Text>
+          <Text style={[styles.animationPreviewMetaText, { color: previewTheme.mutedTextColor }]}>{isLive ? 'Currently active in your feed.' : 'Preview only until you tap Use or complete checkout.'}</Text>
           </View>
         </View>
       </View>

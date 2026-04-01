@@ -508,8 +508,8 @@ export default function PostCard(props: Props) {
   const groupAnimationVariantId = activeGroupTheme?.animationVariantId ?? 'none';
   const isPremiumGroupCard = !!activeGroupTheme && groupAnimationVariantId === 'premium';
   const hasPrimaryPostMedia = !!(post.media_url || post.social_url || post.embed_url || post.thumbnail_url || post.media_type === 'social_embed');
-  const shouldShowThemedCardArt = !!activeGroupTheme?.cardImageUrl && !isPremiumGroupCard;
-  const shouldInsetPrimaryMedia = !!activeGroupTheme && hasPrimaryPostMedia;
+  const shouldShowThemedCardArt = !!activeGroupTheme?.cardImageUrl && !isPremiumGroupCard && !hasPrimaryPostMedia;
+  const shouldInsetPrimaryMedia = !!activeGroupTheme && hasPrimaryPostMedia && !shouldShowThemedCardArt;
   const themedCardStyle = useMemo(() => activeGroupTheme ? ({
     backgroundColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.surfaceColor,
     borderColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.borderColor,
@@ -537,12 +537,12 @@ export default function PostCard(props: Props) {
   const themedGroupChipText = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.chipTextColor }) : null, [activeGroupTheme]);
   const themedCaptionStyle = useMemo(() => activeGroupTheme ? ({ color: activeGroupTheme.textColor }) : null, [activeGroupTheme]);
   const themedMediaFrameStyle = useMemo(() => activeGroupTheme ? ({
-    backgroundColor: withAlpha(activeGroupTheme.surfaceSecondaryColor, 0.16),
-    borderColor: activeGroupTheme.borderColor,
+    backgroundColor: withAlpha(activeGroupTheme.surfaceSecondaryColor, 0.12),
+    borderColor: withAlpha(activeGroupTheme.borderColor, 0.88),
     shadowColor: activeGroupTheme.accentColor,
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
-    elevation: 6,
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 3,
   }) : null, [activeGroupTheme]);
   const themedActionsStyle = useMemo(() => activeGroupTheme ? ({
     borderTopColor: activeGroupTheme.borderColor,
@@ -1552,13 +1552,13 @@ const styles = StyleSheet.create({
   menuBtn: { padding: 6 },
   mediaFrame: { width: '100%' },
   themedMediaFrame: {
-    marginHorizontal: 16,
-    marginTop: 2,
+    marginHorizontal: 14,
+    marginTop: 4,
     marginBottom: 12,
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
-    backgroundColor: 'rgba(8,10,16,0.24)',
+    backgroundColor: 'rgba(8,10,16,0.18)',
   },
   videoContainer: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000', position: 'relative' },
   webView: { flex: 1, backgroundColor: '#000' },
