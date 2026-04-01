@@ -508,7 +508,7 @@ export default function PostCard(props: Props) {
   const groupAnimationVariantId = activeGroupTheme?.animationVariantId ?? 'none';
   const isPremiumGroupCard = !!activeGroupTheme && groupAnimationVariantId === 'premium';
   const hasPrimaryPostMedia = !!(post.media_url || post.social_url || post.embed_url || post.thumbnail_url || post.media_type === 'social_embed');
-  const shouldShowThemedCardArt = !!activeGroupTheme?.cardImageUrl;
+  const shouldShowThemedCardArt = activeGroupTheme?.source === 'custom' && !!activeGroupTheme?.cardImageUrl;
   const shouldShowFullCardArt = shouldShowThemedCardArt;
   const shouldInsetPrimaryMedia = !!activeGroupTheme && hasPrimaryPostMedia;
   const themedCardStyle = useMemo(() => activeGroupTheme ? ({
