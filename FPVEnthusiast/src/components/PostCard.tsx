@@ -357,7 +357,7 @@ const nvStyles = StyleSheet.create({
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function PostCard(props: Props) {
+function PostCard(props: Props) {
   const { post, currentUserId, onLike, onDelete, onCaptionUpdate, canManagePost } = props;
   const router = useRouter();
 
@@ -1870,3 +1870,17 @@ const styles = StyleSheet.create({
   },
   reactBtnEmoji: { fontSize: 13 },
 });
+
+function arePostCardPropsEqual(prev: Props, next: Props) {
+  return prev.post === next.post
+    && prev.isVisible === next.isVisible
+    && prev.shouldAutoplay === next.shouldAutoplay
+    && prev.currentUserId === next.currentUserId
+    && prev.onLike === next.onLike
+    && prev.onDelete === next.onDelete
+    && prev.onCaptionUpdate === next.onCaptionUpdate
+    && prev.canManagePost === next.canManagePost
+    && prev.autoplay === next.autoplay;
+}
+
+export default React.memo(PostCard, arePostCardPropsEqual);
