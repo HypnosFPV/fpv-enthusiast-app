@@ -191,11 +191,11 @@ function AnimationVariantPreviewCard({
           <View style={styles.animationPreviewContent}>
           <View style={[styles.animationPreviewChip, { backgroundColor: previewTheme.chipBackgroundColor, borderColor: previewTheme.borderColor }]}>
             <Ionicons name="sparkles-outline" size={11} color={previewTheme.chipTextColor} />
-            <Text style={[styles.animationPreviewChipText, { color: previewTheme.chipTextColor }]}>{variantId === 'none' ? 'Default feed card' : 'Animated feed card'}</Text>
+            <Text style={[styles.animationPreviewChipText, { color: previewTheme.chipTextColor }]}>{variantId === 'none' ? 'Default feed card' : 'Animation preview on current base theme'}</Text>
           </View>
           <Text style={[styles.animationPreviewTitleText, { color: previewTheme.textColor }]}>View group • {groupName}</Text>
           <Text style={[styles.animationPreviewBodyText, { color: previewTheme.textColor }]}>This is how the border motion will read on a clean post card for your current theme colors.</Text>
-          <Text style={[styles.animationPreviewMetaText, { color: previewTheme.mutedTextColor }]}>{isLive ? 'Currently active in your feed.' : 'Preview only until you tap Use or complete checkout.'}</Text>
+          <Text style={[styles.animationPreviewMetaText, { color: previewTheme.mutedTextColor }]}>{isLive ? 'This animation is currently active on your current base theme in the feed.' : 'Preview only until you tap Use animation or complete checkout.'}</Text>
           </View>
         </View>
       </View>
@@ -538,7 +538,7 @@ export default function GroupThemeScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.statusCalloutTitle}>{activeBaseThemeLabel}</Text>
               <Text style={styles.statusCalloutMeta}>Base theme • {activeBaseThemeTypeLabel}</Text>
-              <Text style={styles.statusCalloutSubtle}>Card edge • {activeAnimationSummary}</Text>
+              <Text style={styles.statusCalloutSubtle}>Animation tier • {activeAnimationSummary}</Text>
               <Text style={styles.statusCalloutFootnote}>{activeBaseThemeMeta}</Text>
             </View>
           </View>
@@ -598,13 +598,13 @@ export default function GroupThemeScreen() {
                           <View style={styles.collectionNewPill}><Text style={styles.collectionNewPillText}>New unlock</Text></View>
                         ) : null}
                       </View>
-                      <Text style={styles.collectionMeta}>{theme.status === 'paid' ? (isActive ? 'Active in this group now' : isRecentlyUnlocked ? 'Unlocked successfully — tap Apply now to make it live right away.' : 'Purchased for this group') : 'Payment pending'}</Text>
+                      <Text style={styles.collectionMeta}>{theme.status === 'paid' ? (isActive ? 'Base theme active in this group now' : isRecentlyUnlocked ? 'Unlocked successfully — tap Apply now to make it your base theme right away.' : 'Purchased for this group') : 'Payment pending'}</Text>
                     </View>
                   </View>
                   <View style={styles.collectionActionRow}>
                     {theme.status === 'paid' ? (
                       <TouchableOpacity style={[styles.secondaryBtn, (isActive || isRecentlyUnlocked) && styles.secondaryBtnActive]} disabled={savingPreference} onPress={() => void handleApplyCustom(theme.id)}>
-                        <Text style={[styles.secondaryBtnText, (isActive || isRecentlyUnlocked) && styles.secondaryBtnTextActive]}>{isActive ? 'Active now' : isRecentlyUnlocked ? 'Apply now' : 'Use on this group'}</Text>
+                        <Text style={[styles.secondaryBtnText, (isActive || isRecentlyUnlocked) && styles.secondaryBtnTextActive]}>{isActive ? 'Base theme active' : isRecentlyUnlocked ? 'Apply as base theme' : 'Use as base theme'}</Text>
                       </TouchableOpacity>
                     ) : (
                       <View style={styles.pendingPill}><Text style={styles.pendingPillText}>Pending</Text></View>
@@ -778,7 +778,7 @@ export default function GroupThemeScreen() {
                     <View style={[styles.swatchAccent, { backgroundColor: theme.accentColor }]} />
                   </View>
                   <Text style={styles.presetTitle}>{theme.name}</Text>
-                  <Text style={styles.presetMeta}>{isActive ? 'Active' : 'Tap to use'}</Text>
+                  <Text style={styles.presetMeta}>{isActive ? 'Base theme active' : 'Tap to use as base theme'}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -787,7 +787,7 @@ export default function GroupThemeScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Feed animation variants</Text>
-          <Text style={styles.sectionHint}>Cards stay static unless you unlock an animation. You can pair any unlocked tier with the current group theme, including custom themes; Edge pulse stays the most restrained, while the stronger tiers put more motion around the card.</Text>
+          <Text style={styles.sectionHint}>Animations are separate from the base theme. Only one base theme is active at a time, and any unlocked animation tier can be paired with that current base theme; Edge pulse stays the most restrained, while the stronger tiers put more motion around the card.</Text>
           <AnimationVariantPreviewCard
             theme={activeTheme}
             groupName={group.name}
@@ -803,7 +803,7 @@ export default function GroupThemeScreen() {
             const priceLabel = variant.priceCents > 0 ? `$${(variant.priceCents / 100).toFixed(2)}` : 'Included';
             const metaLabel = isOwned
               ? (isActive
-                ? 'Active for this group'
+                ? 'Active animation for this group'
                 : isPreviewing
                   ? 'Previewing now — tap Use to make it live in this group'
                   : 'Unlocked on your account — tap the row to preview, then Use to activate here')
@@ -844,7 +844,7 @@ export default function GroupThemeScreen() {
                 </View>
                 {isOwned ? (
                   <TouchableOpacity style={[styles.secondaryBtn, isActive && styles.secondaryBtnActive]} disabled={isBusy} onPress={() => void handleSelectAnimation(variant.id)}>
-                    <Text style={[styles.secondaryBtnText, isActive && styles.secondaryBtnTextActive]}>{isActive ? 'Active' : 'Use'}</Text>
+                    <Text style={[styles.secondaryBtnText, isActive && styles.secondaryBtnTextActive]}>{isActive ? 'Animation active' : 'Use animation'}</Text>
                   </TouchableOpacity>
                 ) : isPending ? (
                   <View style={styles.pendingPill}><Text style={styles.pendingPillText}>Pending</Text></View>
