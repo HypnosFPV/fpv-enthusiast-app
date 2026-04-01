@@ -510,7 +510,8 @@ export default function PostCard(props: Props) {
   const hasPrimaryPostMedia = !!(post.media_url || post.social_url || post.embed_url || post.thumbnail_url || post.media_type === 'social_embed');
   const shouldShowThemedCardArt = activeGroupTheme?.source === 'custom' && !!activeGroupTheme?.cardImageUrl;
   const shouldShowFullCardArt = shouldShowThemedCardArt;
-  const shouldUseThemedContentPlate = !!activeGroupTheme;
+  const shouldUseThemedContentInset = !!activeGroupTheme;
+  const shouldUseThemedContentPlate = !!activeGroupTheme && activeGroupTheme.source !== 'custom';
   const shouldInsetPrimaryMedia = !!activeGroupTheme && hasPrimaryPostMedia;
   const themedCardStyle = useMemo(() => activeGroupTheme ? ({
     backgroundColor: isPremiumGroupCard ? 'transparent' : activeGroupTheme.surfaceColor,
@@ -553,20 +554,20 @@ export default function PostCard(props: Props) {
   const themedMediaFrameStyle = useMemo(() => activeGroupTheme ? ({
     backgroundColor: withAlpha(
       activeGroupTheme.surfaceSecondaryColor,
-      shouldUseThemedContentPlate ? (isPremiumGroupCard ? 0.18 : 0.12) : (isPremiumGroupCard ? 0.26 : 0.16),
+      shouldUseThemedContentPlate ? (isPremiumGroupCard ? 0.18 : 0.12) : (isPremiumGroupCard ? 0.22 : 0.14),
     ),
     borderColor: withAlpha(
       activeGroupTheme.borderColor,
-      shouldUseThemedContentPlate ? (isPremiumGroupCard ? 0.78 : 0.58) : (isPremiumGroupCard ? 0.94 : 0.88),
+      shouldUseThemedContentPlate ? (isPremiumGroupCard ? 0.78 : 0.58) : (isPremiumGroupCard ? 0.86 : 0.66),
     ),
     shadowColor: activeGroupTheme.accentColor,
-    shadowOpacity: shouldUseThemedContentPlate ? (isPremiumGroupCard ? 0.12 : 0.06) : (isPremiumGroupCard ? 0.16 : 0.1),
-    shadowRadius: shouldUseThemedContentPlate ? (isPremiumGroupCard ? 10 : 8) : (isPremiumGroupCard ? 12 : 10),
-    elevation: shouldUseThemedContentPlate ? (isPremiumGroupCard ? 2 : 1) : (isPremiumGroupCard ? 4 : 3),
+    shadowOpacity: shouldUseThemedContentPlate ? (isPremiumGroupCard ? 0.12 : 0.06) : (isPremiumGroupCard ? 0.1 : 0.04),
+    shadowRadius: shouldUseThemedContentPlate ? (isPremiumGroupCard ? 10 : 8) : (isPremiumGroupCard ? 8 : 6),
+    elevation: shouldUseThemedContentPlate ? (isPremiumGroupCard ? 2 : 1) : (isPremiumGroupCard ? 2 : 1),
   }) : null, [activeGroupTheme, isPremiumGroupCard, shouldUseThemedContentPlate]);
   const themedActionsStyle = useMemo(() => activeGroupTheme ? ({
     borderTopColor: activeGroupTheme.borderColor,
-    backgroundColor: withAlpha(activeGroupTheme.surfaceSecondaryColor, shouldUseThemedContentPlate ? 0.04 : 0.12),
+    backgroundColor: withAlpha(activeGroupTheme.surfaceSecondaryColor, shouldUseThemedContentPlate ? 0.04 : 0.02),
   }) : null, [activeGroupTheme, shouldUseThemedContentPlate]);
   const shouldAnimateGroupCard = !!activeGroupTheme && groupAnimationVariantId !== 'none' && isGroupPost && !!props.isVisible;
   const [cardFrame, setCardFrame] = useState({ width: 0, height: 0 });
@@ -1213,7 +1214,10 @@ export default function PostCard(props: Props) {
   }
 
   function renderThemedCardSurface(children: React.ReactNode) {
-    if (!shouldUseThemedContentPlate) return <>{children}</>;
+    if (!shouldUseThemedContentInset) return <>{children}</>;
+    if (!shouldUseThemedContentPlate) {
+      return <View style={styles.themedContentPad}>{children}</View>;
+    }
     return (
       <View style={styles.themedContentPad}>
         <View style={[styles.themedContentPlate, themedContentPlateStyle]}>
