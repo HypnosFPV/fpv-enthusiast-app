@@ -21,7 +21,7 @@ function AppContent() {
   const { PermissionModal } = usePushNotifications();
   return (
     <>
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a0a0a' } }}>
         <Stack.Screen name="index"        options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)"       options={{ headerShown: false }} />
         <Stack.Screen name="login"        options={{ headerShown: false }} />
@@ -43,7 +43,7 @@ function AppContent() {
 
 export default function RootLayout() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
       <StripeProvider
         publishableKey={STRIPE_PK}
         merchantIdentifier="merchant.com.fpventhusiast"

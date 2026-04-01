@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -62,17 +63,59 @@ export interface GroupAnimationPurchase {
 
 const resolvedThemeCache = new Map<string, GroupThemeTokens>();
 const resolvedThemePromiseCache = new Map<string, Promise<GroupThemeTokens>>();
+const RESOLVED_GROUP_THEME_STORAGE_PREFIX = 'resolved-group-theme:';
 
 function cacheKey(userId?: string | null, groupId?: string | null) {
   return `${userId ?? 'anon'}:${groupId ?? 'none'}`;
 }
 
+function resolvedThemeStorageKey(userId?: string | null, groupId?: string | null) {
+  return `${RESOLVED_GROUP_THEME_STORAGE_PREFIX}${cacheKey(userId, groupId)}`;
+}
+
+function isGroupThemeTokens(value: unknown): value is GroupThemeTokens {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.id === 'string'
+    && typeof candidate.name === 'string'
+    && (candidate.source === 'preset' || candidate.source === 'custom')
+    && typeof candidate.accentColor === 'string'
+    && typeof candidate.surfaceColor === 'string'
+    && typeof candidate.surfaceSecondaryColor === 'string'
+    && typeof candidate.borderColor === 'string'
+    && typeof candidate.textColor === 'string';
+}
+
+async function readStoredResolvedGroupTheme(userId?: string | null, groupId?: string | null) {
+  if (!userId || !groupId) return null;
+  try {
+    const raw = await AsyncStorage.getItem(resolvedThemeStorageKey(userId, groupId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    return isGroupThemeTokens(parsed) ? parsed : null;
+  } catch (error: any) {
+    console.warn('[useGroupThemes] readStoredResolvedGroupTheme error:', error?.message ?? error);
+    return null;
+  }
+}
+
+async function persistResolvedGroupTheme(userId: string, groupId: string, theme: GroupThemeTokens) {
+  try {
+    await AsyncStorage.setItem(resolvedThemeStorageKey(userId, groupId), JSON.stringify(theme));
+  } catch (error: any) {
+    console.warn('[useGroupThemes] persistResolvedGroupTheme error:', error?.message ?? error);
+  }
+}
+
 function isAnimationVariantCompatible(
-  themeType?: GroupThemeSelectionType | null,
+  _themeType?: GroupThemeSelectionType | null,
   variantId?: GroupCardAnimationVariantId | null,
 ) {
-  if (themeType !== 'custom') return true;
-  return variantId === 'none' || variantId === 'basic' || variantId === 'standard' || variantId == null;
+  return variantId == null
+    || variantId === 'none'
+    || variantId === 'basic'
+    || variantId === 'standard'
+    || variantId === 'premium';
 }
 
 function resolveAnimationVariantId(
@@ -156,6 +199,12 @@ export async function fetchResolvedGroupTheme(userId?: string | null, groupId?: 
   }
 
   const request = (async () => {
+    const storeAndReturn = async (theme: GroupThemeTokens) => {
+      resolvedThemeCache.set(key, theme);
+      await persistResolvedGroupTheme(userId, groupId, theme);
+      return theme;
+    };
+
     const { data: preference } = await supabase
       .from('social_group_theme_preferences')
       .select('active_theme_type, active_theme_id, active_animation_variant_id')
@@ -170,14 +219,12 @@ export async function fetchResolvedGroupTheme(userId?: string | null, groupId?: 
 
     if (!preference?.active_theme_id) {
       const fallback = applyAnimationVariant(DEFAULT_GROUP_THEME, activeAnimationVariantId);
-      resolvedThemeCache.set(key, fallback);
-      return fallback;
+      return storeAndReturn(fallback);
     }
 
     if (preference.active_theme_type === 'preset') {
       const preset = applyAnimationVariant(getPresetGroupTheme(preference.active_theme_id), activeAnimationVariantId);
-      resolvedThemeCache.set(key, preset);
-      return preset;
+      return storeAndReturn(preset);
     }
 
     const { data: customTheme } = await supabase
@@ -193,8 +240,7 @@ export async function fetchResolvedGroupTheme(userId?: string | null, groupId?: 
       customTheme ? customThemeToTokens(customTheme as GroupCustomTheme) : DEFAULT_GROUP_THEME,
       activeAnimationVariantId,
     );
-    resolvedThemeCache.set(key, resolved);
-    return resolved;
+    return storeAndReturn(resolved);
   })().finally(() => {
     resolvedThemePromiseCache.delete(key);
   });
@@ -210,12 +256,22 @@ export function useResolvedGroupTheme(userId?: string | null, groupId?: string |
   const loadTheme = useCallback(async () => {
     if (!userId || !groupId) {
       setTheme(DEFAULT_GROUP_THEME);
+      setLoadingTheme(false);
       return;
     }
+
     setLoadingTheme(true);
-    const nextTheme = await fetchResolvedGroupTheme(userId, groupId);
-    setTheme(nextTheme);
-    setLoadingTheme(false);
+    const cachedTheme = resolvedThemeCache.get(cacheKey(userId, groupId)) ?? await readStoredResolvedGroupTheme(userId, groupId);
+    if (cachedTheme) {
+      setTheme((currentTheme) => (JSON.stringify(currentTheme) === JSON.stringify(cachedTheme) ? currentTheme : cachedTheme));
+    }
+
+    try {
+      const nextTheme = await fetchResolvedGroupTheme(userId, groupId);
+      setTheme((currentTheme) => (JSON.stringify(currentTheme) === JSON.stringify(nextTheme) ? currentTheme : nextTheme));
+    } finally {
+      setLoadingTheme(false);
+    }
   }, [groupId, userId]);
 
   useEffect(() => {
