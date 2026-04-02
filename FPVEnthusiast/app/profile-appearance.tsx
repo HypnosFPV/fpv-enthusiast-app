@@ -117,7 +117,8 @@ function BadgeStudioRow({
   const buttonLabel = featured ? 'Featured' : owned ? 'Feature' : `Unlock ${formatBadgePrice(badge.priceCents)}`;
 
   return (
-    <View style={[styles.itemCard, { borderColor: featured ? badge.accentColor : '#272a3f' }]}>      <View style={styles.itemHeaderRow}>
+    <View style={[styles.itemCard, { borderColor: featured ? badge.accentColor : '#272a3f' }]}>
+      <View style={styles.itemHeaderRow}>
         <View style={[styles.badgeIconSwatch, { backgroundColor: `${badge.accentColor}18`, borderColor: `${badge.accentColor}55` }]}>
           <Ionicons name={badge.iconName as any} size={18} color={badge.accentColor} />
         </View>
