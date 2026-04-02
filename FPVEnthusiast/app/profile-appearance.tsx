@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,7 @@ import {
   AVATAR_FRAMES,
   PROFILE_THEMES,
   formatUsd,
+  resolveProfileAppearance,
   type AvatarEffectDefinition,
   type AvatarFrameDefinition,
   type ProfileAppearanceItemType,
@@ -28,6 +29,7 @@ import {
   PROFILE_BADGES,
   badgeTierLabel,
   formatBadgePrice,
+  getProfileBadgesByIds,
   type ProfileBadgeDefinition,
 } from '../src/constants/profileBadges';
 import { useProfileAppearanceCheckout } from '../src/hooks/useProfileAppearanceCheckout';
@@ -54,20 +56,26 @@ function StudioItemRow({
   accentColor,
   owned,
   active,
+  selected,
   busy,
+  onPreview,
   onPress,
 }: {
   item: CatalogItem;
   accentColor: string;
   owned: boolean;
   active: boolean;
+  selected: boolean;
   busy: boolean;
+  onPreview: () => void;
   onPress: () => void;
 }) {
   const isFree = item.priceCents === 0;
-  const buttonLabel = active ? 'Active' : owned || isFree ? 'Use' : `Unlock ${formatUsd(item.priceCents)}`;
+  const buttonLabel = active ? 'Active' : owned || isFree ? 'Apply' : `Unlock ${formatUsd(item.priceCents)}`;
+  const previewLabel = active ? 'Live' : selected ? 'Previewing' : 'Preview';
+
   return (
-    <View style={[styles.itemCard, { borderColor: active ? accentColor : '#272a3f' }]}> 
+    <View style={[styles.itemCard, { borderColor: active || selected ? accentColor : '#272a3f' }]}>
       <View style={styles.itemHeaderRow}>
         <View style={[styles.itemSwatch, { backgroundColor: 'accentColor' in item ? item.accentColor : item.primaryColor, borderColor: accentColor }]} />
         <View style={{ flex: 1 }}>
@@ -78,24 +86,41 @@ function StudioItemRow({
             </View>
           </View>
           <Text style={styles.itemDescription}>{item.description}</Text>
+          <Text style={styles.previewHintText}>
+            {active ? 'Currently live on your profile' : selected ? 'Previewing above until you apply it' : 'Preview before you make it live'}
+          </Text>
         </View>
       </View>
       <View style={styles.itemFooterRow}>
         <Text style={styles.itemPrice}>{isFree ? 'Included' : formatUsd(item.priceCents)}</Text>
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={[
-            styles.itemButton,
-            active ? styles.itemButtonActive : owned || isFree ? styles.itemButtonOwned : { backgroundColor: accentColor },
-            busy && { opacity: 0.6 },
-          ]}
-          onPress={onPress}
-          disabled={busy || active}
-        >
-          {busy ? <ActivityIndicator color={active ? accentColor : '#071016'} size="small" /> : (
-            <Text style={[styles.itemButtonText, active && { color: accentColor }]}>{buttonLabel}</Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.badgeActionRow}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={[
+              styles.previewButton,
+              { borderColor: `${accentColor}55`, backgroundColor: selected ? `${accentColor}16` : 'transparent' },
+              busy && { opacity: 0.6 },
+            ]}
+            onPress={onPreview}
+            disabled={busy}
+          >
+            <Text style={[styles.previewButtonText, { color: accentColor }]}>{previewLabel}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={[
+              styles.itemButton,
+              active ? styles.itemButtonActive : owned || isFree ? styles.itemButtonOwned : { backgroundColor: accentColor },
+              busy && { opacity: 0.6 },
+            ]}
+            onPress={onPress}
+            disabled={busy || active}
+          >
+            {busy ? <ActivityIndicator color={active ? accentColor : '#071016'} size="small" /> : (
+              <Text style={[styles.itemButtonText, active && { color: accentColor }]}>{buttonLabel}</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -105,19 +130,23 @@ function BadgeStudioRow({
   badge,
   owned,
   featured,
+  previewed,
   busy,
+  onPreview,
   onPress,
 }: {
   badge: ProfileBadgeDefinition;
   owned: boolean;
   featured: boolean;
+  previewed: boolean;
   busy: boolean;
+  onPreview: () => void;
   onPress: () => void;
 }) {
   const buttonLabel = featured ? 'Featured' : owned ? 'Feature' : `Unlock ${formatBadgePrice(badge.priceCents)}`;
 
   return (
-    <View style={[styles.itemCard, { borderColor: featured ? badge.accentColor : '#272a3f' }]}>
+    <View style={[styles.itemCard, { borderColor: featured || previewed ? badge.accentColor : '#272a3f' }]}>
       <View style={styles.itemHeaderRow}>
         <View style={[styles.badgeIconSwatch, { backgroundColor: `${badge.accentColor}18`, borderColor: `${badge.accentColor}55` }]}>
           <Ionicons name={badge.iconName as any} size={18} color={badge.accentColor} />
@@ -130,25 +159,41 @@ function BadgeStudioRow({
             </View>
           </View>
           <Text style={styles.itemDescription}>{badge.description}</Text>
-          {badge.limited ? <Text style={[styles.badgeLimitedText, { color: badge.accentColor }]}>Limited collectible</Text> : null}
+          <View style={styles.badgeMetaRow}>
+            {badge.limited ? <Text style={[styles.badgeLimitedText, { color: badge.accentColor }]}>Limited collectible</Text> : null}
+            <Text style={styles.previewHintText}>{previewed ? 'Previewing above' : 'Preview before you unlock'}</Text>
+          </View>
         </View>
       </View>
       <View style={styles.itemFooterRow}>
         <Text style={styles.itemPrice}>{formatBadgePrice(badge.priceCents)}</Text>
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={[
-            styles.itemButton,
-            featured ? styles.itemButtonActive : owned ? styles.itemButtonOwned : { backgroundColor: badge.accentColor },
-            busy && { opacity: 0.6 },
-          ]}
-          onPress={onPress}
-          disabled={busy || featured}
-        >
-          {busy ? <ActivityIndicator color={featured ? badge.accentColor : '#071016'} size="small" /> : (
-            <Text style={[styles.itemButtonText, featured && { color: badge.accentColor }]}>{buttonLabel}</Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.badgeActionRow}>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={[
+              styles.previewButton,
+              { borderColor: `${badge.accentColor}55`, backgroundColor: previewed ? `${badge.accentColor}16` : 'transparent' },
+            ]}
+            onPress={onPreview}
+            disabled={busy}
+          >
+            <Text style={[styles.previewButtonText, { color: badge.accentColor }]}>{previewed ? 'Previewing' : 'Preview'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={[
+              styles.itemButton,
+              featured ? styles.itemButtonActive : owned ? styles.itemButtonOwned : { backgroundColor: badge.accentColor },
+              busy && { opacity: 0.6 },
+            ]}
+            onPress={onPress}
+            disabled={busy || featured}
+          >
+            {busy ? <ActivityIndicator color={featured ? badge.accentColor : '#071016'} size="small" /> : (
+              <Text style={[styles.itemButtonText, featured && { color: badge.accentColor }]}>{buttonLabel}</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -179,12 +224,32 @@ export default function ProfileAppearanceStudioScreen() {
     saveFeaturedBadges,
     waitForUnlock,
   } = useProfileBadgesStudio(user?.id ?? undefined);
+  const [draftPreference, setDraftPreference] = useState(activePreference);
   const {
     initCheckout: initBadgeCheckout,
     confirmCheckout: confirmBadgeCheckout,
     resetCheckout: resetBadgeCheckout,
     checkoutState: badgeCheckoutState,
   } = useProfileBadgeCheckout();
+  const [previewBadgeIds, setPreviewBadgeIds] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    setDraftPreference(activePreference);
+  }, [
+    activePreference.active_avatar_effect_id,
+    activePreference.active_avatar_frame_id,
+    activePreference.active_theme_id,
+    activePreference.updated_at,
+  ]);
+
+  const previewAppearance = useMemo(() => resolveProfileAppearance(draftPreference), [draftPreference]);
+  const hasAppearancePreview = draftPreference.active_theme_id !== activePreference.active_theme_id
+    || draftPreference.active_avatar_frame_id !== activePreference.active_avatar_frame_id
+    || draftPreference.active_avatar_effect_id !== activePreference.active_avatar_effect_id;
+
+  const previewBadges = useMemo(() => {
+    return previewBadgeIds?.length ? getProfileBadgesByIds(previewBadgeIds) : featuredBadges;
+  }, [featuredBadges, previewBadgeIds]);
 
   const appearanceBusy = savingAppearance || checkoutState.status === 'loading' || checkoutState.status === 'processing';
   const badgeBusy = savingBadges || badgeCheckoutState.status === 'loading' || badgeCheckoutState.status === 'processing';
@@ -241,7 +306,36 @@ export default function ProfileAppearanceStudioScreen() {
   const handleRefresh = useCallback(() => {
     void refreshAppearance();
     void refreshBadges();
-  }, [refreshAppearance, refreshBadges]);
+    setDraftPreference(activePreference);
+    setPreviewBadgeIds(null);
+  }, [activePreference, refreshAppearance, refreshBadges]);
+
+  const handlePreviewAppearance = useCallback((itemType: ProfileAppearanceItemType, itemId: string) => {
+    setDraftPreference((current) => ({
+      user_id: current.user_id || activePreference.user_id,
+      active_theme_id: itemType === 'theme' ? itemId : (current.active_theme_id ?? activePreference.active_theme_id),
+      active_avatar_frame_id: itemType === 'frame' ? itemId : (current.active_avatar_frame_id ?? activePreference.active_avatar_frame_id),
+      active_avatar_effect_id: itemType === 'effect' ? itemId : (current.active_avatar_effect_id ?? activePreference.active_avatar_effect_id),
+      updated_at: current.updated_at ?? activePreference.updated_at ?? null,
+    }));
+  }, [activePreference]);
+
+  const clearAppearancePreview = useCallback(() => {
+    setDraftPreference(activePreference);
+  }, [activePreference]);
+
+  const handlePreviewBadge = useCallback((badgeId: string) => {
+    setPreviewBadgeIds((current) => {
+      const base = current?.length ? current : activeBadgePreference.featured_badge_ids;
+      const withoutBadge = base.filter((id) => id !== badgeId);
+      const next = [...withoutBadge, badgeId].slice(-FEATURED_PROFILE_BADGE_LIMIT);
+      return next;
+    });
+  }, [activeBadgePreference.featured_badge_ids]);
+
+  const clearBadgePreview = useCallback(() => {
+    setPreviewBadgeIds(null);
+  }, []);
 
   const handleRemoveFeaturedBadge = useCallback(async (badgeId: string) => {
     const result = await saveFeaturedBadges(activeBadgePreference.featured_badge_ids.filter((id) => id !== badgeId));
@@ -249,6 +343,7 @@ export default function ProfileAppearanceStudioScreen() {
       Alert.alert('Could not update badges', result.error ?? 'Please try again.');
       return;
     }
+    setPreviewBadgeIds(null);
     Alert.alert('Badges updated', 'Your featured badge row is now live on your profile.');
   }, [activeBadgePreference.featured_badge_ids, saveFeaturedBadges]);
 
@@ -319,6 +414,7 @@ export default function ProfileAppearanceStudioScreen() {
       return;
     }
 
+    setPreviewBadgeIds(null);
     Alert.alert('Badge featured', 'Your badge row is now updated anywhere people open your profile.');
   }, [activeBadgePreference.featured_badge_ids, handleBadgePurchase, ownedBadgeIds, saveFeaturedBadges]);
 
@@ -343,48 +439,64 @@ export default function ProfileAppearanceStudioScreen() {
             imageUrl={profile?.header_image_url}
             videoUrl={profile?.header_video_url}
             height={170}
-            startColor={activeAppearance.theme.bannerStartColor}
-            endColor={activeAppearance.theme.bannerEndColor}
+            startColor={previewAppearance.theme.bannerStartColor}
+            endColor={previewAppearance.theme.bannerEndColor}
             emptyHint="Banner photo or short loop video"
           />
           <View style={styles.previewAvatarRow}>
             <ProfileAvatarDecoration
-              appearance={activeAppearance}
+              appearance={previewAppearance}
               avatarUrl={profile?.avatar_url}
               size={82}
               fallbackIconSize={32}
             />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.previewName, { color: activeAppearance.theme.textColor }]} numberOfLines={1}>
+              <Text style={[styles.previewName, { color: previewAppearance.theme.textColor }]} numberOfLines={1}>
                 @{profile?.username ?? 'pilot'}
               </Text>
-              <Text style={[styles.previewMeta, { color: activeAppearance.theme.mutedTextColor }]}>Live for anyone visiting your profile.</Text>
+              <Text style={[styles.previewMeta, { color: previewAppearance.theme.mutedTextColor }]}>{hasAppearancePreview ? 'Preview only — apply a selection below to make it live.' : 'Live for anyone visiting your profile.'}</Text>
               <View style={styles.livePillsRow}>
-                <View style={[styles.livePill, { borderColor: `${activeAppearance.theme.accentColor}66` }]}>
-                  <Text style={[styles.livePillText, { color: activeAppearance.theme.accentColor }]}>{activeAppearance.theme.name}</Text>
+                <View style={[styles.livePill, { borderColor: `${previewAppearance.theme.accentColor}66` }]}>
+                  <Text style={[styles.livePillText, { color: previewAppearance.theme.accentColor }]}>{previewAppearance.theme.name}</Text>
                 </View>
-                <View style={[styles.livePill, { borderColor: `${activeAppearance.frame.primaryColor}66` }]}>
-                  <Text style={[styles.livePillText, { color: activeAppearance.frame.primaryColor }]}>{activeAppearance.frame.name}</Text>
+                <View style={[styles.livePill, { borderColor: `${previewAppearance.frame.primaryColor}66` }]}>
+                  <Text style={[styles.livePillText, { color: previewAppearance.frame.primaryColor }]}>{previewAppearance.frame.name}</Text>
                 </View>
-                <View style={[styles.livePill, { borderColor: `${activeAppearance.effect.accentColor}66` }]}>
-                  <Text style={[styles.livePillText, { color: activeAppearance.effect.accentColor }]}>{activeAppearance.effect.name}</Text>
+                <View style={[styles.livePill, { borderColor: `${previewAppearance.effect.accentColor}66` }]}>
+                  <Text style={[styles.livePillText, { color: previewAppearance.effect.accentColor }]}>{previewAppearance.effect.name}</Text>
                 </View>
               </View>
               <View style={styles.previewBadgesWrap}>
                 <ProfileBadgeRow
-                  badges={featuredBadges}
-                  accentColor={activeAppearance.theme.accentColor}
-                  borderColor={activeAppearance.theme.borderColor}
-                  textColor={activeAppearance.theme.textColor}
-                  mutedTextColor={activeAppearance.theme.mutedTextColor}
+                  badges={previewBadges}
+                  accentColor={previewAppearance.theme.accentColor}
+                  borderColor={previewAppearance.theme.borderColor}
+                  textColor={previewAppearance.theme.textColor}
+                  mutedTextColor={previewAppearance.theme.mutedTextColor}
                   emptyText="No featured badges yet"
                   compact
                 />
+                {hasAppearancePreview ? (
+                  <View style={styles.previewStatusRow}>
+                    <Text style={styles.previewStatusText}>Previewing appearance only — tap Apply on any owned item to make this look live.</Text>
+                    <TouchableOpacity onPress={clearAppearancePreview} activeOpacity={0.8} style={styles.previewClearBtn}>
+                      <Text style={styles.previewClearBtnText}>Reset</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                {previewBadgeIds?.length ? (
+                  <View style={styles.previewStatusRow}>
+                    <Text style={styles.previewStatusText}>Previewing badge row only — nothing saves until you unlock or feature it.</Text>
+                    <TouchableOpacity onPress={clearBadgePreview} activeOpacity={0.8} style={styles.previewClearBtn}>
+                      <Text style={styles.previewClearBtnText}>Clear</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
               </View>
             </View>
           </View>
           <View style={styles.helperCallout}>
-            <Ionicons name="sparkles-outline" size={16} color={activeAppearance.theme.accentColor} />
+            <Ionicons name="sparkles-outline" size={16} color={previewAppearance.theme.accentColor} />
             <Text style={styles.helperCalloutText}>
               Avatar press behavior in the main profile tab stays untouched, so the hidden long-press Easter egg remains intact while badges, themes, frames, and effects stay visible to visitors.
             </Text>
@@ -393,28 +505,28 @@ export default function ProfileAppearanceStudioScreen() {
 
         <View style={styles.infoGrid}>
           <View style={styles.infoCard}>
-            <Ionicons name="images-outline" size={18} color={activeAppearance.theme.accentColor} />
+            <Ionicons name="images-outline" size={18} color={previewAppearance.theme.accentColor} />
             <Text style={styles.infoTitle}>Header media</Text>
             <Text style={styles.infoText}>Upload either a banner image or a muted short loop video from your main profile screen.</Text>
           </View>
           <View style={styles.infoCard}>
-            <Ionicons name="eye-outline" size={18} color={activeAppearance.theme.accentColor} />
+            <Ionicons name="eye-outline" size={18} color={previewAppearance.theme.accentColor} />
             <Text style={styles.infoTitle}>Visitor-visible</Text>
             <Text style={styles.infoText}>Everything you activate here resolves from shared profile preferences, not local-only state.</Text>
           </View>
           <View style={styles.infoCard}>
-            <Ionicons name="grid-outline" size={18} color={activeAppearance.theme.accentColor} />
+            <Ionicons name="grid-outline" size={18} color={previewAppearance.theme.accentColor} />
             <Text style={styles.infoTitle}>Clean organization</Text>
             <Text style={styles.infoText}>Only one theme, one frame, one effect, and up to three featured badges can be active at a time.</Text>
           </View>
           <View style={styles.infoCard}>
-            <Ionicons name="ribbon-outline" size={18} color={activeAppearance.theme.accentColor} />
+            <Ionicons name="ribbon-outline" size={18} color={previewAppearance.theme.accentColor} />
             <Text style={styles.infoTitle}>Collectible flex</Text>
             <Text style={styles.infoText}>Badges are lighter-weight purchases than full theme changes, so they work well as quick impulse cosmetics.</Text>
           </View>
         </View>
 
-        {(loadingAppearance || loadingBadges) ? <ActivityIndicator color={activeAppearance.theme.accentColor} style={{ marginVertical: 18 }} /> : null}
+        {(loadingAppearance || loadingBadges) ? <ActivityIndicator color={previewAppearance.theme.accentColor} style={{ marginVertical: 18 }} /> : null}
 
         <StudioSectionHeader
           title="Themes"
@@ -427,7 +539,9 @@ export default function ProfileAppearanceStudioScreen() {
             accentColor={item.accentColor}
             owned={ownedKeys.has(`theme:${item.id}`)}
             active={activePreference.active_theme_id === item.id}
+            selected={draftPreference.active_theme_id === item.id}
             busy={appearanceBusy}
+            onPreview={() => handlePreviewAppearance('theme', item.id)}
             onPress={() => void handleItemPress('theme', item)}
           />
         ))}
@@ -443,7 +557,9 @@ export default function ProfileAppearanceStudioScreen() {
             accentColor={item.primaryColor}
             owned={ownedKeys.has(`frame:${item.id}`)}
             active={activePreference.active_avatar_frame_id === item.id}
+            selected={draftPreference.active_avatar_frame_id === item.id}
             busy={appearanceBusy}
+            onPreview={() => handlePreviewAppearance('frame', item.id)}
             onPress={() => void handleItemPress('frame', item)}
           />
         ))}
@@ -459,7 +575,9 @@ export default function ProfileAppearanceStudioScreen() {
             accentColor={item.accentColor}
             owned={ownedKeys.has(`effect:${item.id}`)}
             active={activePreference.active_avatar_effect_id === item.id}
+            selected={draftPreference.active_avatar_effect_id === item.id}
             busy={appearanceBusy}
+            onPreview={() => handlePreviewAppearance('effect', item.id)}
             onPress={() => void handleItemPress('effect', item)}
           />
         ))}
@@ -475,7 +593,7 @@ export default function ProfileAppearanceStudioScreen() {
               <Text style={styles.badgeFeatureSubtitle}>You can feature up to {FEATURED_PROFILE_BADGE_LIMIT} badges at once.</Text>
             </View>
             <View style={[styles.badgeCountPill, { borderColor: `${activeAppearance.theme.accentColor}55` }]}>
-              <Text style={[styles.badgeCountText, { color: activeAppearance.theme.accentColor }]}>{activeBadgePreference.featured_badge_ids.length}/{FEATURED_PROFILE_BADGE_LIMIT}</Text>
+              <Text style={[styles.badgeCountText, { color: previewAppearance.theme.accentColor }]}>{activeBadgePreference.featured_badge_ids.length}/{FEATURED_PROFILE_BADGE_LIMIT}</Text>
             </View>
           </View>
           <ProfileBadgeRow
@@ -496,7 +614,9 @@ export default function ProfileAppearanceStudioScreen() {
             badge={badge}
             owned={ownedBadgeIds.has(badge.id)}
             featured={activeBadgePreference.featured_badge_ids.includes(badge.id)}
+            previewed={(previewBadgeIds?.length ? previewBadgeIds : activeBadgePreference.featured_badge_ids).includes(badge.id)}
             busy={badgeBusy}
+            onPreview={() => handlePreviewBadge(badge.id)}
             onPress={() => void handleBadgePress(badge)}
           />
         ))}
@@ -775,6 +895,61 @@ const styles = StyleSheet.create({
   badgeCountText: {
     fontSize: 11,
     fontWeight: '800',
+  },
+  badgeMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 6,
+  },
+  previewHintText: {
+    color: '#7f86a8',
+    fontSize: 11,
+  },
+  badgeActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  previewButton: {
+    minWidth: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+  },
+  previewButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  previewStatusRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  previewStatusText: {
+    flex: 1,
+    color: '#93a0c7',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  previewClearBtn: {
+    borderWidth: 1,
+    borderColor: '#374261',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  previewClearBtnText: {
+    color: '#d8def4',
+    fontSize: 11,
+    fontWeight: '700',
   },
   ideaCard: {
     marginTop: 4,
