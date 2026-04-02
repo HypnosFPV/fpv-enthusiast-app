@@ -956,9 +956,6 @@ export default function ProfileScreen() {
         <View style={styles.bioSection}>
           <Text style={[styles.displayName, { color: profileAppearance.theme.textColor }]}>{profile?.username ?? 'FPV Pilot'}</Text>
           {profile?.bio ? <Text style={[styles.bio, { color: profileAppearance.theme.mutedTextColor }]}>{profile.bio}</Text> : null}
-          <View style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: `${profileAppearance.theme.accentColor}55`, backgroundColor: `${profileAppearance.theme.accentColor}12` }}>
-            <Text style={{ color: profileAppearance.theme.accentColor, fontSize: 11, fontWeight: '700' }}>Live profile style visible to visitors</Text>
-          </View>
           {featuredBadges.length ? (
             <View style={{ marginTop: 12, alignSelf: 'stretch' }}>
               <ProfileBadgeRow

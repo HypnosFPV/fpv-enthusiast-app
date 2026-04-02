@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -40,12 +40,25 @@ import ProfileAvatarDecoration from '../src/components/ProfileAvatarDecoration';
 import ProfileBannerMedia from '../src/components/ProfileBannerMedia';
 import ProfileBadgeRow from '../src/components/ProfileBadgeRow';
 
-function StudioSectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
+function StudioSectionHeader({
+  title,
+  subtitle,
+  expanded,
+  onPress,
+}: {
+  title: string;
+  subtitle: string;
+  expanded: boolean;
+  onPress: () => void;
+}) {
   return (
-    <View style={{ marginBottom: 12 }}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <Text style={styles.sectionHint}>{subtitle}</Text>
-    </View>
+    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.sectionHeaderButton}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        <Text style={styles.sectionHint}>{subtitle}</Text>
+      </View>
+      <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={20} color="#d8def4" />
+    </TouchableOpacity>
   );
 }
 
@@ -232,6 +245,9 @@ export default function ProfileAppearanceStudioScreen() {
     checkoutState: badgeCheckoutState,
   } = useProfileBadgeCheckout();
   const [previewBadgeIds, setPreviewBadgeIds] = useState<string[] | null>(null);
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const [previewCardY, setPreviewCardY] = useState(0);
+  const [expandedSection, setExpandedSection] = useState<'themes' | 'frames' | 'effects' | 'badges' | null>(null);
 
   useEffect(() => {
     setDraftPreference(activePreference);
@@ -253,6 +269,14 @@ export default function ProfileAppearanceStudioScreen() {
 
   const appearanceBusy = savingAppearance || checkoutState.status === 'loading' || checkoutState.status === 'processing';
   const badgeBusy = savingBadges || badgeCheckoutState.status === 'loading' || badgeCheckoutState.status === 'processing';
+
+  const toggleSection = useCallback((section: 'themes' | 'frames' | 'effects' | 'badges') => {
+    setExpandedSection((current) => current === section ? null : section);
+  }, []);
+
+  const scrollToPreview = useCallback(() => {
+    scrollViewRef.current?.scrollTo({ y: Math.max(previewCardY - 12, 0), animated: true });
+  }, [previewCardY]);
 
   const handleApply = useCallback(async (itemType: ProfileAppearanceItemType, itemId: string) => {
     const result = await saveSelection(itemType, itemId);
@@ -318,7 +342,8 @@ export default function ProfileAppearanceStudioScreen() {
       active_avatar_effect_id: itemType === 'effect' ? itemId : (current.active_avatar_effect_id ?? activePreference.active_avatar_effect_id),
       updated_at: current.updated_at ?? activePreference.updated_at ?? null,
     }));
-  }, [activePreference]);
+    scrollToPreview();
+  }, [activePreference, scrollToPreview]);
 
   const clearAppearancePreview = useCallback(() => {
     setDraftPreference(activePreference);
@@ -331,7 +356,8 @@ export default function ProfileAppearanceStudioScreen() {
       const next = [...withoutBadge, badgeId].slice(-FEATURED_PROFILE_BADGE_LIMIT);
       return next;
     });
-  }, [activeBadgePreference.featured_badge_ids]);
+    scrollToPreview();
+  }, [activeBadgePreference.featured_badge_ids, scrollToPreview]);
 
   const clearBadgePreview = useCallback(() => {
     setPreviewBadgeIds(null);
@@ -420,7 +446,7 @@ export default function ProfileAppearanceStudioScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={22} color="#fff" />
@@ -434,7 +460,7 @@ export default function ProfileAppearanceStudioScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.previewCard}>
+        <View style={styles.previewCard} onLayout={(event) => setPreviewCardY(event.nativeEvent.layout.y)}>
           <ProfileBannerMedia
             imageUrl={profile?.header_image_url}
             videoUrl={profile?.header_video_url}
@@ -528,109 +554,129 @@ export default function ProfileAppearanceStudioScreen() {
 
         {(loadingAppearance || loadingBadges) ? <ActivityIndicator color={previewAppearance.theme.accentColor} style={{ marginVertical: 18 }} /> : null}
 
-        <StudioSectionHeader
-          title="Themes"
-          subtitle="Changes banner color treatment, stat surfaces, accents, and tab highlights across profile screens."
-        />
-        {PROFILE_THEMES.map((item) => (
-          <StudioItemRow
-            key={item.id}
-            item={item}
-            accentColor={item.accentColor}
-            owned={ownedKeys.has(`theme:${item.id}`)}
-            active={activePreference.active_theme_id === item.id}
-            selected={draftPreference.active_theme_id === item.id}
-            busy={appearanceBusy}
-            onPreview={() => handlePreviewAppearance('theme', item.id)}
-            onPress={() => void handleItemPress('theme', item)}
+        <View style={styles.sectionBlock}>
+          <StudioSectionHeader
+            title="Themes"
+            subtitle="Changes banner color treatment, stat surfaces, accents, and tab highlights across profile screens."
+            expanded={expandedSection === 'themes'}
+            onPress={() => toggleSection('themes')}
           />
-        ))}
-
-        <StudioSectionHeader
-          title="Avatar frames"
-          subtitle="Adds a polished ring around your profile photo without changing the tap target underneath it."
-        />
-        {AVATAR_FRAMES.map((item) => (
-          <StudioItemRow
-            key={item.id}
-            item={item}
-            accentColor={item.primaryColor}
-            owned={ownedKeys.has(`frame:${item.id}`)}
-            active={activePreference.active_avatar_frame_id === item.id}
-            selected={draftPreference.active_avatar_frame_id === item.id}
-            busy={appearanceBusy}
-            onPreview={() => handlePreviewAppearance('frame', item.id)}
-            onPress={() => void handleItemPress('frame', item)}
-          />
-        ))}
-
-        <StudioSectionHeader
-          title="Avatar effects"
-          subtitle="Keeps motion restrained and readable so the profile still feels premium, not noisy."
-        />
-        {AVATAR_EFFECTS.map((item) => (
-          <StudioItemRow
-            key={item.id}
-            item={item}
-            accentColor={item.accentColor}
-            owned={ownedKeys.has(`effect:${item.id}`)}
-            active={activePreference.active_avatar_effect_id === item.id}
-            selected={draftPreference.active_avatar_effect_id === item.id}
-            busy={appearanceBusy}
-            onPreview={() => handlePreviewAppearance('effect', item.id)}
-            onPress={() => void handleItemPress('effect', item)}
-          />
-        ))}
-
-        <StudioSectionHeader
-          title="Collectible badges"
-          subtitle="Feature up to three badges under your bio so visitors immediately see your profile flex without cluttering the screen."
-        />
-        <View style={styles.badgeFeatureCard}>
-          <View style={styles.badgeFeatureHeader}>
-            <View>
-              <Text style={styles.badgeFeatureTitle}>Featured on profile</Text>
-              <Text style={styles.badgeFeatureSubtitle}>You can feature up to {FEATURED_PROFILE_BADGE_LIMIT} badges at once.</Text>
+          {expandedSection === 'themes' ? (
+            <View style={styles.sectionBody}>
+              {PROFILE_THEMES.map((item) => (
+                <StudioItemRow
+                  key={item.id}
+                  item={item}
+                  accentColor={item.accentColor}
+                  owned={ownedKeys.has(`theme:${item.id}`)}
+                  active={activePreference.active_theme_id === item.id}
+                  selected={draftPreference.active_theme_id === item.id}
+                  busy={appearanceBusy}
+                  onPreview={() => handlePreviewAppearance('theme', item.id)}
+                  onPress={() => void handleItemPress('theme', item)}
+                />
+              ))}
             </View>
-            <View style={[styles.badgeCountPill, { borderColor: `${activeAppearance.theme.accentColor}55` }]}>
-              <Text style={[styles.badgeCountText, { color: previewAppearance.theme.accentColor }]}>{activeBadgePreference.featured_badge_ids.length}/{FEATURED_PROFILE_BADGE_LIMIT}</Text>
-            </View>
-          </View>
-          <ProfileBadgeRow
-            badges={featuredBadges}
-            accentColor={activeAppearance.theme.accentColor}
-            borderColor={activeAppearance.theme.borderColor}
-            textColor={activeAppearance.theme.textColor}
-            mutedTextColor={activeAppearance.theme.mutedTextColor}
-            emptyText="Unlock a badge below to start your featured row."
-            removable
-            onRemoveBadge={(badgeId) => void handleRemoveFeaturedBadge(badgeId)}
-          />
+          ) : null}
         </View>
 
-        {PROFILE_BADGES.map((badge) => (
-          <BadgeStudioRow
-            key={badge.id}
-            badge={badge}
-            owned={ownedBadgeIds.has(badge.id)}
-            featured={activeBadgePreference.featured_badge_ids.includes(badge.id)}
-            previewed={(previewBadgeIds?.length ? previewBadgeIds : activeBadgePreference.featured_badge_ids).includes(badge.id)}
-            busy={badgeBusy}
-            onPreview={() => handlePreviewBadge(badge.id)}
-            onPress={() => void handleBadgePress(badge)}
+        <View style={styles.sectionBlock}>
+          <StudioSectionHeader
+            title="Avatar frames"
+            subtitle="Adds a polished ring around your profile photo without changing the tap target underneath it."
+            expanded={expandedSection === 'frames'}
+            onPress={() => toggleSection('frames')}
           />
-        ))}
+          {expandedSection === 'frames' ? (
+            <View style={styles.sectionBody}>
+              {AVATAR_FRAMES.map((item) => (
+                <StudioItemRow
+                  key={item.id}
+                  item={item}
+                  accentColor={item.primaryColor}
+                  owned={ownedKeys.has(`frame:${item.id}`)}
+                  active={activePreference.active_avatar_frame_id === item.id}
+                  selected={draftPreference.active_avatar_frame_id === item.id}
+                  busy={appearanceBusy}
+                  onPreview={() => handlePreviewAppearance('frame', item.id)}
+                  onPress={() => void handleItemPress('frame', item)}
+                />
+              ))}
+            </View>
+          ) : null}
+        </View>
 
-        <StudioSectionHeader
-          title="Next useful upgrades"
-          subtitle="Best follow-up additions once this rollout proves stable."
-        />
-        <View style={styles.ideaCard}>
-          <Text style={styles.ideaTitle}>Good next profile cosmetics</Text>
-          <Text style={styles.ideaBullet}>• premium stat-card shells and tab icon skins</Text>
-          <Text style={styles.ideaBullet}>• limited seasonal bundles with matching banner art and badge sets</Text>
-          <Text style={styles.ideaBullet}>• profile title ribbons layered above the badge row</Text>
-          <Text style={styles.ideaBullet}>• gated short video banner packs once moderation and compression rules are finalized</Text>
+        <View style={styles.sectionBlock}>
+          <StudioSectionHeader
+            title="Avatar effects"
+            subtitle="Keeps motion restrained and readable so the profile still feels premium, not noisy."
+            expanded={expandedSection === 'effects'}
+            onPress={() => toggleSection('effects')}
+          />
+          {expandedSection === 'effects' ? (
+            <View style={styles.sectionBody}>
+              {AVATAR_EFFECTS.map((item) => (
+                <StudioItemRow
+                  key={item.id}
+                  item={item}
+                  accentColor={item.accentColor}
+                  owned={ownedKeys.has(`effect:${item.id}`)}
+                  active={activePreference.active_avatar_effect_id === item.id}
+                  selected={draftPreference.active_avatar_effect_id === item.id}
+                  busy={appearanceBusy}
+                  onPreview={() => handlePreviewAppearance('effect', item.id)}
+                  onPress={() => void handleItemPress('effect', item)}
+                />
+              ))}
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <StudioSectionHeader
+            title="Collectible badges"
+            subtitle="Feature up to three badges under your bio so visitors immediately see your profile flex without cluttering the screen."
+            expanded={expandedSection === 'badges'}
+            onPress={() => toggleSection('badges')}
+          />
+          {expandedSection === 'badges' ? (
+            <View style={styles.sectionBody}>
+              <View style={styles.badgeFeatureCard}>
+                <View style={styles.badgeFeatureHeader}>
+                  <View>
+                    <Text style={styles.badgeFeatureTitle}>Featured on profile</Text>
+                    <Text style={styles.badgeFeatureSubtitle}>You can feature up to {FEATURED_PROFILE_BADGE_LIMIT} badges at once.</Text>
+                  </View>
+                  <View style={[styles.badgeCountPill, { borderColor: `${activeAppearance.theme.accentColor}55` }]}>
+                    <Text style={[styles.badgeCountText, { color: previewAppearance.theme.accentColor }]}>{activeBadgePreference.featured_badge_ids.length}/{FEATURED_PROFILE_BADGE_LIMIT}</Text>
+                  </View>
+                </View>
+                <ProfileBadgeRow
+                  badges={featuredBadges}
+                  accentColor={activeAppearance.theme.accentColor}
+                  borderColor={activeAppearance.theme.borderColor}
+                  textColor={activeAppearance.theme.textColor}
+                  mutedTextColor={activeAppearance.theme.mutedTextColor}
+                  emptyText="Unlock a badge below to start your featured row."
+                  removable
+                  onRemoveBadge={(badgeId) => void handleRemoveFeaturedBadge(badgeId)}
+                />
+              </View>
+
+              {PROFILE_BADGES.map((badge) => (
+                <BadgeStudioRow
+                  key={badge.id}
+                  badge={badge}
+                  owned={ownedBadgeIds.has(badge.id)}
+                  featured={activeBadgePreference.featured_badge_ids.includes(badge.id)}
+                  previewed={(previewBadgeIds?.length ? previewBadgeIds : activeBadgePreference.featured_badge_ids).includes(badge.id)}
+                  busy={badgeBusy}
+                  onPreview={() => handlePreviewBadge(badge.id)}
+                  onPress={() => void handleBadgePress(badge)}
+                />
+              ))}
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -752,6 +798,23 @@ const styles = StyleSheet.create({
     color: '#9aa2c5',
     fontSize: 12,
     lineHeight: 18,
+  },
+  sectionBlock: {
+    marginBottom: 10,
+  },
+  sectionHeaderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#101224',
+    borderWidth: 1,
+    borderColor: '#252944',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  sectionBody: {
+    marginTop: 10,
   },
   sectionTitle: {
     color: '#fff',
@@ -950,24 +1013,5 @@ const styles = StyleSheet.create({
     color: '#d8def4',
     fontSize: 11,
     fontWeight: '700',
-  },
-  ideaCard: {
-    marginTop: 4,
-    backgroundColor: '#121426',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#252944',
-    padding: 14,
-    gap: 8,
-  },
-  ideaTitle: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 15,
-  },
-  ideaBullet: {
-    color: '#a0a7c8',
-    fontSize: 12,
-    lineHeight: 18,
   },
 });
