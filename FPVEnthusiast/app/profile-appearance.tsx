@@ -464,7 +464,7 @@ export default function ProfileAppearanceStudioScreen() {
           <ProfileBannerMedia
             imageUrl={profile?.header_image_url}
             videoUrl={profile?.header_video_url}
-            height={170}
+            height={132}
             startColor={previewAppearance.theme.bannerStartColor}
             endColor={previewAppearance.theme.bannerEndColor}
             emptyHint="Banner photo or short loop video"
@@ -473,14 +473,14 @@ export default function ProfileAppearanceStudioScreen() {
             <ProfileAvatarDecoration
               appearance={previewAppearance}
               avatarUrl={profile?.avatar_url}
-              size={82}
+              size={72}
               fallbackIconSize={32}
             />
             <View style={{ flex: 1 }}>
               <Text style={[styles.previewName, { color: previewAppearance.theme.textColor }]} numberOfLines={1}>
                 @{profile?.username ?? 'pilot'}
               </Text>
-              <Text style={[styles.previewMeta, { color: previewAppearance.theme.mutedTextColor }]}>{hasAppearancePreview ? 'Preview only — apply a selection below to make it live.' : 'Live for anyone visiting your profile.'}</Text>
+              <Text style={[styles.previewMeta, { color: previewAppearance.theme.mutedTextColor }]}>{hasAppearancePreview ? 'Previewing now — apply below to make it live.' : 'Current live profile look.'}</Text>
               <View style={styles.livePillsRow}>
                 <View style={[styles.livePill, { borderColor: `${previewAppearance.theme.accentColor}66` }]}>
                   <Text style={[styles.livePillText, { color: previewAppearance.theme.accentColor }]}>{previewAppearance.theme.name}</Text>
@@ -524,31 +524,8 @@ export default function ProfileAppearanceStudioScreen() {
           <View style={styles.helperCallout}>
             <Ionicons name="sparkles-outline" size={16} color={previewAppearance.theme.accentColor} />
             <Text style={styles.helperCalloutText}>
-              Avatar press behavior in the main profile tab stays untouched, so the hidden long-press Easter egg remains intact while badges, themes, frames, and effects stay visible to visitors.
+              Preview updates here instantly. Apply or feature below when you want to make the look live.
             </Text>
-          </View>
-        </View>
-
-        <View style={styles.infoGrid}>
-          <View style={styles.infoCard}>
-            <Ionicons name="images-outline" size={18} color={previewAppearance.theme.accentColor} />
-            <Text style={styles.infoTitle}>Header media</Text>
-            <Text style={styles.infoText}>Upload either a banner image or a muted short loop video from your main profile screen.</Text>
-          </View>
-          <View style={styles.infoCard}>
-            <Ionicons name="eye-outline" size={18} color={previewAppearance.theme.accentColor} />
-            <Text style={styles.infoTitle}>Visitor-visible</Text>
-            <Text style={styles.infoText}>Everything you activate here resolves from shared profile preferences, not local-only state.</Text>
-          </View>
-          <View style={styles.infoCard}>
-            <Ionicons name="grid-outline" size={18} color={previewAppearance.theme.accentColor} />
-            <Text style={styles.infoTitle}>Clean organization</Text>
-            <Text style={styles.infoText}>Only one theme, one frame, one effect, and up to three featured badges can be active at a time.</Text>
-          </View>
-          <View style={styles.infoCard}>
-            <Ionicons name="ribbon-outline" size={18} color={previewAppearance.theme.accentColor} />
-            <Text style={styles.infoTitle}>Collectible flex</Text>
-            <Text style={styles.infoText}>Badges are lighter-weight purchases than full theme changes, so they work well as quick impulse cosmetics.</Text>
           </View>
         </View>
 
@@ -728,19 +705,19 @@ const styles = StyleSheet.create({
   },
   previewAvatarRow: {
     flexDirection: 'row',
-    gap: 14,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 16,
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
     alignItems: 'center',
   },
   previewName: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
   },
   previewMeta: {
-    fontSize: 12,
-    marginTop: 3,
+    fontSize: 11,
+    marginTop: 2,
   },
   livePillsRow: {
     flexDirection: 'row',
@@ -767,37 +744,15 @@ const styles = StyleSheet.create({
     gap: 8,
     borderTopWidth: 1,
     borderColor: '#262946',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     backgroundColor: 'rgba(255,255,255,0.02)',
   },
   helperCalloutText: {
     flex: 1,
     color: '#9ea6c7',
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  infoGrid: {
-    gap: 10,
-    marginBottom: 18,
-  },
-  infoCard: {
-    backgroundColor: '#121426',
-    borderWidth: 1,
-    borderColor: '#252944',
-    borderRadius: 16,
-    padding: 14,
-    gap: 6,
-  },
-  infoTitle: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  infoText: {
-    color: '#9aa2c5',
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 11,
+    lineHeight: 16,
   },
   sectionBlock: {
     marginBottom: 10,
