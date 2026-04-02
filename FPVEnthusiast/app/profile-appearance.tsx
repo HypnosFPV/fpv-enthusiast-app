@@ -39,6 +39,8 @@ import { useProfileBadgesStudio } from '../src/hooks/useProfileBadges';
 import ProfileAvatarDecoration from '../src/components/ProfileAvatarDecoration';
 import ProfileBannerMedia from '../src/components/ProfileBannerMedia';
 import ProfileBadgeRow from '../src/components/ProfileBadgeRow';
+import { PropsToast, usePropsToast } from '../src/components/PropsToast';
+import { formatPropsBonusLabel, getPropsBonusForPrice } from '../src/constants/profilePurchaseBonuses';
 
 function StudioSectionHeader({
   title,
@@ -85,6 +87,7 @@ function StudioItemRow({
 }) {
   const isFree = item.priceCents === 0;
   const isPaid = !isFree;
+  const propsBonusLabel = isFree ? '' : formatPropsBonusLabel(item.priceCents);
   const buttonLabel = active ? 'Active' : owned || isFree ? 'Make live' : `Unlock ${formatUsd(item.priceCents)}`;
   const previewLabel = active ? 'Live' : selected ? 'Previewing' : 'Preview';
   const stateLabel = active
@@ -130,7 +133,10 @@ function StudioItemRow({
         </View>
       </View>
       <View style={styles.itemFooterRow}>
-        <Text style={styles.itemPrice}>{isFree ? 'Included' : formatUsd(item.priceCents)}</Text>
+        <View style={styles.priceBlock}>
+          <Text style={styles.itemPrice}>{isFree ? 'Included' : formatUsd(item.priceCents)}</Text>
+          {propsBonusLabel ? <Text style={styles.itemBonusText}>{propsBonusLabel}</Text> : null}
+        </View>
         <View style={styles.badgeActionRow}>
           <TouchableOpacity
             activeOpacity={0.85}
@@ -199,6 +205,7 @@ function BadgeStudioRow({
   onPreview: () => void;
   onPress: () => void;
 }) {
+  const propsBonusLabel = formatPropsBonusLabel(badge.priceCents);
   const buttonLabel = featured ? 'Featured' : owned ? 'Feature now' : `Unlock ${formatBadgePrice(badge.priceCents)}`;
   const stateLabel = featured ? 'On profile' : previewed ? 'Preview loaded' : owned ? 'Owned' : badge.limited ? 'Limited' : 'Collectible';
 
@@ -236,7 +243,10 @@ function BadgeStudioRow({
         </View>
       </View>
       <View style={styles.itemFooterRow}>
-        <Text style={styles.itemPrice}>{formatBadgePrice(badge.priceCents)}</Text>
+        <View style={styles.priceBlock}>
+          <Text style={styles.itemPrice}>{formatBadgePrice(badge.priceCents)}</Text>
+          <Text style={styles.itemBonusText}>{propsBonusLabel}</Text>
+        </View>
         <View style={styles.badgeActionRow}>
           <TouchableOpacity
             activeOpacity={0.85}
@@ -320,6 +330,7 @@ export default function ProfileAppearanceStudioScreen() {
     checkoutState: badgeCheckoutState,
   } = useProfileBadgeCheckout();
   const [previewBadgeIds, setPreviewBadgeIds] = useState<string[] | null>(null);
+  const propsToast = usePropsToast();
   const scrollViewRef = useRef<ScrollView | null>(null);
   const [previewCardY, setPreviewCardY] = useState(0);
   const [expandedSection, setExpandedSection] = useState<'themes' | 'frames' | 'effects' | 'badges' | null>(null);
@@ -384,13 +395,20 @@ export default function ProfileAppearanceStudioScreen() {
       return;
     }
 
+    const propsBonus = getPropsBonusForPrice(started.amountCents ?? 0);
+    propsToast.show(propsBonus > 0 ? `+${propsBonus} props bonus` : 'Purchase complete');
+
     const applied = await saveSelection(itemType, itemId, { skipOwnershipCheck: true });
     if (!applied.ok) {
-      Alert.alert('Unlocked', 'Your item was purchased successfully. If it does not appear live immediately, pull to refresh.');
+      Alert.alert('Unlocked', propsBonus > 0
+        ? `Your item was purchased successfully and you earned +${propsBonus} props. If it does not appear live immediately, pull to refresh.`
+        : 'Your item was purchased successfully. If it does not appear live immediately, pull to refresh.');
       return;
     }
 
-    Alert.alert('Unlocked', 'Your new profile cosmetic is live now and visible to profile visitors.');
+    Alert.alert('Unlocked', propsBonus > 0
+      ? `Your new profile cosmetic is live now, and you earned +${propsBonus} props.`
+      : 'Your new profile cosmetic is live now and visible to profile visitors.');
   }, [confirmCheckout, initCheckout, resetCheckout, saveSelection, waitForPurchase]);
 
   const handleItemPress = useCallback(async (itemType: ProfileAppearanceItemType, item: CatalogItem) => {
@@ -470,24 +488,35 @@ export default function ProfileAppearanceStudioScreen() {
       return;
     }
 
+    const propsBonus = getPropsBonusForPrice(started.amountCents ?? 0);
+    propsToast.show(propsBonus > 0 ? `+${propsBonus} props bonus` : 'Badge unlocked');
+
     const alreadyFeatured = activeBadgePreference.featured_badge_ids.includes(completed.badgeId);
     if (alreadyFeatured) {
-      Alert.alert('Badge unlocked', 'Your new collectible badge is now visible on your profile.');
+      Alert.alert('Badge unlocked', propsBonus > 0
+        ? `Your new collectible badge is now visible on your profile, and you earned +${propsBonus} props.`
+        : 'Your new collectible badge is now visible on your profile.');
       return;
     }
 
     if (activeBadgePreference.featured_badge_ids.length >= FEATURED_PROFILE_BADGE_LIMIT) {
-      Alert.alert('Badge unlocked', `You now own the badge. Remove one featured badge first if you want to show this one. You can feature up to ${FEATURED_PROFILE_BADGE_LIMIT}.`);
+      Alert.alert('Badge unlocked', propsBonus > 0
+        ? `You now own the badge and earned +${propsBonus} props. Remove one featured badge first if you want to show this one. You can feature up to ${FEATURED_PROFILE_BADGE_LIMIT}.`
+        : `You now own the badge. Remove one featured badge first if you want to show this one. You can feature up to ${FEATURED_PROFILE_BADGE_LIMIT}.`);
       return;
     }
 
     const saved = await saveFeaturedBadges([...activeBadgePreference.featured_badge_ids, completed.badgeId]);
     if (!saved.ok) {
-      Alert.alert('Badge unlocked', 'The badge was purchased, but could not be auto-featured. You already own it in the list below.');
+      Alert.alert('Badge unlocked', propsBonus > 0
+        ? `The badge was purchased and you earned +${propsBonus} props, but it could not be auto-featured. You already own it in the list below.`
+        : 'The badge was purchased, but could not be auto-featured. You already own it in the list below.');
       return;
     }
 
-    Alert.alert('Badge unlocked', 'Your new collectible badge is now featured on your public profile.');
+    Alert.alert('Badge unlocked', propsBonus > 0
+      ? `Your new collectible badge is now featured on your public profile, and you earned +${propsBonus} props.`
+      : 'Your new collectible badge is now featured on your public profile.');
   }, [activeBadgePreference.featured_badge_ids, confirmBadgeCheckout, initBadgeCheckout, resetBadgeCheckout, saveFeaturedBadges, waitForUnlock]);
 
   const handleBadgePress = useCallback(async (badge: ProfileBadgeDefinition) => {
@@ -731,6 +760,7 @@ export default function ProfileAppearanceStudioScreen() {
           ) : null}
         </View>
       </ScrollView>
+      <PropsToast toast={propsToast} />
     </SafeAreaView>
   );
 }
@@ -960,10 +990,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  priceBlock: {
+    flexShrink: 1,
+    gap: 3,
+  },
   itemPrice: {
     color: '#fff',
     fontSize: 13,
     fontWeight: '700',
+  },
+  itemBonusText: {
+    color: '#8ee3b0',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   itemButton: {
     minWidth: 110,

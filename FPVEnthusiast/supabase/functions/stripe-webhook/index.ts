@@ -17,6 +17,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
+import { getPropsBonusForPrice } from '../../../src/constants/profilePurchaseBonuses.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -30,6 +31,33 @@ function json(body: unknown, status = 200) {
   });
 }
 
+async function awardPurchasePropsBonus(
+  supabase: any,
+  ownerUserId: string | null,
+  amountCents: number,
+  eventType: string,
+  referenceId: string,
+) {
+  if (!ownerUserId) return;
+
+  const propsBonus = getPropsBonusForPrice(amountCents);
+  if (propsBonus <= 0) return;
+
+  const { data, error } = await supabase.rpc('award_props', {
+    p_user_id: ownerUserId,
+    p_event_type: eventType,
+    p_props: propsBonus,
+    p_reference_id: referenceId,
+  });
+
+  if (error) {
+    console.error('Props bonus award failed', { ownerUserId, amountCents, eventType, referenceId, error });
+    return;
+  }
+
+  console.log('Props bonus award result', { ownerUserId, propsBonus, eventType, referenceId, awarded: data });
+}
+
 async function handleProfileAppearancePaymentStatus(
   supabase: any,
   pi: Stripe.PaymentIntent,
@@ -40,6 +68,7 @@ async function handleProfileAppearancePaymentStatus(
   let ownerUserId = pi.metadata?.owner_user_id ?? null;
   let itemType = pi.metadata?.item_type ?? null;
   let itemId = pi.metadata?.item_id ?? null;
+  let amountCents = Number(pi.amount_received ?? pi.amount ?? 0);
 
   const updatePayload: Record<string, unknown> = {
     status,
@@ -50,7 +79,7 @@ async function handleProfileAppearancePaymentStatus(
     .from('user_profile_appearance_purchases')
     .update(updatePayload)
     .eq('stripe_payment_intent', pi.id)
-    .select('owner_user_id, item_type, item_id')
+    .select('owner_user_id, item_type, item_id, purchase_amount_cents')
     .maybeSingle();
 
   if (updateErr) {
@@ -62,6 +91,7 @@ async function handleProfileAppearancePaymentStatus(
     ownerUserId = updatedPurchase.owner_user_id ?? ownerUserId;
     itemType = updatedPurchase.item_type ?? itemType;
     itemId = updatedPurchase.item_id ?? itemId;
+    amountCents = Number(updatedPurchase.purchase_amount_cents ?? amountCents);
   } else if (ownerUserId && itemType && itemId) {
     const { error: fallbackErr } = await supabase
       .from('user_profile_appearance_purchases')
@@ -119,6 +149,8 @@ async function handleProfileAppearancePaymentStatus(
     console.error('Profile appearance preference upsert failed', ownerUserId, upsertPrefErr);
     throw upsertPrefErr;
   }
+
+  await awardPurchasePropsBonus(supabase, ownerUserId, amountCents, 'profile_appearance_purchase_bonus', pi.id);
 }
 
 async function handleProfileBadgePaymentStatus(
@@ -130,6 +162,7 @@ async function handleProfileBadgePaymentStatus(
 
   let ownerUserId = pi.metadata?.owner_user_id ?? null;
   let badgeId = pi.metadata?.badge_id ?? null;
+  let amountCents = Number(pi.amount_received ?? pi.amount ?? 0);
 
   const updatePayload: Record<string, unknown> = {
     status,
@@ -144,7 +177,7 @@ async function handleProfileBadgePaymentStatus(
     .from('user_profile_badge_unlocks')
     .update(updatePayload)
     .eq('stripe_payment_intent', pi.id)
-    .select('owner_user_id, badge_id')
+    .select('owner_user_id, badge_id, unlock_amount_cents')
     .maybeSingle();
 
   if (updateErr) {
@@ -155,6 +188,7 @@ async function handleProfileBadgePaymentStatus(
   if (updatedUnlock) {
     ownerUserId = updatedUnlock.owner_user_id ?? ownerUserId;
     badgeId = updatedUnlock.badge_id ?? badgeId;
+    amountCents = Number(updatedUnlock.unlock_amount_cents ?? amountCents);
   } else if (ownerUserId && badgeId) {
     const { error: fallbackErr } = await supabase
       .from('user_profile_badge_unlocks')
@@ -205,6 +239,8 @@ async function handleProfileBadgePaymentStatus(
       throw upsertPrefErr;
     }
   }
+
+  await awardPurchasePropsBonus(supabase, ownerUserId, amountCents, 'profile_badge_purchase_bonus', pi.id);
 }
 
 serve(async (req) => {
