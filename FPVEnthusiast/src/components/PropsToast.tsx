@@ -1,61 +1,161 @@
 // src/components/PropsToast.tsx
-// Lightweight animated props-award toast (no external deps needed).
+// Lightweight animated props-award toast with optional celebration mode.
 // Usage:
 //   import { PropsToast, usePropsToast } from '../components/PropsToast';
 //   const toast = usePropsToast();
 //   toast.show('+50 Props! First post bonus 🎉');
+//   toast.show('+35 props bonus', { celebrate: true });
 //   <PropsToast toast={toast} />
 
 import React, { useRef, useState, useCallback } from 'react';
 import {
   Animated,
+  Easing,
+  Platform,
   StyleSheet,
   Text,
   View,
-  Platform,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
+
+export interface PropsToastShowOptions {
+  celebrate?: boolean;
+}
 
 // ─── Hook ──────────────────────────────────────────────────────────────────────
 export interface PropsToastHandle {
-  show: (message: string) => void;
+  show: (message: string, options?: PropsToastShowOptions) => void;
   visible: boolean;
   message: string;
+  celebrate: boolean;
   opacity: Animated.Value;
   translateY: Animated.Value;
+  scale: Animated.Value;
+  sparkleOpacity: Animated.Value;
+  sparkleOffset: Animated.Value;
 }
 
 export function usePropsToast(): PropsToastHandle {
-  const [message, setMessage]   = useState('');
-  const [visible, setVisible]   = useState(false);
-  const opacity    = useRef(new Animated.Value(0)).current;
+  const [message, setMessage] = useState('');
+  const [visible, setVisible] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
+  const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(20)).current;
-  const timerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scale = useRef(new Animated.Value(0.96)).current;
+  const sparkleOpacity = useRef(new Animated.Value(0)).current;
+  const sparkleOffset = useRef(new Animated.Value(0)).current;
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const show = useCallback((msg: string) => {
+  const show = useCallback((msg: string, options?: PropsToastShowOptions) => {
     if (timerRef.current) clearTimeout(timerRef.current);
+
+    const shouldCelebrate = !!options?.celebrate;
     setMessage(msg);
+    setCelebrate(shouldCelebrate);
     setVisible(true);
 
-    // reset
     opacity.setValue(0);
     translateY.setValue(20);
+    scale.setValue(0.96);
+    sparkleOpacity.setValue(shouldCelebrate ? 1 : 0);
+    sparkleOffset.setValue(0);
 
-    // fade + slide in
+    if (shouldCelebrate) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    }
+
     Animated.parallel([
-      Animated.timing(opacity,    { toValue: 1,  duration: 300, useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 0,  duration: 300, useNativeDriver: true }),
-    ]).start();
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.timing(scale, {
+          toValue: shouldCelebrate ? 1.06 : 1,
+          duration: shouldCelebrate ? 220 : 180,
+          easing: Easing.out(Easing.back(1.4)),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale, {
+          toValue: 1,
+          duration: 180,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+      ...(shouldCelebrate
+        ? [
+            Animated.parallel([
+              Animated.timing(sparkleOpacity, {
+                toValue: 1,
+                duration: 120,
+                useNativeDriver: true,
+              }),
+              Animated.timing(sparkleOffset, {
+                toValue: -16,
+                duration: 700,
+                easing: Easing.out(Easing.quad),
+                useNativeDriver: true,
+              }),
+            ]),
+          ]
+        : []),
+    ]).start(() => {
+      if (shouldCelebrate) {
+        Animated.timing(sparkleOpacity, {
+          toValue: 0,
+          duration: 380,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }).start();
+      }
+    });
 
-    // auto-dismiss after 3 s
     timerRef.current = setTimeout(() => {
       Animated.parallel([
-        Animated.timing(opacity,    { toValue: 0, duration: 400, useNativeDriver: true }),
-        Animated.timing(translateY, { toValue: -10, duration: 400, useNativeDriver: true }),
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateY, {
+          toValue: -10,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale, {
+          toValue: 0.98,
+          duration: 240,
+          useNativeDriver: true,
+        }),
+        Animated.timing(sparkleOpacity, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }),
       ]).start(() => setVisible(false));
-    }, 3000);
-  }, [opacity, translateY]);
+    }, shouldCelebrate ? 3400 : 3000);
+  }, [opacity, translateY, scale, sparkleOpacity, sparkleOffset]);
 
-  return { show, visible, message, opacity, translateY };
+  return {
+    show,
+    visible,
+    message,
+    celebrate,
+    opacity,
+    translateY,
+    scale,
+    sparkleOpacity,
+    sparkleOffset,
+  };
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -70,12 +170,51 @@ export function PropsToast({ toast }: Props) {
     <Animated.View
       style={[
         styles.container,
-        { opacity: toast.opacity, transform: [{ translateY: toast.translateY }] },
+        {
+          opacity: toast.opacity,
+          transform: [{ translateY: toast.translateY }, { scale: toast.scale }],
+        },
       ]}
       pointerEvents="none"
     >
-      <View style={styles.pill}>
-        <Text style={styles.propIcon}>🏆</Text>
+      {toast.celebrate ? (
+        <>
+          <Animated.Text
+            style={[
+              styles.sparkle,
+              styles.sparkleLeft,
+              {
+                opacity: toast.sparkleOpacity,
+                transform: [
+                  { translateY: toast.sparkleOffset },
+                  { translateX: toast.sparkleOffset.interpolate({ inputRange: [-16, 0], outputRange: [-8, 0] }) },
+                  { rotate: '-12deg' },
+                ],
+              },
+            ]}
+          >
+            ✨
+          </Animated.Text>
+          <Animated.Text
+            style={[
+              styles.sparkle,
+              styles.sparkleRight,
+              {
+                opacity: toast.sparkleOpacity,
+                transform: [
+                  { translateY: toast.sparkleOffset },
+                  { translateX: toast.sparkleOffset.interpolate({ inputRange: [-16, 0], outputRange: [8, 0] }) },
+                  { rotate: '12deg' },
+                ],
+              },
+            ]}
+          >
+            ✦
+          </Animated.Text>
+        </>
+      ) : null}
+      <View style={[styles.pill, toast.celebrate ? styles.pillCelebrate : null]}>
+        <Text style={styles.propIcon}>{toast.celebrate ? '✨' : '🏆'}</Text>
         <Text style={styles.text}>{toast.message}</Text>
       </View>
     </Animated.View>
@@ -107,6 +246,12 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
+  pillCelebrate: {
+    backgroundColor: '#182317',
+    borderColor: '#8ee3b0',
+    shadowColor: '#8ee3b0',
+    shadowOpacity: 0.5,
+  },
   propIcon: {
     fontSize: 18,
   },
@@ -115,5 +260,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  sparkle: {
+    position: 'absolute',
+    top: -6,
+    fontSize: 18,
+    color: '#8ee3b0',
+    textShadowColor: 'rgba(142, 227, 176, 0.35)',
+    textShadowRadius: 8,
+  },
+  sparkleLeft: {
+    left: '24%',
+  },
+  sparkleRight: {
+    right: '24%',
   },
 });

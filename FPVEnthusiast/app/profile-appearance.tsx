@@ -416,7 +416,10 @@ export default function ProfileAppearanceStudioScreen() {
     }
 
     const propsBonus = getPropsBonusForPrice(started.amountCents ?? 0);
-    propsToast.show(propsBonus > 0 ? `+${propsBonus} props bonus` : 'Purchase complete');
+    propsToast.show(
+      propsBonus > 0 ? `+${propsBonus} props bonus` : 'Purchase complete',
+      { celebrate: propsBonus > 0 },
+    );
 
     const applied = await saveSelection(itemType, itemId, { skipOwnershipCheck: true });
     if (!applied.ok) {
@@ -509,7 +512,10 @@ export default function ProfileAppearanceStudioScreen() {
     }
 
     const propsBonus = getPropsBonusForPrice(started.amountCents ?? 0);
-    propsToast.show(propsBonus > 0 ? `+${propsBonus} props bonus` : 'Badge unlocked');
+    propsToast.show(
+      propsBonus > 0 ? `+${propsBonus} props bonus` : 'Badge unlocked',
+      { celebrate: propsBonus > 0 },
+    );
 
     const alreadyFeatured = activeBadgePreference.featured_badge_ids.includes(completed.badgeId);
     if (alreadyFeatured) {
