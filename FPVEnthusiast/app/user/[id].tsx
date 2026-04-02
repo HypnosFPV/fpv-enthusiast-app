@@ -19,6 +19,8 @@ import type { UserProfile } from '../../src/types/profile';
 import ProfileAvatarDecoration from '../../src/components/ProfileAvatarDecoration';
 import ProfileBannerMedia from '../../src/components/ProfileBannerMedia';
 import { useResolvedProfileAppearance } from '../../src/hooks/useProfileAppearance';
+import { useResolvedProfileBadges } from '../../src/hooks/useProfileBadges';
+import ProfileBadgeRow from '../../src/components/ProfileBadgeRow';
 import {
   CATEGORIES, CONDITIONS,
 } from '../../src/hooks/useMarketplace';
@@ -173,6 +175,7 @@ export default function UserProfileScreen() {
   const [liveFollowersCount, setLiveFollowersCount] = useState(0);
   const [liveFollowingCount, setLiveFollowingCount] = useState(0);
   const { appearance } = useResolvedProfileAppearance(profile?.id);
+  const { featuredBadges } = useResolvedProfileBadges(profile?.id);
 
   const tabAnim = useRef(new Animated.Value(0)).current; // 0=posts, 1=listings
 
@@ -350,6 +353,17 @@ export default function UserProfileScreen() {
 
           <Text style={[styles.username, { color: appearance.theme.textColor }]}>@{profile.username ?? 'user'}</Text>
           {profile.bio ? <Text style={[styles.bio, { color: appearance.theme.mutedTextColor }]}>{profile.bio}</Text> : null}
+          {featuredBadges.length ? (
+            <View style={{ marginTop: 12, alignSelf: 'stretch' }}>
+              <ProfileBadgeRow
+                badges={featuredBadges}
+                accentColor={appearance.theme.accentColor}
+                borderColor={appearance.theme.borderColor}
+                textColor={appearance.theme.textColor}
+                mutedTextColor={appearance.theme.mutedTextColor}
+              />
+            </View>
+          ) : null}
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>

@@ -17,6 +17,8 @@ import PostCard from '../../src/components/PostCard';
 import ProfileAvatarDecoration from '../../src/components/ProfileAvatarDecoration';
 import ProfileBannerMedia from '../../src/components/ProfileBannerMedia';
 import { useResolvedProfileAppearance } from '../../src/hooks/useProfileAppearance';
+import { useResolvedProfileBadges } from '../../src/hooks/useProfileBadges';
+import ProfileBadgeRow from '../../src/components/ProfileBadgeRow';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CELL = SCREEN_W / 3;
@@ -154,6 +156,7 @@ export default function UserProfileScreen() {
   const [selectedPost, setSelectedPost] = useState<PostData | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const { appearance } = useResolvedProfileAppearance(profile?.id);
+  const { featuredBadges } = useResolvedProfileBadges(profile?.id);
 
   // useFollow(profileUserId, currentUserId) — matches the real hook signature
   const {
@@ -341,6 +344,17 @@ export default function UserProfileScreen() {
           />
           <Text style={[styles.usernameText, { color: appearance.theme.textColor }]}>@{profile.username}</Text>
           {profile.bio ? <Text style={[styles.bioText, { color: appearance.theme.mutedTextColor }]}>{profile.bio}</Text> : null}
+          {featuredBadges.length ? (
+            <View style={{ marginTop: 12, alignSelf: 'stretch' }}>
+              <ProfileBadgeRow
+                badges={featuredBadges}
+                accentColor={appearance.theme.accentColor}
+                borderColor={appearance.theme.borderColor}
+                textColor={appearance.theme.textColor}
+                mutedTextColor={appearance.theme.mutedTextColor}
+              />
+            </View>
+          ) : null}
         </View>
 
         {/* Stats */}

@@ -27,6 +27,8 @@ import { useStripeConnect } from '../../src/hooks/useStripeConnect';
 import ProfileAvatarDecoration from '../../src/components/ProfileAvatarDecoration';
 import ProfileBannerMedia from '../../src/components/ProfileBannerMedia';
 import { useResolvedProfileAppearance } from '../../src/hooks/useProfileAppearance';
+import { useResolvedProfileBadges } from '../../src/hooks/useProfileBadges';
+import ProfileBadgeRow from '../../src/components/ProfileBadgeRow';
 
 const { width: W } = Dimensions.get('window');
 const CELL = (W - 4) / 3;
@@ -315,6 +317,7 @@ export default function ProfileScreen() {
   } = useProfile(user?.id ?? undefined);
 
   const { appearance: profileAppearance } = useResolvedProfileAppearance(user?.id ?? undefined);
+  const { featuredBadges } = useResolvedProfileBadges(user?.id ?? undefined);
 
   const {
     linked: ytLinked, loading: ytAuthLoading,
@@ -956,6 +959,17 @@ export default function ProfileScreen() {
           <View style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: `${profileAppearance.theme.accentColor}55`, backgroundColor: `${profileAppearance.theme.accentColor}12` }}>
             <Text style={{ color: profileAppearance.theme.accentColor, fontSize: 11, fontWeight: '700' }}>Live profile style visible to visitors</Text>
           </View>
+          {featuredBadges.length ? (
+            <View style={{ marginTop: 12, alignSelf: 'stretch' }}>
+              <ProfileBadgeRow
+                badges={featuredBadges}
+                accentColor={profileAppearance.theme.accentColor}
+                borderColor={profileAppearance.theme.borderColor}
+                textColor={profileAppearance.theme.textColor}
+                mutedTextColor={profileAppearance.theme.mutedTextColor}
+              />
+            </View>
+          ) : null}
           <Animated.View
             style={[
               styles.statsCard,

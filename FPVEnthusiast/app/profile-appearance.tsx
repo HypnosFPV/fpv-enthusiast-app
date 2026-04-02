@@ -23,10 +23,20 @@ import {
   type ProfileAppearanceItemType,
   type ProfileThemeDefinition,
 } from '../src/constants/profileAppearance';
+import {
+  FEATURED_PROFILE_BADGE_LIMIT,
+  PROFILE_BADGES,
+  badgeTierLabel,
+  formatBadgePrice,
+  type ProfileBadgeDefinition,
+} from '../src/constants/profileBadges';
 import { useProfileAppearanceCheckout } from '../src/hooks/useProfileAppearanceCheckout';
 import { useProfileAppearanceStudio } from '../src/hooks/useProfileAppearance';
+import { useProfileBadgeCheckout } from '../src/hooks/useProfileBadgeCheckout';
+import { useProfileBadgesStudio } from '../src/hooks/useProfileBadges';
 import ProfileAvatarDecoration from '../src/components/ProfileAvatarDecoration';
 import ProfileBannerMedia from '../src/components/ProfileBannerMedia';
+import ProfileBadgeRow from '../src/components/ProfileBadgeRow';
 
 function StudioSectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
@@ -91,6 +101,58 @@ function StudioItemRow({
   );
 }
 
+function BadgeStudioRow({
+  badge,
+  owned,
+  featured,
+  busy,
+  onPress,
+}: {
+  badge: ProfileBadgeDefinition;
+  owned: boolean;
+  featured: boolean;
+  busy: boolean;
+  onPress: () => void;
+}) {
+  const buttonLabel = featured ? 'Featured' : owned ? 'Feature' : `Unlock ${formatBadgePrice(badge.priceCents)}`;
+
+  return (
+    <View style={[styles.itemCard, { borderColor: featured ? badge.accentColor : '#272a3f' }]}>      <View style={styles.itemHeaderRow}>
+        <View style={[styles.badgeIconSwatch, { backgroundColor: `${badge.accentColor}18`, borderColor: `${badge.accentColor}55` }]}>
+          <Ionicons name={badge.iconName as any} size={18} color={badge.accentColor} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={styles.itemTitleRow}>
+            <Text style={styles.itemTitle}>{badge.name}</Text>
+            <View style={[styles.badgePill, { borderColor: `${badge.accentColor}77` }]}>
+              <Text style={[styles.badgeText, { color: badge.accentColor }]}>{badgeTierLabel(badge.tier)}</Text>
+            </View>
+          </View>
+          <Text style={styles.itemDescription}>{badge.description}</Text>
+          {badge.limited ? <Text style={[styles.badgeLimitedText, { color: badge.accentColor }]}>Limited collectible</Text> : null}
+        </View>
+      </View>
+      <View style={styles.itemFooterRow}>
+        <Text style={styles.itemPrice}>{formatBadgePrice(badge.priceCents)}</Text>
+        <TouchableOpacity
+          activeOpacity={0.9}
+          style={[
+            styles.itemButton,
+            featured ? styles.itemButtonActive : owned ? styles.itemButtonOwned : { backgroundColor: badge.accentColor },
+            busy && { opacity: 0.6 },
+          ]}
+          onPress={onPress}
+          disabled={busy || featured}
+        >
+          {busy ? <ActivityIndicator color={featured ? badge.accentColor : '#071016'} size="small" /> : (
+            <Text style={[styles.itemButtonText, featured && { color: badge.accentColor }]}>{buttonLabel}</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 export default function ProfileAppearanceStudioScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -106,6 +168,25 @@ export default function ProfileAppearanceStudioScreen() {
     waitForPurchase,
   } = useProfileAppearanceStudio(user?.id ?? undefined);
   const { initCheckout, confirmCheckout, resetCheckout, checkoutState } = useProfileAppearanceCheckout();
+  const {
+    activePreference: activeBadgePreference,
+    featuredBadges,
+    ownedBadgeIds,
+    loadingBadges,
+    savingBadges,
+    refreshBadges,
+    saveFeaturedBadges,
+    waitForUnlock,
+  } = useProfileBadgesStudio(user?.id ?? undefined);
+  const {
+    initCheckout: initBadgeCheckout,
+    confirmCheckout: confirmBadgeCheckout,
+    resetCheckout: resetBadgeCheckout,
+    checkoutState: badgeCheckoutState,
+  } = useProfileBadgeCheckout();
+
+  const appearanceBusy = savingAppearance || checkoutState.status === 'loading' || checkoutState.status === 'processing';
+  const badgeBusy = savingBadges || badgeCheckoutState.status === 'loading' || badgeCheckoutState.status === 'processing';
 
   const handleApply = useCallback(async (itemType: ProfileAppearanceItemType, itemId: string) => {
     const result = await saveSelection(itemType, itemId);
@@ -156,6 +237,90 @@ export default function ProfileAppearanceStudioScreen() {
     await handlePurchase(itemType, item.id);
   }, [handleApply, handlePurchase, ownedKeys]);
 
+  const handleRefresh = useCallback(() => {
+    void refreshAppearance();
+    void refreshBadges();
+  }, [refreshAppearance, refreshBadges]);
+
+  const handleRemoveFeaturedBadge = useCallback(async (badgeId: string) => {
+    const result = await saveFeaturedBadges(activeBadgePreference.featured_badge_ids.filter((id) => id !== badgeId));
+    if (!result.ok) {
+      Alert.alert('Could not update badges', result.error ?? 'Please try again.');
+      return;
+    }
+    Alert.alert('Badges updated', 'Your featured badge row is now live on your profile.');
+  }, [activeBadgePreference.featured_badge_ids, saveFeaturedBadges]);
+
+  const handleBadgePurchase = useCallback(async (badgeId: string) => {
+    const started = await initBadgeCheckout({ badgeId });
+    if (!started.ok) {
+      Alert.alert('Checkout failed', started.error ?? 'Could not start badge checkout.');
+      return;
+    }
+
+    const completed = await confirmBadgeCheckout();
+    if (!completed.ok || !completed.badgeId) {
+      if (completed.error !== 'cancelled') {
+        Alert.alert('Payment failed', completed.error ?? 'Payment did not complete.');
+      }
+      return;
+    }
+
+    const unlocked = await waitForUnlock(completed.badgeId);
+    resetBadgeCheckout();
+    if (!unlocked) {
+      Alert.alert('Payment received', 'Your badge should appear shortly. Pull to refresh if it does not show up right away.');
+      return;
+    }
+
+    const alreadyFeatured = activeBadgePreference.featured_badge_ids.includes(completed.badgeId);
+    if (alreadyFeatured) {
+      Alert.alert('Badge unlocked', 'Your new collectible badge is now visible on your profile.');
+      return;
+    }
+
+    if (activeBadgePreference.featured_badge_ids.length >= FEATURED_PROFILE_BADGE_LIMIT) {
+      Alert.alert('Badge unlocked', `You now own the badge. Remove one featured badge first if you want to show this one. You can feature up to ${FEATURED_PROFILE_BADGE_LIMIT}.`);
+      return;
+    }
+
+    const saved = await saveFeaturedBadges([...activeBadgePreference.featured_badge_ids, completed.badgeId]);
+    if (!saved.ok) {
+      Alert.alert('Badge unlocked', 'The badge was purchased, but could not be auto-featured. You already own it in the list below.');
+      return;
+    }
+
+    Alert.alert('Badge unlocked', 'Your new collectible badge is now featured on your public profile.');
+  }, [activeBadgePreference.featured_badge_ids, confirmBadgeCheckout, initBadgeCheckout, resetBadgeCheckout, saveFeaturedBadges, waitForUnlock]);
+
+  const handleBadgePress = useCallback(async (badge: ProfileBadgeDefinition) => {
+    const owned = ownedBadgeIds.has(badge.id);
+    const featured = activeBadgePreference.featured_badge_ids.includes(badge.id);
+
+    if (!owned) {
+      await handleBadgePurchase(badge.id);
+      return;
+    }
+
+    if (featured) {
+      Alert.alert('Already featured', 'This badge is already visible on your profile. Remove it from the featured row first if you want to rotate it out.');
+      return;
+    }
+
+    if (activeBadgePreference.featured_badge_ids.length >= FEATURED_PROFILE_BADGE_LIMIT) {
+      Alert.alert('Featured row full', `Remove one of your current badges first. You can feature up to ${FEATURED_PROFILE_BADGE_LIMIT} at a time.`);
+      return;
+    }
+
+    const saved = await saveFeaturedBadges([...activeBadgePreference.featured_badge_ids, badge.id]);
+    if (!saved.ok) {
+      Alert.alert('Could not feature badge', saved.error ?? 'Please try again.');
+      return;
+    }
+
+    Alert.alert('Badge featured', 'Your badge row is now updated anywhere people open your profile.');
+  }, [activeBadgePreference.featured_badge_ids, handleBadgePurchase, ownedBadgeIds, saveFeaturedBadges]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -165,9 +330,9 @@ export default function ProfileAppearanceStudioScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Profile appearance</Text>
-            <Text style={styles.headerSubtitle}>Cosmetics that stay organized and visitor-visible</Text>
+            <Text style={styles.headerSubtitle}>Cosmetics and collectibles that stay organized and visitor-visible</Text>
           </View>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => void refreshAppearance()}>
+          <TouchableOpacity style={styles.headerBtn} onPress={handleRefresh}>
             <Ionicons name="refresh-outline" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -192,9 +357,7 @@ export default function ProfileAppearanceStudioScreen() {
               <Text style={[styles.previewName, { color: activeAppearance.theme.textColor }]} numberOfLines={1}>
                 @{profile?.username ?? 'pilot'}
               </Text>
-              <Text style={[styles.previewMeta, { color: activeAppearance.theme.mutedTextColor }]}>
-                Live for anyone visiting your profile.
-              </Text>
+              <Text style={[styles.previewMeta, { color: activeAppearance.theme.mutedTextColor }]}>Live for anyone visiting your profile.</Text>
               <View style={styles.livePillsRow}>
                 <View style={[styles.livePill, { borderColor: `${activeAppearance.theme.accentColor}66` }]}>
                   <Text style={[styles.livePillText, { color: activeAppearance.theme.accentColor }]}>{activeAppearance.theme.name}</Text>
@@ -206,12 +369,23 @@ export default function ProfileAppearanceStudioScreen() {
                   <Text style={[styles.livePillText, { color: activeAppearance.effect.accentColor }]}>{activeAppearance.effect.name}</Text>
                 </View>
               </View>
+              <View style={styles.previewBadgesWrap}>
+                <ProfileBadgeRow
+                  badges={featuredBadges}
+                  accentColor={activeAppearance.theme.accentColor}
+                  borderColor={activeAppearance.theme.borderColor}
+                  textColor={activeAppearance.theme.textColor}
+                  mutedTextColor={activeAppearance.theme.mutedTextColor}
+                  emptyText="No featured badges yet"
+                  compact
+                />
+              </View>
             </View>
           </View>
           <View style={styles.helperCallout}>
             <Ionicons name="sparkles-outline" size={16} color={activeAppearance.theme.accentColor} />
             <Text style={styles.helperCalloutText}>
-              Avatar press behavior in the main profile tab stays untouched, so the hidden long-press Easter egg remains intact.
+              Avatar press behavior in the main profile tab stays untouched, so the hidden long-press Easter egg remains intact while badges, themes, frames, and effects stay visible to visitors.
             </Text>
           </View>
         </View>
@@ -230,11 +404,16 @@ export default function ProfileAppearanceStudioScreen() {
           <View style={styles.infoCard}>
             <Ionicons name="grid-outline" size={18} color={activeAppearance.theme.accentColor} />
             <Text style={styles.infoTitle}>Clean organization</Text>
-            <Text style={styles.infoText}>Only one theme, one frame, and one motion effect can be active at a time.</Text>
+            <Text style={styles.infoText}>Only one theme, one frame, one effect, and up to three featured badges can be active at a time.</Text>
+          </View>
+          <View style={styles.infoCard}>
+            <Ionicons name="ribbon-outline" size={18} color={activeAppearance.theme.accentColor} />
+            <Text style={styles.infoTitle}>Collectible flex</Text>
+            <Text style={styles.infoText}>Badges are lighter-weight purchases than full theme changes, so they work well as quick impulse cosmetics.</Text>
           </View>
         </View>
 
-        {loadingAppearance ? <ActivityIndicator color={activeAppearance.theme.accentColor} style={{ marginVertical: 18 }} /> : null}
+        {(loadingAppearance || loadingBadges) ? <ActivityIndicator color={activeAppearance.theme.accentColor} style={{ marginVertical: 18 }} /> : null}
 
         <StudioSectionHeader
           title="Themes"
@@ -247,7 +426,7 @@ export default function ProfileAppearanceStudioScreen() {
             accentColor={item.accentColor}
             owned={ownedKeys.has(`theme:${item.id}`)}
             active={activePreference.active_theme_id === item.id}
-            busy={savingAppearance || checkoutState.status === 'loading' || checkoutState.status === 'processing'}
+            busy={appearanceBusy}
             onPress={() => void handleItemPress('theme', item)}
           />
         ))}
@@ -263,7 +442,7 @@ export default function ProfileAppearanceStudioScreen() {
             accentColor={item.primaryColor}
             owned={ownedKeys.has(`frame:${item.id}`)}
             active={activePreference.active_avatar_frame_id === item.id}
-            busy={savingAppearance || checkoutState.status === 'loading' || checkoutState.status === 'processing'}
+            busy={appearanceBusy}
             onPress={() => void handleItemPress('frame', item)}
           />
         ))}
@@ -279,8 +458,45 @@ export default function ProfileAppearanceStudioScreen() {
             accentColor={item.accentColor}
             owned={ownedKeys.has(`effect:${item.id}`)}
             active={activePreference.active_avatar_effect_id === item.id}
-            busy={savingAppearance || checkoutState.status === 'loading' || checkoutState.status === 'processing'}
+            busy={appearanceBusy}
             onPress={() => void handleItemPress('effect', item)}
+          />
+        ))}
+
+        <StudioSectionHeader
+          title="Collectible badges"
+          subtitle="Feature up to three badges under your bio so visitors immediately see your profile flex without cluttering the screen."
+        />
+        <View style={styles.badgeFeatureCard}>
+          <View style={styles.badgeFeatureHeader}>
+            <View>
+              <Text style={styles.badgeFeatureTitle}>Featured on profile</Text>
+              <Text style={styles.badgeFeatureSubtitle}>You can feature up to {FEATURED_PROFILE_BADGE_LIMIT} badges at once.</Text>
+            </View>
+            <View style={[styles.badgeCountPill, { borderColor: `${activeAppearance.theme.accentColor}55` }]}>
+              <Text style={[styles.badgeCountText, { color: activeAppearance.theme.accentColor }]}>{activeBadgePreference.featured_badge_ids.length}/{FEATURED_PROFILE_BADGE_LIMIT}</Text>
+            </View>
+          </View>
+          <ProfileBadgeRow
+            badges={featuredBadges}
+            accentColor={activeAppearance.theme.accentColor}
+            borderColor={activeAppearance.theme.borderColor}
+            textColor={activeAppearance.theme.textColor}
+            mutedTextColor={activeAppearance.theme.mutedTextColor}
+            emptyText="Unlock a badge below to start your featured row."
+            removable
+            onRemoveBadge={(badgeId) => void handleRemoveFeaturedBadge(badgeId)}
+          />
+        </View>
+
+        {PROFILE_BADGES.map((badge) => (
+          <BadgeStudioRow
+            key={badge.id}
+            badge={badge}
+            owned={ownedBadgeIds.has(badge.id)}
+            featured={activeBadgePreference.featured_badge_ids.includes(badge.id)}
+            busy={badgeBusy}
+            onPress={() => void handleBadgePress(badge)}
           />
         ))}
 
@@ -290,9 +506,9 @@ export default function ProfileAppearanceStudioScreen() {
         />
         <View style={styles.ideaCard}>
           <Text style={styles.ideaTitle}>Good next profile cosmetics</Text>
-          <Text style={styles.ideaBullet}>• collectible profile badges and founder tags</Text>
           <Text style={styles.ideaBullet}>• premium stat-card shells and tab icon skins</Text>
-          <Text style={styles.ideaBullet}>• limited seasonal bundles with matching banner art</Text>
+          <Text style={styles.ideaBullet}>• limited seasonal bundles with matching banner art and badge sets</Text>
+          <Text style={styles.ideaBullet}>• profile title ribbons layered above the badge row</Text>
           <Text style={styles.ideaBullet}>• gated short video banner packs once moderation and compression rules are finalized</Text>
         </View>
       </ScrollView>
@@ -376,6 +592,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  previewBadgesWrap: {
+    marginTop: 10,
+  },
   helperCallout: {
     flexDirection: 'row',
     gap: 8,
@@ -442,6 +661,14 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     marginTop: 2,
   },
+  badgeIconSwatch: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   itemTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -470,6 +697,11 @@ const styles = StyleSheet.create({
     color: '#9aa2c5',
     fontSize: 12,
     lineHeight: 18,
+  },
+  badgeLimitedText: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '700',
   },
   itemFooterRow: {
     marginTop: 12,
@@ -504,6 +736,43 @@ const styles = StyleSheet.create({
   itemButtonText: {
     color: '#071016',
     fontSize: 12,
+    fontWeight: '800',
+  },
+  badgeFeatureCard: {
+    marginTop: 4,
+    marginBottom: 10,
+    backgroundColor: '#121426',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#252944',
+    padding: 14,
+    gap: 12,
+  },
+  badgeFeatureHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    alignItems: 'center',
+  },
+  badgeFeatureTitle: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  badgeFeatureSubtitle: {
+    color: '#9aa2c5',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  badgeCountPill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  badgeCountText: {
+    fontSize: 11,
     fontWeight: '800',
   },
   ideaCard: {
