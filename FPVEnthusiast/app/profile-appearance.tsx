@@ -84,24 +84,49 @@ function StudioItemRow({
   onPress: () => void;
 }) {
   const isFree = item.priceCents === 0;
-  const buttonLabel = active ? 'Active' : owned || isFree ? 'Apply' : `Unlock ${formatUsd(item.priceCents)}`;
+  const isPaid = !isFree;
+  const buttonLabel = active ? 'Active' : owned || isFree ? 'Make live' : `Unlock ${formatUsd(item.priceCents)}`;
   const previewLabel = active ? 'Live' : selected ? 'Previewing' : 'Preview';
+  const stateLabel = active
+    ? 'Live now'
+    : selected
+      ? 'Preview loaded'
+      : owned && isPaid
+        ? 'Owned'
+        : isPaid
+          ? 'Premium'
+          : 'Included';
 
   return (
-    <View style={[styles.itemCard, { borderColor: active || selected ? accentColor : '#272a3f' }]}>
+    <View
+      style={[
+        styles.itemCard,
+        {
+          borderColor: active || selected ? accentColor : '#272a3f',
+          backgroundColor: active ? `${accentColor}14` : selected ? `${accentColor}10` : isPaid ? `${accentColor}08` : '#111223',
+        },
+      ]}
+    >
+      {(isPaid || active || selected) ? <View style={[styles.itemCardAccentBar, { backgroundColor: accentColor }]} /> : null}
+      {(isPaid || active || selected) ? <View style={[styles.itemCardGlow, { backgroundColor: `${accentColor}18` }]} /> : null}
       <View style={styles.itemHeaderRow}>
         <View style={[styles.itemSwatch, { backgroundColor: 'accentColor' in item ? item.accentColor : item.primaryColor, borderColor: accentColor }]} />
         <View style={{ flex: 1 }}>
           <View style={styles.itemTitleRow}>
             <Text style={styles.itemTitle}>{item.name}</Text>
-            <View style={[styles.badgePill, { borderColor: `${accentColor}77` }]}>
+            <View style={[styles.badgePill, { borderColor: `${accentColor}77`, backgroundColor: `${accentColor}12` }]}>
               <Text style={[styles.badgeText, { color: accentColor }]}>{item.badge}</Text>
             </View>
           </View>
           <Text style={styles.itemDescription}>{item.description}</Text>
-          <Text style={styles.previewHintText}>
-            {active ? 'Currently live on your profile' : selected ? 'Previewing above until you apply it' : 'Preview before you make it live'}
-          </Text>
+          <View style={styles.itemMetaRow}>
+            <View style={[styles.statePill, { borderColor: `${accentColor}44`, backgroundColor: `${accentColor}12` }]}>
+              <Text style={[styles.statePillText, { color: active ? '#ffffff' : accentColor }]}>{stateLabel}</Text>
+            </View>
+            <Text style={styles.previewHintText}>
+              {active ? 'Currently live on your profile' : selected ? 'Previewing above until you apply it' : 'Preview before you make it live'}
+            </Text>
+          </View>
         </View>
       </View>
       <View style={styles.itemFooterRow}>
@@ -111,26 +136,44 @@ function StudioItemRow({
             activeOpacity={0.85}
             style={[
               styles.previewButton,
-              { borderColor: `${accentColor}55`, backgroundColor: selected ? `${accentColor}16` : 'transparent' },
+              {
+                borderColor: `${accentColor}55`,
+                backgroundColor: selected ? `${accentColor}20` : 'transparent',
+              },
               busy && { opacity: 0.6 },
             ]}
             onPress={onPreview}
             disabled={busy}
           >
-            <Text style={[styles.previewButtonText, { color: accentColor }]}>{previewLabel}</Text>
+            <Text style={[styles.previewButtonText, { color: selected ? '#ffffff' : accentColor }]}>{previewLabel}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.9}
             style={[
               styles.itemButton,
-              active ? styles.itemButtonActive : owned || isFree ? styles.itemButtonOwned : { backgroundColor: accentColor },
+              active
+                ? [styles.itemButtonActive, { borderColor: `${accentColor}70`, backgroundColor: `${accentColor}12` }]
+                : owned || isFree
+                  ? [styles.itemButtonOwned, { borderColor: `${accentColor}55`, backgroundColor: `${accentColor}18` }]
+                  : { backgroundColor: accentColor, shadowColor: accentColor },
               busy && { opacity: 0.6 },
             ]}
             onPress={onPress}
             disabled={busy || active}
           >
             {busy ? <ActivityIndicator color={active ? accentColor : '#071016'} size="small" /> : (
-              <Text style={[styles.itemButtonText, active && { color: accentColor }]}>{buttonLabel}</Text>
+              <Text
+                style={[
+                  styles.itemButtonText,
+                  active
+                    ? { color: accentColor }
+                    : owned || isFree
+                      ? styles.itemButtonTextOwned
+                      : null,
+                ]}
+              >
+                {buttonLabel}
+              </Text>
             )}
           </TouchableOpacity>
         </View>
@@ -156,10 +199,21 @@ function BadgeStudioRow({
   onPreview: () => void;
   onPress: () => void;
 }) {
-  const buttonLabel = featured ? 'Featured' : owned ? 'Feature' : `Unlock ${formatBadgePrice(badge.priceCents)}`;
+  const buttonLabel = featured ? 'Featured' : owned ? 'Feature now' : `Unlock ${formatBadgePrice(badge.priceCents)}`;
+  const stateLabel = featured ? 'On profile' : previewed ? 'Preview loaded' : owned ? 'Owned' : badge.limited ? 'Limited' : 'Collectible';
 
   return (
-    <View style={[styles.itemCard, { borderColor: featured || previewed ? badge.accentColor : '#272a3f' }]}>
+    <View
+      style={[
+        styles.itemCard,
+        {
+          borderColor: featured || previewed ? badge.accentColor : '#272a3f',
+          backgroundColor: featured ? `${badge.accentColor}14` : previewed ? `${badge.accentColor}10` : `${badge.accentColor}08`,
+        },
+      ]}
+    >
+      <View style={[styles.itemCardAccentBar, { backgroundColor: badge.accentColor }]} />
+      <View style={[styles.itemCardGlow, { backgroundColor: `${badge.accentColor}18` }]} />
       <View style={styles.itemHeaderRow}>
         <View style={[styles.badgeIconSwatch, { backgroundColor: `${badge.accentColor}18`, borderColor: `${badge.accentColor}55` }]}>
           <Ionicons name={badge.iconName as any} size={18} color={badge.accentColor} />
@@ -167,12 +221,15 @@ function BadgeStudioRow({
         <View style={{ flex: 1 }}>
           <View style={styles.itemTitleRow}>
             <Text style={styles.itemTitle}>{badge.name}</Text>
-            <View style={[styles.badgePill, { borderColor: `${badge.accentColor}77` }]}>
+            <View style={[styles.badgePill, { borderColor: `${badge.accentColor}77`, backgroundColor: `${badge.accentColor}12` }]}>
               <Text style={[styles.badgeText, { color: badge.accentColor }]}>{badgeTierLabel(badge.tier)}</Text>
             </View>
           </View>
           <Text style={styles.itemDescription}>{badge.description}</Text>
           <View style={styles.badgeMetaRow}>
+            <View style={[styles.statePill, { borderColor: `${badge.accentColor}44`, backgroundColor: `${badge.accentColor}12` }]}>
+              <Text style={[styles.statePillText, { color: featured ? '#ffffff' : badge.accentColor }]}>{stateLabel}</Text>
+            </View>
             {badge.limited ? <Text style={[styles.badgeLimitedText, { color: badge.accentColor }]}>Limited collectible</Text> : null}
             <Text style={styles.previewHintText}>{previewed ? 'Previewing above' : 'Preview before you unlock'}</Text>
           </View>
@@ -185,25 +242,43 @@ function BadgeStudioRow({
             activeOpacity={0.85}
             style={[
               styles.previewButton,
-              { borderColor: `${badge.accentColor}55`, backgroundColor: previewed ? `${badge.accentColor}16` : 'transparent' },
+              {
+                borderColor: `${badge.accentColor}55`,
+                backgroundColor: previewed ? `${badge.accentColor}20` : 'transparent',
+              },
             ]}
             onPress={onPreview}
             disabled={busy}
           >
-            <Text style={[styles.previewButtonText, { color: badge.accentColor }]}>{previewed ? 'Previewing' : 'Preview'}</Text>
+            <Text style={[styles.previewButtonText, { color: previewed ? '#ffffff' : badge.accentColor }]}>{previewed ? 'Previewing' : 'Preview'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.9}
             style={[
               styles.itemButton,
-              featured ? styles.itemButtonActive : owned ? styles.itemButtonOwned : { backgroundColor: badge.accentColor },
+              featured
+                ? [styles.itemButtonActive, { borderColor: `${badge.accentColor}70`, backgroundColor: `${badge.accentColor}12` }]
+                : owned
+                  ? [styles.itemButtonOwned, { borderColor: `${badge.accentColor}55`, backgroundColor: `${badge.accentColor}18` }]
+                  : { backgroundColor: badge.accentColor, shadowColor: badge.accentColor },
               busy && { opacity: 0.6 },
             ]}
             onPress={onPress}
             disabled={busy || featured}
           >
             {busy ? <ActivityIndicator color={featured ? badge.accentColor : '#071016'} size="small" /> : (
-              <Text style={[styles.itemButtonText, featured && { color: badge.accentColor }]}>{buttonLabel}</Text>
+              <Text
+                style={[
+                  styles.itemButtonText,
+                  featured
+                    ? { color: badge.accentColor }
+                    : owned
+                      ? styles.itemButtonTextOwned
+                      : null,
+                ]}
+              >
+                {buttonLabel}
+              </Text>
             )}
           </TouchableOpacity>
         </View>
@@ -788,6 +863,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 14,
     marginBottom: 10,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  itemCardAccentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+  },
+  itemCardGlow: {
+    position: 'absolute',
+    top: -24,
+    right: -18,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    opacity: 0.65,
   },
   itemHeaderRow: {
     flexDirection: 'row',
@@ -833,9 +926,27 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   itemDescription: {
-    color: '#9aa2c5',
+    color: '#b3b9d5',
     fontSize: 12,
     lineHeight: 18,
+  },
+  itemMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 7,
+  },
+  statePill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  statePillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   badgeLimitedText: {
     marginTop: 6,
@@ -863,19 +974,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   itemButtonOwned: {
-    backgroundColor: '#182031',
     borderWidth: 1,
-    borderColor: '#2b3650',
   },
   itemButtonActive: {
-    backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#3b4a74',
   },
   itemButtonText: {
     color: '#071016',
     fontSize: 12,
     fontWeight: '800',
+  },
+  itemButtonTextOwned: {
+    color: '#f4f7ff',
   },
   badgeFeatureCard: {
     marginTop: 4,
@@ -922,7 +1032,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   previewHintText: {
-    color: '#7f86a8',
+    color: '#98a2c7',
     fontSize: 11,
   },
   badgeActionRow: {
