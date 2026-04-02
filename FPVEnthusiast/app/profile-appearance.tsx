@@ -88,6 +88,7 @@ function StudioItemRow({
   const isFree = item.priceCents === 0;
   const isPaid = !isFree;
   const propsBonusLabel = isFree ? '' : formatPropsBonusLabel(item.priceCents);
+  const showPurchaseBonus = isPaid && !owned && !active;
   const buttonLabel = active ? 'Active' : owned || isFree ? 'Make live' : `Unlock ${formatUsd(item.priceCents)}`;
   const previewLabel = active ? 'Live' : selected ? 'Previewing' : 'Preview';
   const stateLabel = active
@@ -126,6 +127,12 @@ function StudioItemRow({
             <View style={[styles.statePill, { borderColor: `${accentColor}44`, backgroundColor: `${accentColor}12` }]}>
               <Text style={[styles.statePillText, { color: active ? '#ffffff' : accentColor }]}>{stateLabel}</Text>
             </View>
+            {showPurchaseBonus ? (
+              <View style={styles.bonusPill}>
+                <Ionicons name="flash-outline" size={11} color="#8ee3b0" />
+                <Text style={styles.bonusPillText}>{propsBonusLabel}</Text>
+              </View>
+            ) : null}
             <Text style={styles.previewHintText}>
               {active ? 'Currently live on your profile' : selected ? 'Previewing above until you apply it' : 'Preview before you make it live'}
             </Text>
@@ -137,51 +144,54 @@ function StudioItemRow({
           <Text style={styles.itemPrice}>{isFree ? 'Included' : formatUsd(item.priceCents)}</Text>
           {propsBonusLabel ? <Text style={styles.itemBonusText}>{propsBonusLabel}</Text> : null}
         </View>
-        <View style={styles.badgeActionRow}>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={[
-              styles.previewButton,
-              {
-                borderColor: `${accentColor}55`,
-                backgroundColor: selected ? `${accentColor}20` : 'transparent',
-              },
-              busy && { opacity: 0.6 },
-            ]}
-            onPress={onPreview}
-            disabled={busy}
-          >
-            <Text style={[styles.previewButtonText, { color: selected ? '#ffffff' : accentColor }]}>{previewLabel}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={[
-              styles.itemButton,
-              active
-                ? [styles.itemButtonActive, { borderColor: `${accentColor}70`, backgroundColor: `${accentColor}12` }]
-                : owned || isFree
-                  ? [styles.itemButtonOwned, { borderColor: `${accentColor}55`, backgroundColor: `${accentColor}18` }]
-                  : { backgroundColor: accentColor, shadowColor: accentColor },
-              busy && { opacity: 0.6 },
-            ]}
-            onPress={onPress}
-            disabled={busy || active}
-          >
-            {busy ? <ActivityIndicator color={active ? accentColor : '#071016'} size="small" /> : (
-              <Text
-                style={[
-                  styles.itemButtonText,
-                  active
-                    ? { color: accentColor }
-                    : owned || isFree
-                      ? styles.itemButtonTextOwned
-                      : null,
-                ]}
-              >
-                {buttonLabel}
-              </Text>
-            )}
-          </TouchableOpacity>
+        <View style={styles.actionColumn}>
+          <View style={styles.badgeActionRow}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[
+                styles.previewButton,
+                {
+                  borderColor: `${accentColor}55`,
+                  backgroundColor: selected ? `${accentColor}20` : 'transparent',
+                },
+                busy && { opacity: 0.6 },
+              ]}
+              onPress={onPreview}
+              disabled={busy}
+            >
+              <Text style={[styles.previewButtonText, { color: selected ? '#ffffff' : accentColor }]}>{previewLabel}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={[
+                styles.itemButton,
+                active
+                  ? [styles.itemButtonActive, { borderColor: `${accentColor}70`, backgroundColor: `${accentColor}12` }]
+                  : owned || isFree
+                    ? [styles.itemButtonOwned, { borderColor: `${accentColor}55`, backgroundColor: `${accentColor}18` }]
+                    : { backgroundColor: accentColor, shadowColor: accentColor },
+                busy && { opacity: 0.6 },
+              ]}
+              onPress={onPress}
+              disabled={busy || active}
+            >
+              {busy ? <ActivityIndicator color={active ? accentColor : '#071016'} size="small" /> : (
+                <Text
+                  style={[
+                    styles.itemButtonText,
+                    active
+                      ? { color: accentColor }
+                      : owned || isFree
+                        ? styles.itemButtonTextOwned
+                        : null,
+                  ]}
+                >
+                  {buttonLabel}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+          {showPurchaseBonus ? <Text style={styles.purchaseHintText}>Includes {propsBonusLabel} after checkout</Text> : null}
         </View>
       </View>
     </View>
@@ -206,6 +216,7 @@ function BadgeStudioRow({
   onPress: () => void;
 }) {
   const propsBonusLabel = formatPropsBonusLabel(badge.priceCents);
+  const showPurchaseBonus = !owned && !featured;
   const buttonLabel = featured ? 'Featured' : owned ? 'Feature now' : `Unlock ${formatBadgePrice(badge.priceCents)}`;
   const stateLabel = featured ? 'On profile' : previewed ? 'Preview loaded' : owned ? 'Owned' : badge.limited ? 'Limited' : 'Collectible';
 
@@ -237,6 +248,12 @@ function BadgeStudioRow({
             <View style={[styles.statePill, { borderColor: `${badge.accentColor}44`, backgroundColor: `${badge.accentColor}12` }]}>
               <Text style={[styles.statePillText, { color: featured ? '#ffffff' : badge.accentColor }]}>{stateLabel}</Text>
             </View>
+            {showPurchaseBonus ? (
+              <View style={styles.bonusPill}>
+                <Ionicons name="flash-outline" size={11} color="#8ee3b0" />
+                <Text style={styles.bonusPillText}>{propsBonusLabel}</Text>
+              </View>
+            ) : null}
             {badge.limited ? <Text style={[styles.badgeLimitedText, { color: badge.accentColor }]}>Limited collectible</Text> : null}
             <Text style={styles.previewHintText}>{previewed ? 'Previewing above' : 'Preview before you unlock'}</Text>
           </View>
@@ -247,50 +264,53 @@ function BadgeStudioRow({
           <Text style={styles.itemPrice}>{formatBadgePrice(badge.priceCents)}</Text>
           <Text style={styles.itemBonusText}>{propsBonusLabel}</Text>
         </View>
-        <View style={styles.badgeActionRow}>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={[
-              styles.previewButton,
-              {
-                borderColor: `${badge.accentColor}55`,
-                backgroundColor: previewed ? `${badge.accentColor}20` : 'transparent',
-              },
-            ]}
-            onPress={onPreview}
-            disabled={busy}
-          >
-            <Text style={[styles.previewButtonText, { color: previewed ? '#ffffff' : badge.accentColor }]}>{previewed ? 'Previewing' : 'Preview'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.9}
-            style={[
-              styles.itemButton,
-              featured
-                ? [styles.itemButtonActive, { borderColor: `${badge.accentColor}70`, backgroundColor: `${badge.accentColor}12` }]
-                : owned
-                  ? [styles.itemButtonOwned, { borderColor: `${badge.accentColor}55`, backgroundColor: `${badge.accentColor}18` }]
-                  : { backgroundColor: badge.accentColor, shadowColor: badge.accentColor },
-              busy && { opacity: 0.6 },
-            ]}
-            onPress={onPress}
-            disabled={busy || featured}
-          >
-            {busy ? <ActivityIndicator color={featured ? badge.accentColor : '#071016'} size="small" /> : (
-              <Text
-                style={[
-                  styles.itemButtonText,
-                  featured
-                    ? { color: badge.accentColor }
-                    : owned
-                      ? styles.itemButtonTextOwned
-                      : null,
-                ]}
-              >
-                {buttonLabel}
-              </Text>
-            )}
-          </TouchableOpacity>
+        <View style={styles.actionColumn}>
+          <View style={styles.badgeActionRow}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[
+                styles.previewButton,
+                {
+                  borderColor: `${badge.accentColor}55`,
+                  backgroundColor: previewed ? `${badge.accentColor}20` : 'transparent',
+                },
+              ]}
+              onPress={onPreview}
+              disabled={busy}
+            >
+              <Text style={[styles.previewButtonText, { color: previewed ? '#ffffff' : badge.accentColor }]}>{previewed ? 'Previewing' : 'Preview'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={[
+                styles.itemButton,
+                featured
+                  ? [styles.itemButtonActive, { borderColor: `${badge.accentColor}70`, backgroundColor: `${badge.accentColor}12` }]
+                  : owned
+                    ? [styles.itemButtonOwned, { borderColor: `${badge.accentColor}55`, backgroundColor: `${badge.accentColor}18` }]
+                    : { backgroundColor: badge.accentColor, shadowColor: badge.accentColor },
+                busy && { opacity: 0.6 },
+              ]}
+              onPress={onPress}
+              disabled={busy || featured}
+            >
+              {busy ? <ActivityIndicator color={featured ? badge.accentColor : '#071016'} size="small" /> : (
+                <Text
+                  style={[
+                    styles.itemButtonText,
+                    featured
+                      ? { color: badge.accentColor }
+                      : owned
+                        ? styles.itemButtonTextOwned
+                        : null,
+                  ]}
+                >
+                  {buttonLabel}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+          {showPurchaseBonus ? <Text style={styles.purchaseHintText}>Includes {propsBonusLabel} after checkout</Text> : null}
         </View>
       </View>
     </View>
@@ -564,6 +584,16 @@ export default function ProfileAppearanceStudioScreen() {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.bonusBanner}>
+          <View style={styles.bonusBannerIcon}>
+            <Ionicons name="sparkles-outline" size={16} color="#8ee3b0" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.bonusBannerTitle}>Every paid unlock includes bonus props</Text>
+            <Text style={styles.bonusBannerText}>Themes, frames, effects, and badges now grant extra props automatically after successful checkout.</Text>
+          </View>
+        </View>
+
         <View style={styles.previewCard} onLayout={(event) => setPreviewCardY(event.nativeEvent.layout.y)}>
           <ProfileBannerMedia
             imageUrl={profile?.header_image_url}
@@ -585,6 +615,7 @@ export default function ProfileAppearanceStudioScreen() {
                 @{profile?.username ?? 'pilot'}
               </Text>
               <Text style={[styles.previewMeta, { color: previewAppearance.theme.mutedTextColor }]}>{hasAppearancePreview ? 'Previewing now — apply below to make it live.' : 'Current live profile look.'}</Text>
+              <Text style={styles.previewBonusLine}>Paid unlocks also award bonus props after checkout.</Text>
               <View style={styles.livePillsRow}>
                 <View style={[styles.livePill, { borderColor: `${previewAppearance.theme.accentColor}66` }]}>
                   <Text style={[styles.livePillText, { color: previewAppearance.theme.accentColor }]}>{previewAppearance.theme.name}</Text>
@@ -800,6 +831,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  bonusBanner: {
+    marginTop: 4,
+    marginBottom: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#27463a',
+    backgroundColor: 'rgba(46, 125, 83, 0.16)',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  bonusBannerIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(142, 227, 176, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(142, 227, 176, 0.35)',
+  },
+  bonusBannerTitle: {
+    color: '#eafff2',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  bonusBannerText: {
+    color: '#bde2cc',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 3,
+  },
   previewCard: {
     backgroundColor: '#111223',
     borderRadius: 20,
@@ -823,6 +888,12 @@ const styles = StyleSheet.create({
   previewMeta: {
     fontSize: 11,
     marginTop: 2,
+  },
+  previewBonusLine: {
+    color: '#8ee3b0',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 5,
   },
   livePillsRow: {
     flexDirection: 'row',
@@ -978,6 +1049,23 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.2,
   },
+  bonusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(142, 227, 176, 0.35)',
+    backgroundColor: 'rgba(142, 227, 176, 0.10)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  bonusPillText: {
+    color: '#8ee3b0',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
   badgeLimitedText: {
     marginTop: 6,
     fontSize: 11,
@@ -1002,8 +1090,17 @@ const styles = StyleSheet.create({
   itemBonusText: {
     color: '#8ee3b0',
     fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.25,
+  },
+  actionColumn: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  purchaseHintText: {
+    color: '#8ee3b0',
+    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.2,
   },
   itemButton: {
     minWidth: 110,
