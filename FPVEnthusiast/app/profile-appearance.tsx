@@ -285,9 +285,9 @@ export default function ProfileAppearanceStudioScreen() {
       return;
     }
 
-    const applied = await saveSelection(itemType, itemId);
+    const applied = await saveSelection(itemType, itemId, { skipOwnershipCheck: true });
     if (!applied.ok) {
-      Alert.alert('Unlocked', 'The item was purchased, but could not be auto-applied. You already own it in the list below.');
+      Alert.alert('Unlocked', 'Your item was purchased successfully. If it does not appear live immediately, pull to refresh.');
       return;
     }
 

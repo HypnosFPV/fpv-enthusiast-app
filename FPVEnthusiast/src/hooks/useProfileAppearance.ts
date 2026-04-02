@@ -146,9 +146,13 @@ export function useProfileAppearanceStudio(userId?: string | null) {
     void refreshAppearance();
   }, [refreshAppearance]);
 
-  const saveSelection = useCallback(async (itemType: ProfileAppearanceItemType, itemId: string) => {
+  const saveSelection = useCallback(async (
+    itemType: ProfileAppearanceItemType,
+    itemId: string,
+    options?: { skipOwnershipCheck?: boolean },
+  ) => {
     if (!userId) return { ok: false as const, error: 'No user id available.' };
-    if (!isOwned(purchases, itemType, itemId)) {
+    if (!options?.skipOwnershipCheck && !isOwned(purchases, itemType, itemId)) {
       return { ok: false as const, error: 'Unlock this item before applying it.' };
     }
 
