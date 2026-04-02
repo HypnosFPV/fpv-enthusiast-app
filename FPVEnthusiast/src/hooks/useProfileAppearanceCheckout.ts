@@ -54,7 +54,11 @@ export function useProfileAppearanceCheckout() {
         },
       });
 
-      if (error || !data?.clientSecret || !data?.purchaseId) {
+      const clientSecret = data?.paymentIntentClientSecret ?? data?.clientSecret ?? null;
+      const customerId = data?.customerId ?? null;
+      const ephemeralKeySecret = data?.ephemeralKeySecret ?? null;
+
+      if (error || !clientSecret || !data?.purchaseId) {
         const message = data?.error ?? error?.message ?? 'Could not start profile appearance checkout.';
         setState({ status: 'error', purchaseId: null, amountCents: null, error: message });
         return { ok: false as const, error: message };
@@ -69,8 +73,10 @@ export function useProfileAppearanceCheckout() {
 
       const item = getProfileAppearanceCatalogItem(itemType, itemId);
       const { error: initErr } = await initPaymentSheet({
-        paymentIntentClientSecret: data.clientSecret,
         merchantDisplayName: 'FPV Enthusiast Profile Studio',
+        paymentIntentClientSecret: clientSecret,
+        customerId: customerId ?? undefined,
+        customerEphemeralKeySecret: customerId && ephemeralKeySecret ? ephemeralKeySecret : undefined,
         returnURL: Linking.createURL('stripe-redirect'),
         billingDetailsCollectionConfiguration: {
           name: 'never',
