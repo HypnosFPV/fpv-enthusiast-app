@@ -4,6 +4,7 @@
 import React, {
   useState, useCallback, useEffect, useRef, useMemo,
 } from 'react';
+import { useRouter } from 'expo-router';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   Modal, TextInput, ScrollView, ActivityIndicator, Alert,
@@ -332,6 +333,7 @@ function EntryVideoPlayer({ uri, onClose }: { uri: string; onClose: () => void }
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ChallengesScreen() {
   const { user } = useAuth();
+  const router = useRouter();
 
   // ── Props award hook ─────────────────────────────────────────────────────────
   const propsToast = usePropsToast();
@@ -1332,6 +1334,10 @@ export default function ChallengesScreen() {
             <Ionicons name="chevron-down" size={11} color={C.muted} />
           </TouchableOpacity>
         </View>
+        <TouchableOpacity style={styles.passButton} onPress={() => router.push('/season')}>
+          <Ionicons name="sparkles-outline" size={15} color={C.orange} />
+          <Text style={styles.passButtonText}>Season Pass</Text>
+        </TouchableOpacity>
       </View>
 
       {/* ── Top Screen Tab Bar ── */}
@@ -2188,6 +2194,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.border,
   },
   seasonPillText: { color: C.cyan, fontSize: 11, fontWeight: '600' },
+  passButton: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: C.card, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8,
+    borderWidth: 1, borderColor: C.orange + '55', marginTop: 2,
+  },
+  passButtonText: { color: C.text, fontSize: 12, fontWeight: '800' },
 
   // Screen tabs
   tabRow: { flexDirection: 'row', backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.border },

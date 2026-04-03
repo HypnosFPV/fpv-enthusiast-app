@@ -243,6 +243,70 @@ async function handleProfileBadgePaymentStatus(
   await awardPurchasePropsBonus(supabase, ownerUserId, amountCents, 'profile_badge_purchase_bonus', pi.id);
 }
 
+async function handleSeasonPassPaymentStatus(
+  supabase: any,
+  pi: Stripe.PaymentIntent,
+  status: 'paid' | 'cancelled',
+) {
+  const now = new Date().toISOString();
+
+  let ownerUserId = pi.metadata?.owner_user_id ?? pi.metadata?.user_id ?? null;
+  let seasonId = pi.metadata?.season_id ?? null;
+
+  const updatePayload: Record<string, unknown> = {
+    status,
+    updated_at: now,
+  };
+
+  if (status === 'paid') {
+    updatePayload.purchased_at = now;
+  }
+
+  const { data: updatedPurchase, error: updateErr } = await supabase
+    .from('user_season_pass_purchases')
+    .update(updatePayload)
+    .eq('stripe_payment_intent', pi.id)
+    .select('user_id, season_id')
+    .maybeSingle();
+
+  if (updateErr) {
+    console.error('Season pass purchase update failed', pi.id, updateErr);
+    throw updateErr;
+  }
+
+  if (updatedPurchase) {
+    ownerUserId = updatedPurchase.user_id ?? ownerUserId;
+    seasonId = updatedPurchase.season_id ?? seasonId;
+  } else if (ownerUserId && seasonId) {
+    const { error: fallbackErr } = await supabase
+      .from('user_season_pass_purchases')
+      .update(updatePayload)
+      .eq('user_id', ownerUserId)
+      .eq('season_id', seasonId)
+      .eq('status', 'pending_payment');
+
+    if (fallbackErr) {
+      console.error('Season pass fallback update failed', pi.id, fallbackErr);
+      throw fallbackErr;
+    }
+  }
+
+  if (status !== 'paid' || !ownerUserId || !seasonId) {
+    return;
+  }
+
+  const { error: unlockErr } = await supabase.rpc('set_user_season_pass', {
+    p_season_id: seasonId,
+    p_premium_unlocked: true,
+    p_user_id: ownerUserId,
+  });
+
+  if (unlockErr) {
+    console.error('Season pass unlock failed', { ownerUserId, seasonId, unlockErr });
+    throw unlockErr;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS });
@@ -431,6 +495,11 @@ serve(async (req) => {
       return json({ received: true });
     }
 
+    if (paymentKind === 'season_pass') {
+      await handleSeasonPassPaymentStatus(supabase, pi, 'paid');
+      return json({ received: true });
+    }
+
     const { data: order, error: fetchErr } = await supabase
       .from('marketplace_orders')
       .select('id, listing_id, seller_id, buyer_id, amount_cents')
@@ -500,6 +569,11 @@ serve(async (req) => {
 
     if (paymentKind === 'profile_badge') {
       await handleProfileBadgePaymentStatus(supabase, pi, 'cancelled');
+      return json({ received: true });
+    }
+
+    if (paymentKind === 'season_pass') {
+      await handleSeasonPassPaymentStatus(supabase, pi, 'cancelled');
       return json({ received: true });
     }
 

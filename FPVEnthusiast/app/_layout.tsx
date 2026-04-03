@@ -32,6 +32,7 @@ function AppContent() {
         <Stack.Screen name="settings"        options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="chat/[roomId]"   options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="orders"             options={{ headerShown: false, animation: 'slide_from_right' }} />
+        <Stack.Screen name="season"          options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="stripe-redirect" options={{ headerShown: false, animation: 'none' }} />
       </Stack>
 
