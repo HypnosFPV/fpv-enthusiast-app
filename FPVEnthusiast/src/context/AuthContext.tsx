@@ -6,6 +6,7 @@ import React, {
   useState,
   ReactNode,
 } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
 
@@ -30,6 +31,37 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {},
 });
 
+function getProjectRefFromUrl() {
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+  const match = url.match(/^https:\/\/([^.]+)\.supabase\.co/i);
+  return match?.[1] ?? null;
+}
+
+async function clearSupabaseAuthStorage() {
+  const projectRef = getProjectRefFromUrl();
+  const keys = await AsyncStorage.getAllKeys();
+  const authKeys = keys.filter((key) => {
+    const normalized = key.toLowerCase();
+    const matchesAuthKey = normalized.includes('auth-token') || normalized.includes('supabase.auth.token');
+    const matchesProject = projectRef ? normalized.includes(projectRef.toLowerCase()) : true;
+    return matchesAuthKey && matchesProject;
+  });
+
+  if (authKeys.length > 0) {
+    await AsyncStorage.multiRemove(authKeys);
+    console.log('[Auth] Cleared cached Supabase auth keys:', authKeys);
+  }
+}
+
+async function hardResetInvalidSession() {
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch {
+    // ignore local signout failures during cleanup
+  }
+  await clearSupabaseAuthStorage();
+}
+
 async function resolveValidUser(session: Session | null): Promise<User | null> {
   if (!session?.access_token) {
     return null;
@@ -42,13 +74,15 @@ async function resolveValidUser(session: Session | null): Promise<User | null> {
 
   const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
   if (refreshError || !refreshData.session?.access_token) {
-    await supabase.auth.signOut();
+    console.log('[Auth] Refresh failed, resetting invalid session:', refreshError?.message ?? 'unknown');
+    await hardResetInvalidSession();
     return null;
   }
 
   const { data: refreshedUserData, error: refreshedUserError } = await supabase.auth.getUser();
   if (refreshedUserError || !refreshedUserData.user) {
-    await supabase.auth.signOut();
+    console.log('[Auth] Refreshed session still invalid, resetting:', refreshedUserError?.message ?? 'unknown');
+    await hardResetInvalidSession();
     return null;
   }
 
@@ -100,11 +134,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: string,
     password: string,
   ): Promise<AuthResponse> => {
+    await hardResetInvalidSession();
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    return { data, error };
+
+    if (error) {
+      return { data, error };
+    }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) {
+      await hardResetInvalidSession();
+      return {
+        data: null,
+        error: new Error(userError?.message ?? 'Login succeeded but the auth session is invalid. Please try again.'),
+      };
+    }
+
+    setUser(userData.user);
+    return { data, error: null };
   };
 
   const signUp = async (
@@ -119,7 +170,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async (): Promise<void> => {
-    await supabase.auth.signOut();
+    await hardResetInvalidSession();
+    setUser(null);
   };
 
   return (
