@@ -9,53 +9,91 @@ import React, {
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 interface AuthResponse {
   data: { user: User | null; session: Session | null } | null;
   error: Error | null;
 }
 
 interface AuthContextType {
-  user:    User | null;
+  user: User | null;
   loading: boolean;
-  signIn:  (email: string, password: string) => Promise<AuthResponse>;
-  signUp:  (email: string, password: string) => Promise<AuthResponse>;
+  signIn: (email: string, password: string) => Promise<AuthResponse>;
+  signUp: (email: string, password: string) => Promise<AuthResponse>;
   signOut: () => Promise<void>;
 }
 
-// ─── Context ──────────────────────────────────────────────────────────────────
-
 const AuthContext = createContext<AuthContextType>({
-  user:    null,
+  user: null,
   loading: true,
-  signIn:  async () => ({ data: null, error: null }),
-  signUp:  async () => ({ data: null, error: null }),
+  signIn: async () => ({ data: null, error: null }),
+  signUp: async () => ({ data: null, error: null }),
   signOut: async () => {},
 });
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
+async function resolveValidUser(session: Session | null): Promise<User | null> {
+  if (!session?.access_token) {
+    return null;
+  }
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (!userError && userData.user) {
+    return userData.user;
+  }
+
+  const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+  if (refreshError || !refreshData.session?.access_token) {
+    await supabase.auth.signOut();
+    return null;
+  }
+
+  const { data: refreshedUserData, error: refreshedUserError } = await supabase.auth.getUser();
+  if (refreshedUserError || !refreshedUserData.user) {
+    await supabase.auth.signOut();
+    return null;
+  }
+
+  return refreshedUserData.user;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user,    setUser]    = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check existing session on launch
+    let active = true;
+
+    const syncAuthState = async (session: Session | null) => {
+      try {
+        const nextUser = await resolveValidUser(session);
+        if (!active) return;
+        setUser(nextUser);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
+      void syncAuthState(session);
     });
 
-    // Watch for login / logout changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      void syncAuthState(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (
@@ -90,7 +128,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   );
 }
-
-// ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export const useAuth = (): AuthContextType => useContext(AuthContext);

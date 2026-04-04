@@ -15,52 +15,74 @@ function json(body: unknown, status = 200) {
   });
 }
 
+function log(stage: string, payload: Record<string, unknown> = {}) {
+  console.log(JSON.stringify({ fn: 'create-season-pass-payment-intent', stage, ...payload }));
+}
+
 serve(async (req) => {
+  const requestId = crypto.randomUUID();
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS });
   }
 
   if (req.method !== 'POST') {
-    return json({ error: 'Method not allowed' }, 405);
+    log('method_not_allowed', { requestId, method: req.method });
+    return json({ error: 'Method not allowed', code: 'METHOD_NOT_ALLOWED', requestId }, 405);
   }
 
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return json({ error: 'Unauthorized' }, 401);
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') ?? '';
     const stripePublishableKey = Deno.env.get('STRIPE_PUBLISHABLE_KEY') ?? '';
 
-    if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
-      return json({ error: 'Supabase environment variables are missing.' }, 500);
-    }
-    if (!stripeSecretKey) {
-      return json({ error: 'Stripe secret key is not configured.' }, 500);
-    }
-    if (!stripePublishableKey) {
-      return json({ error: 'Stripe publishable key is not configured.' }, 500);
+    log('request_start', {
+      requestId,
+      hasAuthHeader: !!authHeader,
+      hasToken: !!token,
+      hasSupabaseUrl: !!supabaseUrl,
+      hasServiceRoleKey: !!serviceRoleKey,
+      hasStripeSecretKey: !!stripeSecretKey,
+      hasStripePublishableKey: !!stripePublishableKey,
+    });
+
+    if (!token) {
+      return json({ error: 'Unauthorized: missing bearer token.', code: 'UNAUTHORIZED_NO_TOKEN', requestId }, 401);
     }
 
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: authHeader,
-        },
-      },
+    if (!supabaseUrl || !serviceRoleKey) {
+      return json({ error: 'Supabase environment variables are missing.', code: 'MISSING_SUPABASE_ENV', requestId }, 500);
+    }
+    if (!stripeSecretKey) {
+      return json({ error: 'Stripe secret key is not configured.', code: 'MISSING_STRIPE_SECRET', requestId }, 500);
+    }
+    if (!stripePublishableKey) {
+      return json({ error: 'Stripe publishable key is not configured.', code: 'MISSING_STRIPE_PUBLISHABLE', requestId }, 500);
+    }
+
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
     });
-    const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
     const {
       data: { user },
       error: authErr,
-    } = await userClient.auth.getUser();
+    } = await adminClient.auth.getUser(token);
 
     if (authErr || !user) {
-      return json({ error: authErr?.message ?? 'Unauthorized' }, 401);
+      log('auth_get_user_failed', {
+        requestId,
+        authError: authErr?.message ?? null,
+        tokenPreview: token ? `${token.slice(0, 12)}...` : null,
+      });
+      return json({ error: authErr?.message ?? 'Unauthorized', code: 'AUTH_GET_USER_FAILED', requestId }, 401);
     }
+
+    log('auth_ok', { requestId, userId: user.id, hasEmail: !!user.email });
 
     const body = await req.json().catch(() => null);
     const requestedSeasonId = typeof body?.seasonId === 'string' ? body.seasonId.trim() : '';
@@ -91,15 +113,20 @@ serve(async (req) => {
     }
 
     if (seasonErr || !season) {
-      return json({ error: seasonErr?.message ?? 'No season is available for purchase.' }, 404);
+      log('season_lookup_failed', {
+        requestId,
+        requestedSeasonId: requestedSeasonId || null,
+        seasonError: seasonErr?.message ?? null,
+      });
+      return json({ error: seasonErr?.message ?? 'No season is available for purchase.', code: 'SEASON_LOOKUP_FAILED', requestId }, 404);
     }
 
     if (!season.pass_enabled) {
-      return json({ error: 'Season pass is not enabled for this season.' }, 400);
+      return json({ error: 'Season pass is not enabled for this season.', code: 'SEASON_PASS_DISABLED', requestId }, 400);
     }
 
     if (!['active', 'scheduled'].includes(season.status)) {
-      return json({ error: 'This season is not available for pass purchases.' }, 400);
+      return json({ error: 'This season is not available for pass purchases.', code: 'SEASON_NOT_PURCHASABLE', requestId }, 400);
     }
 
     const { data: existingPaid, error: existingPaidError } = await adminClient
@@ -111,11 +138,11 @@ serve(async (req) => {
       .maybeSingle();
 
     if (existingPaidError) {
-      return json({ error: existingPaidError.message }, 500);
+      return json({ error: existingPaidError.message, code: 'EXISTING_PURCHASE_LOOKUP_FAILED', requestId }, 500);
     }
 
     if (existingPaid?.id) {
-      return json({ error: 'You already own this season pass.' }, 409);
+      return json({ error: 'You already own this season pass.', code: 'ALREADY_OWNED', requestId }, 409);
     }
 
     const { data: purchase, error: insertErr } = await adminClient
@@ -137,7 +164,7 @@ serve(async (req) => {
       .single();
 
     if (insertErr || !purchase?.id) {
-      return json({ error: insertErr?.message ?? 'Could not create season pass purchase.' }, 500);
+      return json({ error: insertErr?.message ?? 'Could not create season pass purchase.', code: 'PURCHASE_UPSERT_FAILED', requestId }, 500);
     }
 
     const stripe = new Stripe(stripeSecretKey, {
@@ -145,34 +172,52 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    const customer = await stripe.customers.create({
-      email: user.email ?? undefined,
-      metadata: {
-        supabase_user_id: user.id,
-      },
-    });
+    let customer;
+    try {
+      customer = await stripe.customers.create({
+        email: user.email ?? undefined,
+        metadata: {
+          supabase_user_id: user.id,
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return json({ error: `Stripe customer creation failed: ${message}`, code: 'STRIPE_CUSTOMER_CREATE_FAILED', requestId }, 500);
+    }
 
-    const ephemeralKey = await stripe.ephemeralKeys.create(
-      { customer: customer.id },
-      { apiVersion: '2024-04-10' },
-    );
+    let ephemeralKey;
+    try {
+      ephemeralKey = await stripe.ephemeralKeys.create(
+        { customer: customer.id },
+        { apiVersion: '2024-04-10' },
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return json({ error: `Stripe ephemeral key creation failed: ${message}`, code: 'STRIPE_EPHEMERAL_KEY_FAILED', requestId }, 500);
+    }
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: season.pass_price_cents,
-      currency: 'usd',
-      customer: customer.id,
-      automatic_payment_methods: { enabled: true },
-      receipt_email: user.email ?? undefined,
-      metadata: {
-        kind: 'season_pass',
-        owner_user_id: user.id,
-        season_id: season.id,
-        season_number: String(season.number),
-        season_slug: season.slug ?? '',
-        season_pass_purchase_id: purchase.id,
-      },
-      description: `FPV Enthusiast ${season.name} Season Pass`,
-    });
+    let paymentIntent;
+    try {
+      paymentIntent = await stripe.paymentIntents.create({
+        amount: season.pass_price_cents,
+        currency: 'usd',
+        customer: customer.id,
+        automatic_payment_methods: { enabled: true },
+        receipt_email: user.email ?? undefined,
+        metadata: {
+          kind: 'season_pass',
+          owner_user_id: user.id,
+          season_id: season.id,
+          season_number: String(season.number),
+          season_slug: season.slug ?? '',
+          season_pass_purchase_id: purchase.id,
+        },
+        description: `FPV Enthusiast ${season.name} Season Pass`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return json({ error: `Stripe payment intent creation failed: ${message}`, code: 'STRIPE_PAYMENT_INTENT_FAILED', requestId }, 500);
+    }
 
     const { error: updateErr } = await adminClient
       .from('user_season_pass_purchases')
@@ -183,8 +228,16 @@ serve(async (req) => {
       .eq('id', purchase.id);
 
     if (updateErr) {
-      return json({ error: updateErr.message ?? 'Could not save payment intent.' }, 500);
+      return json({ error: updateErr.message ?? 'Could not save payment intent.', code: 'PURCHASE_UPDATE_FAILED', requestId }, 500);
     }
+
+    log('success', {
+      requestId,
+      userId: user.id,
+      seasonId: season.id,
+      purchaseId: purchase.id,
+      paymentIntentId: paymentIntent.id,
+    });
 
     return json({
       clientSecret: paymentIntent.client_secret,
@@ -195,10 +248,11 @@ serve(async (req) => {
       publishableKey: stripePublishableKey,
       amountCents: season.pass_price_cents,
       season,
+      requestId,
     });
   } catch (err) {
-    console.error('create-season-pass-payment-intent error', err);
     const message = err instanceof Error ? err.message : String(err);
-    return json({ error: message }, 500);
+    console.error(JSON.stringify({ fn: 'create-season-pass-payment-intent', stage: 'unhandled_exception', requestId, error: message }));
+    return json({ error: message, code: 'UNHANDLED_EXCEPTION', requestId }, 500);
   }
 });
