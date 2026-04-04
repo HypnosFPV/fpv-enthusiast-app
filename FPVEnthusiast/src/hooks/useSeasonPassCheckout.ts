@@ -9,6 +9,7 @@ import {
   FunctionsFetchError,
   FunctionsHttpError,
   FunctionsRelayError,
+  type Session,
 } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
 
@@ -135,6 +136,50 @@ function buildVisibleErrorMessage(parsed: ParsedCheckoutError) {
   return parts.join('\n');
 }
 
+async function getValidSessionForFunctions(): Promise<Session> {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    throw new Error(`Could not read auth session: ${sessionError.message}`);
+  }
+
+  let session = sessionData.session;
+
+  if (!session?.access_token) {
+    throw new Error('You are not signed in. Please sign in again.');
+  }
+
+  const expiresSoon = !!session.expires_at && session.expires_at * 1000 <= Date.now() + 60_000;
+
+  if (expiresSoon) {
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+
+    if (refreshError || !refreshData.session?.access_token) {
+      throw new Error('Your session expired. Please sign in again.');
+    }
+
+    session = refreshData.session;
+  }
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !userData.user) {
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+
+    if (refreshError || !refreshData.session?.access_token) {
+      throw new Error('Your session is invalid. Please sign out and sign back in.');
+    }
+
+    session = refreshData.session;
+  }
+
+  if (!session?.access_token) {
+    throw new Error('No valid auth token is available. Please sign in again.');
+  }
+
+  return session;
+}
+
 export function useSeasonPassCheckout() {
   const [state, setState] = useState<SeasonPassCheckoutState>(INITIAL);
   const readyRef = useRef<ReadyRef>({
@@ -153,10 +198,15 @@ export function useSeasonPassCheckout() {
     setState({ ...INITIAL, status: 'loading', seasonId: seasonId ?? null });
 
     try {
+      const session = await getValidSessionForFunctions();
+
       const { data, error } = await supabase.functions.invoke(
         'create-season-pass-payment-intent',
         {
           body: seasonId ? { seasonId } : {},
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
         }
       );
 
