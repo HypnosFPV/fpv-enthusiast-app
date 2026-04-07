@@ -1321,7 +1321,7 @@ export default function ChallengesScreen() {
 
       {/* ── Header ── */}
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerInfo}>
           <Animated.Text style={[styles.headerTitle, { color: headerColor }]}>
             FPV Challenges
           </Animated.Text>
@@ -1334,10 +1334,19 @@ export default function ChallengesScreen() {
             <Ionicons name="chevron-down" size={11} color={C.muted} />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.passButton} onPress={() => router.push('/season')}>
-          <Ionicons name="sparkles-outline" size={15} color={C.orange} />
-          <Text style={styles.passButtonText}>Season Pass</Text>
-        </TouchableOpacity>
+        <View style={styles.passButtonWrap}>
+          <LinearGradient
+            colors={['rgba(255, 69, 0, 0.26)', 'rgba(159, 122, 234, 0.2)']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={styles.passButtonAura}
+          >
+            <TouchableOpacity style={styles.passButton} onPress={() => router.push('/season')} activeOpacity={0.9}>
+              <Ionicons name="sparkles" size={18} color="#ffd6c7" />
+              <Text style={styles.passButtonText}>Season Pass</Text>
+            </TouchableOpacity>
+          </LinearGradient>
+        </View>
       </View>
 
       {/* ── Top Screen Tab Bar ── */}
@@ -2183,9 +2192,14 @@ const styles = StyleSheet.create({
   centered:  { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 },
 
   header: {
-    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 54, paddingBottom: 10,
     backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.border,
+    gap: 12,
+  },
+  headerInfo: {
+    flex: 1,
+    minWidth: 0,
   },
   headerTitle: { fontSize: 22, fontWeight: '900', letterSpacing: 1.2 },
   seasonPill: {
@@ -2194,12 +2208,28 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.border,
   },
   seasonPillText: { color: C.cyan, fontSize: 11, fontWeight: '600' },
-  passButton: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: C.card, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8,
-    borderWidth: 1, borderColor: C.orange + '55', marginTop: 2,
+  passButtonWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 60,
   },
-  passButtonText: { color: C.text, fontSize: 12, fontWeight: '800' },
+  passButtonAura: {
+    borderRadius: 22,
+    padding: 2,
+    shadowColor: C.orange,
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 12,
+  },
+  passButton: {
+    minWidth: 156,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#171223', borderRadius: 20, paddingHorizontal: 18, paddingVertical: 12,
+    borderWidth: 1, borderColor: C.orange + '88',
+  },
+  passButtonText: { color: '#f7f1ff', fontSize: 14, fontWeight: '900', letterSpacing: 0.3 },
 
   // Screen tabs
   tabRow: { flexDirection: 'row', backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.border },
