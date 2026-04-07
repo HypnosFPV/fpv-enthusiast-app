@@ -172,7 +172,7 @@ async function getValidSessionForFunctions(): Promise<Session> {
 
   const expiresSoon = !!session.expires_at && session.expires_at * 1000 <= Date.now() + 60_000;
 
-  if (expiresSoon) {
+  if (expiresSoon || session.refresh_token) {
     const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
 
     if (refreshError || !refreshData.session?.access_token) {
@@ -194,11 +194,17 @@ async function getValidSessionForFunctions(): Promise<Session> {
     session = refreshData.session;
   }
 
-  if (!session?.access_token) {
+  const { data: latestSessionData, error: latestSessionError } = await supabase.auth.getSession();
+
+  if (latestSessionError) {
+    throw new Error(`Could not read refreshed auth session: ${latestSessionError.message}`);
+  }
+
+  if (!latestSessionData.session?.access_token) {
     throw new Error('No valid auth token is available. Please sign in again.');
   }
 
-  return session;
+  return latestSessionData.session;
 }
 
 async function callCreateSeasonPassPaymentIntent(
