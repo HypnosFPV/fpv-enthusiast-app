@@ -229,7 +229,11 @@ async function callCreateSeasonPassPaymentIntent(
   }
 
   if (!response.ok) {
-    const message = body?.error ?? body?.message ?? rawText || `Checkout request failed with status ${response.status}.`;
+    const message =
+      body?.error ??
+      body?.message ??
+      rawText ??
+      `Checkout request failed with status ${response.status}.`;
     const error = new Error(message) as Error & { code?: string | null; requestId?: string | null };
     error.code = body?.code ?? null;
     error.requestId = body?.requestId ?? null;
