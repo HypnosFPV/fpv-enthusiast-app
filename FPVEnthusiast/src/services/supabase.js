@@ -23,19 +23,6 @@ function decodeJwtPayload(token) {
 
 const anonKeyPayload = supabaseAnonKey ? decodeJwtPayload(supabaseAnonKey) : null;
 const anonKeyProjectRef = anonKeyPayload?.ref ?? null;
-const anonKeyIssuer = anonKeyPayload?.iss ?? null;
-
-// ── Debug: prints in VS Code terminal when app loads ──────────────────────────
-console.log('=== SUPABASE CONFIG CHECK ===');
-console.log('URL:', supabaseUrl ?? '❌ UNDEFINED');
-console.log('KEY prefix:', supabaseAnonKey ? supabaseAnonKey.substring(0, 12) + '...' : '❌ UNDEFINED');
-console.log('KEY length:', supabaseAnonKey?.length ?? 0, 'chars');
-console.log('Project ref:', supabaseProjectRef ?? '❌ UNDEFINED');
-console.log('Anon key ref:', anonKeyProjectRef ?? '❌ UNDEFINED');
-console.log('Anon key issuer:', anonKeyIssuer ?? '❌ UNDEFINED');
-console.log('Storage key:', supabaseStorageKey);
-console.log('==============================');
-
 // ── Guard: crash early with a clear message if values are missing ─────────────
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(

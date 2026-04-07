@@ -34,6 +34,37 @@ const { width: W } = Dimensions.get('window');
 const CELL = (W - 4) / 3;
 const TAB_BAR_H = 46;
 
+const PROPS_HISTORY_LABEL_MAP: Record<string, string> = {
+  first_post: '✍️ First post',
+  easter_egg: '🥚 Easter egg found',
+  first_challenge_entry: '🏁 First challenge entry',
+  profile_complete: '✅ Profile complete',
+  follower_10: '👥 10 followers milestone',
+  follower_50: '👥 50 followers milestone',
+  follower_100: '👥 100 followers milestone',
+  follower_milestone_10: '👥 10 followers milestone',
+  follower_milestone_50: '👥 50 followers milestone',
+  follower_milestone_100: '👥 100 followers milestone',
+  post_votes_10: '👍 10 votes on a post',
+  post_votes_50: '👍 50 votes on a post',
+  post_votes_100: '👍 100 votes on a post',
+  post_vote_milestone_10: '👍 10 votes on a post',
+  post_vote_milestone_50: '👍 50 votes on a post',
+  post_vote_milestone_100: '👍 100 votes on a post',
+  challenge_winner_1: '🥇 Challenge 1st place',
+  challenge_winner_2: '🥈 Challenge 2nd place',
+  challenge_winner_3: '🥉 Challenge 3rd place',
+  featured_boost: '⚡ Featured listing boost',
+  featured_sold_bonus: '🏷️ Featured sale bonus',
+  profile_appearance_purchase_bonus: '🎨 Profile appearance purchase bonus',
+  profile_badge_purchase_bonus: '🏅 Profile badge purchase bonus',
+};
+
+function formatPropsHistoryLabel(item: { reason: string; label?: string | null }) {
+  if (item.label) return item.label;
+  return PROPS_HISTORY_LABEL_MAP[item.reason] ?? item.reason.replace(/_/g, ' ');
+}
+
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
 interface Post {
@@ -368,7 +399,7 @@ export default function ProfileScreen() {
   const [showStripeConnect, setShowStripeConnect] = useState(false);
   const [followModal,     setFollowModal]     = useState<'followers' | 'following' | null>(null);
   const [showPropsLog,    setShowPropsLog]    = useState(false);
-  const [propsLog,        setPropsLog]        = useState<{ id: string; amount: number; reason: string; created_at: string; isSpend?: boolean }[]>([]);
+  const [propsLog,        setPropsLog]        = useState<{ id: string; amount: number; reason: string; created_at: string; isSpend?: boolean; label?: string; reference_id?: string }[]>([]);
   const [propsLogLoading, setPropsLogLoading] = useState(false);
 
   // ── Stats card animations ──────────────────────────────────────────────────
@@ -503,7 +534,7 @@ export default function ProfileScreen() {
       // 1. props_log — profile_complete, easter_egg, first_challenge_entry
       const { data: logData } = await supabase
         .from('props_log')
-        .select('id, amount, reason, created_at')
+        .select('id, amount, reason, created_at, reference_id')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(40);
@@ -511,10 +542,35 @@ export default function ProfileScreen() {
       // 2. props_events — challenge wins, follower milestones, first_post (via award_props)
       const { data: eventsData } = await supabase
         .from('props_events')
-        .select('id, props_amount, event_type, created_at')
+        .select('id, props_amount, event_type, created_at, reference_id')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(40);
+
+      const seasonRewardTrackIds = Array.from(new Set(
+        (eventsData ?? [])
+          .filter((r: any) => r.event_type === 'season_track_reward')
+          .map((r: any) => String(r.reference_id ?? '').split(':')[0])
+          .filter(Boolean),
+      ));
+
+      let seasonRewardLabelByTrackId: Record<string, string> = {};
+      if (seasonRewardTrackIds.length > 0) {
+        const { data: seasonRewardDetails } = await supabase
+          .from('season_track_reward_details')
+          .select('id, level_number, track_type, display_name')
+          .in('id', seasonRewardTrackIds);
+
+        seasonRewardLabelByTrackId = Object.fromEntries(
+          (seasonRewardDetails ?? []).map((row: any) => {
+            const parts = ['🎁 Season reward'];
+            parts.push(`L${row.level_number}`);
+            if (row.track_type === 'premium') parts.push('Premium');
+            if (row.display_name) parts.push(row.display_name);
+            return [row.id, parts.join(' • ')];
+          }),
+        );
+      }
 
       // 3. featured_purchases — spend events (props only)
       const { data: spendData } = await supabase
@@ -527,17 +583,25 @@ export default function ProfileScreen() {
 
       // Normalise to { id, amount, reason, created_at, isSpend? }
       const earned1 = (logData ?? []).map((r: any) => ({
-        id:         r.id,
-        amount:     r.amount,
-        reason:     r.reason,
-        created_at: r.created_at,
+        id:           r.id,
+        amount:       r.amount,
+        reason:       r.reason,
+        created_at:   r.created_at,
+        reference_id: r.reference_id,
       }));
-      const earned2 = (eventsData ?? []).map((r: any) => ({
-        id:         r.id,
-        amount:     r.props_amount,
-        reason:     r.event_type,
-        created_at: r.created_at,
-      }));
+      const earned2 = (eventsData ?? []).map((r: any) => {
+        const trackId = String(r.reference_id ?? '').split(':')[0];
+        return {
+          id:           r.id,
+          amount:       r.props_amount,
+          reason:       r.event_type,
+          created_at:   r.created_at,
+          reference_id: r.reference_id,
+          label:        r.event_type === 'season_track_reward'
+            ? (seasonRewardLabelByTrackId[trackId] ?? '🎁 Season reward')
+            : undefined,
+        };
+      });
       const spent = (spendData ?? []).map((r: any) => ({
         id:         r.id,
         amount:     -(r.props_spent ?? 0),
@@ -1648,23 +1712,7 @@ export default function ProfileScreen() {
                 keyExtractor={item => item.id}
                 contentContainerStyle={{ paddingBottom: 24 }}
                 renderItem={({ item }) => {
-                  const LABEL_MAP: Record<string,string> = {
-                    first_post:            '✍️ First post',
-                    easter_egg:            '🥚 Easter egg found',
-                    first_challenge_entry: '🏁 First challenge entry',
-                    profile_complete:      '✅ Profile complete',
-                    follower_10:           '👥 10 followers milestone',
-                    follower_50:           '👥 50 followers milestone',
-                    follower_100:          '👥 100 followers milestone',
-                    post_votes_10:         '👍 10 votes on a post',
-                    post_votes_50:         '👍 50 votes on a post',
-                    post_votes_100:        '👍 100 votes on a post',
-                    challenge_winner_1:    '🥇 Challenge 1st place',
-                    challenge_winner_2:    '🥈 Challenge 2nd place',
-                    challenge_winner_3:    '🥉 Challenge 3rd place',
-                    featured_boost:        '⚡ Featured listing boost',
-                  };
-                  const label = LABEL_MAP[item.reason] ?? item.reason.replace(/_/g,' ');
+                  const label = formatPropsHistoryLabel(item);
                   const date  = new Date(item.created_at).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
                   const isSpend = (item as any).isSpend === true || item.amount < 0;
                   return (
