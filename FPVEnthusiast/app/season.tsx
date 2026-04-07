@@ -96,8 +96,10 @@ export default function SeasonScreen() {
     claimedRewardIds,
     loading,
     claimingRewardId,
+    awardingXp,
     claimableCount,
     claimReward,
+    awardTestXp,
     refreshSeasonPass,
     waitForPremiumUnlock,
   } = useSeasonPass(user?.id ?? null);
@@ -128,6 +130,22 @@ export default function SeasonScreen() {
   };
 
   const purchaseBusy = checkoutState.status === 'loading' || checkoutState.status === 'processing';
+
+  const handleAwardXp = async (xpAmount: number) => {
+    const result = await awardTestXp(xpAmount);
+    if (!result.ok) {
+      Alert.alert('Could not add XP', result.error);
+      return;
+    }
+
+    const nextLevel = (result.data as any)?.level_current;
+    propsToast.show(
+      nextLevel != null
+        ? `+${xpAmount} XP added • now level ${nextLevel}`
+        : `+${xpAmount} XP added`,
+      { celebrate: xpAmount >= 100 },
+    );
+  };
 
   const handleBuySeasonPass = async () => {
     if (!season) return;
@@ -268,6 +286,33 @@ export default function SeasonScreen() {
                 <Text style={styles.purchaseButtonHint}>Claim premium rewards retroactively for every level you already earned.</Text>
               </View>
             </TouchableOpacity>
+          ) : null}
+
+          {__DEV__ ? (
+            <View style={styles.devToolsCard}>
+              <View style={styles.devToolsHeader}>
+                <Ionicons name="flask-outline" size={15} color="#ffd66b" />
+                <Text style={styles.devToolsTitle}>Dev XP Tools</Text>
+              </View>
+              <Text style={styles.devToolsSubtitle}>
+                Add test XP instantly so you can verify level-ups and reward claiming without grinding normal activity.
+              </Text>
+              <View style={styles.devXpRow}>
+                {[25, 100, 500].map((xp) => {
+                  const busy = awardingXp === xp;
+                  return (
+                    <TouchableOpacity
+                      key={xp}
+                      style={[styles.devXpButton, awardingXp !== null ? styles.devXpButtonDisabled : null]}
+                      onPress={() => handleAwardXp(xp)}
+                      disabled={awardingXp !== null}
+                    >
+                      <Text style={styles.devXpButtonText}>{busy ? 'Adding…' : `+${xp} XP`}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
           ) : null}
 
         </LinearGradient>
@@ -472,6 +517,54 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     flex: 1,
+  },
+  devToolsCard: {
+    marginTop: 2,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#715a24',
+    backgroundColor: '#221b0d',
+    gap: 10,
+  },
+  devToolsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  devToolsTitle: {
+    color: '#ffe6a3',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  devToolsSubtitle: {
+    color: '#d9c696',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  devXpRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  devXpButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#b58b31',
+    backgroundColor: '#3a2a0f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  devXpButtonDisabled: {
+    opacity: 0.7,
+  },
+  devXpButtonText: {
+    color: '#fff3ce',
+    fontSize: 13,
+    fontWeight: '800',
   },
   sectionHeader: {
     marginTop: 6,
