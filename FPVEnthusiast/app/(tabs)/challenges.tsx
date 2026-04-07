@@ -24,7 +24,7 @@ import {
   useChallenges,
   Challenge, ChallengeEntry, ChallengeSuggestion,
   LeaderboardEntry, LeaderboardScope, Season,
-  getChallengePhase, timeLeft, propsForPlace,
+  getChallengePhase, timeLeft,
 } from '../../src/hooks/useChallenges';
 import {
   useAdminModeration,
@@ -422,6 +422,7 @@ export default function ChallengesScreen() {
   const [rejectReason,       setRejectReason]       = useState('');
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectTarget,       setRejectTarget]       = useState<FlaggedEntry | null>(null);
+  const [advancingChallenge, setAdvancingChallenge] = useState(false);
 
   // ── Header animation ──────────────────────────────────────────────────────
   const headerAnim = useRef(new Animated.Value(0)).current;
@@ -522,6 +523,69 @@ export default function ChallengesScreen() {
     } else {
       Alert.alert('Error', 'Could not reject entry. Try again.');
     }
+  };
+
+  const handleAdminAdvanceChallenge = () => {
+    Alert.alert(
+      'Advance weekly challenge?',
+      'This will finalize the overdue weekly challenge, award winners, create the next challenge, and send results notifications.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Advance now',
+          style: 'default',
+          onPress: async () => {
+            setAdvancingChallenge(true);
+            try {
+              const { data, error } = await supabase.rpc('admin_advance_weekly_challenge');
+              if (error) throw error;
+
+              const result = (data ?? {}) as {
+                ok?: boolean;
+                message?: string;
+                closed_challenge_title?: string;
+                next_challenge_title?: string;
+                selection_source?: string;
+                results_notifications_sent?: number;
+              };
+
+              if (result.ok === false) {
+                Alert.alert('Nothing to advance', result.message ?? 'No weekly challenge is ready to finalize.');
+                return;
+              }
+
+              await loadChallenges(activeSeason?.id);
+              loadAllEntries();
+              loadFlaggedEntries();
+              setEntriesModalVisible(false);
+              setDetailChallenge(null);
+
+              const sourceLabel =
+                result.selection_source === 'suggestion' ? 'Top-voted suggestion' :
+                result.selection_source === 'pool' ? 'Preset challenge pool' :
+                'Default fallback';
+
+              Alert.alert(
+                '✅ Weekly challenge advanced',
+                [
+                  result.message,
+                  result.closed_challenge_title ? `Closed: ${result.closed_challenge_title}` : null,
+                  result.next_challenge_title ? `Next: ${result.next_challenge_title}` : null,
+                  `Source: ${sourceLabel}`,
+                  typeof result.results_notifications_sent === 'number'
+                    ? `Results notifications: ${result.results_notifications_sent}`
+                    : null,
+                ].filter(Boolean).join('\n')
+              );
+            } catch (err: any) {
+              Alert.alert('Advance failed', err?.message ?? 'Could not advance the weekly challenge.');
+            } finally {
+              setAdvancingChallenge(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handlePickVideo = async () => {
@@ -1198,7 +1262,7 @@ export default function ChallengesScreen() {
             <View style={[styles.winnerBadge,
               { backgroundColor: (PLACE_COLOURS[e.final_rank] ?? C.gold) + '22' }]}>
               <Text style={[styles.winnerText, { color: PLACE_COLOURS[e.final_rank] ?? C.gold }]}>
-                {PLACE_LABELS[e.final_rank]} · +{propsForPlace(e.final_rank)} Props
+                {PLACE_LABELS[e.final_rank]} · +{e.props_awarded ?? 0} Props
               </Text>
             </View>
           ) : null}
@@ -1925,6 +1989,21 @@ export default function ChallengesScreen() {
               </TouchableOpacity>
             </View>
 
+            <TouchableOpacity
+              style={[styles.adminAdvanceBtn, advancingChallenge && styles.adminAdvanceBtnDisabled]}
+              onPress={handleAdminAdvanceChallenge}
+              disabled={advancingChallenge}
+            >
+              {advancingChallenge ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="play-forward" size={14} color="#fff" />
+              )}
+              <Text style={styles.adminAdvanceBtnText}>
+                {advancingChallenge ? 'Advancing weekly challenge…' : 'Finalize overdue weekly challenge'}
+              </Text>
+            </TouchableOpacity>
+
             {/* Loading / empty state */}
             {(adminTab === 'queue' ? adminLoading : allAdminLoading) && (
               <ActivityIndicator size="small" color={C.cyan} style={{ marginVertical: 20 }} />
@@ -2601,6 +2680,19 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.cyan + '33', marginBottom: 12,
   },
   adminRefreshText: { color: C.cyan, fontSize: 12, fontWeight: '600' as const },
+  adminAdvanceBtn: {
+    flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const,
+    gap: 7,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: C.orange,
+    borderRadius: 10,
+    borderWidth: 1, borderColor: C.orange + '66',
+    marginBottom: 12,
+  },
+  adminAdvanceBtnDisabled: {
+    opacity: 0.65,
+  },
+  adminAdvanceBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' as const },
 
   adminEmpty: {
     alignItems: 'center' as const, paddingVertical: 40, gap: 10,
