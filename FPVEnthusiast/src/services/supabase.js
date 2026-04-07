@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const EXPECTED_SUPABASE_PROJECT_REF = 'iyjtdzcobdbzjonskpgi';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 const projectRefMatch = supabaseUrl?.match(/^https:\/\/([^.]+)\.supabase\.co/i);
@@ -20,10 +21,19 @@ console.log('==============================');
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
     '❌ Supabase credentials missing!\n' +
-    'Check your .env file has:\n' +
-    '  EXPO_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co\n' +
+    'Check your local Expo env has:\n' +
+    `  EXPO_PUBLIC_SUPABASE_URL=https://${EXPECTED_SUPABASE_PROJECT_REF}.supabase.co\n` +
     '  EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJ...\n' +
     'Then restart with: npx expo start --clear'
+  );
+}
+
+if (supabaseProjectRef !== EXPECTED_SUPABASE_PROJECT_REF) {
+  throw new Error(
+    '❌ Supabase project mismatch!\n' +
+    `Expected project ref: ${EXPECTED_SUPABASE_PROJECT_REF}\n` +
+    `Actual project ref: ${supabaseProjectRef ?? 'undefined'}\n` +
+    'Update EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY to the correct project, then restart with: npx expo start --clear'
   );
 }
 
