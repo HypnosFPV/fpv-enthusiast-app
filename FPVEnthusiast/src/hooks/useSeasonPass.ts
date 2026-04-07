@@ -44,7 +44,7 @@ export function useSeasonPass(userId?: string | null) {
   const [claims, setClaims] = useState<UserSeasonRewardClaim[]>([]);
   const [loading, setLoading] = useState(true);
   const [claimingRewardId, setClaimingRewardId] = useState<string | null>(null);
-  const [awardingXp, setAwardingXp] = useState<number | null>(null);
+  const [claimingAllRewards, setClaimingAllRewards] = useState(false);
 
   const loadSeasonPass = useCallback(async () => {
     setLoading(true);
@@ -116,6 +116,18 @@ export function useSeasonPass(userId?: string | null) {
     }, [loadSeasonPass]),
   );
 
+  const claimedRewardIds = useMemo(() => new Set(claims.map((claim) => claim.track_reward_id)), [claims]);
+  const freeRewards = useMemo(() => rewards.filter((item) => item.track_type === 'free'), [rewards]);
+  const premiumRewards = useMemo(() => rewards.filter((item) => item.track_type === 'premium'), [rewards]);
+  const claimableCount = useMemo(() => {
+    return rewards.filter((item) => {
+      if (claimedRewardIds.has(item.id)) return false;
+      if ((progress.level_current ?? 0) < item.level_number) return false;
+      if (item.track_type === 'premium' && !progress.premium_unlocked) return false;
+      return true;
+    }).length;
+  }, [claimedRewardIds, progress.level_current, progress.premium_unlocked, rewards]);
+
   const claimReward = useCallback(async (trackRewardId: string) => {
     if (!userId) return { ok: false as const, error: 'Sign in required.' };
     setClaimingRewardId(trackRewardId);
@@ -131,36 +143,55 @@ export function useSeasonPass(userId?: string | null) {
     }
   }, [loadSeasonPass, userId]);
 
-  const awardTestXp = useCallback(async (xpAmount: number) => {
+  const claimAllRewards = useCallback(async () => {
     if (!userId) return { ok: false as const, error: 'Sign in required.' };
-    if (!season) return { ok: false as const, error: 'No active season available.' };
-    if (!Number.isFinite(xpAmount) || xpAmount <= 0) {
-      return { ok: false as const, error: 'XP amount must be positive.' };
+
+    const eligibleRewards = rewards.filter((item) => {
+      if (claimedRewardIds.has(item.id)) return false;
+      if ((progress.level_current ?? 0) < item.level_number) return false;
+      if (item.track_type === 'premium' && !progress.premium_unlocked) return false;
+      return true;
+    });
+
+    if (eligibleRewards.length === 0) {
+      return { ok: true as const, claimedCount: 0, claimedRewards: [] as SeasonRewardTrackItem[] };
     }
 
-    setAwardingXp(xpAmount);
+    setClaimingAllRewards(true);
     try {
-      const referenceId = `dev-xp-${xpAmount}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const { data, error } = await supabase.rpc('award_season_xp', {
-        p_user_id: userId,
-        p_event_type: 'manual_test',
-        p_xp_amount: xpAmount,
-        p_reference_id: referenceId,
-        p_reference_subtype: 'season_debug',
-        p_metadata: {
-          source: 'season_dev_buttons',
-          xp_amount: xpAmount,
-        },
-        p_season_id: season.id,
-      });
+      const claimedRewards: SeasonRewardTrackItem[] = [];
 
-      if (error) return { ok: false as const, error: error.message };
+      for (const item of eligibleRewards) {
+        const { data, error } = await supabase.rpc('claim_season_reward', {
+          p_track_reward_id: item.id,
+        });
+
+        if (error) {
+          await loadSeasonPass();
+          return {
+            ok: false as const,
+            error: claimedRewards.length > 0
+              ? `Claimed ${claimedRewards.length} reward${claimedRewards.length === 1 ? '' : 's'} before stopping: ${error.message}`
+              : error.message,
+            claimedCount: claimedRewards.length,
+            claimedRewards,
+            data,
+          };
+        }
+
+        claimedRewards.push(item);
+      }
+
       await loadSeasonPass();
-      return { ok: true as const, data };
+      return {
+        ok: true as const,
+        claimedCount: claimedRewards.length,
+        claimedRewards,
+      };
     } finally {
-      setAwardingXp(null);
+      setClaimingAllRewards(false);
     }
-  }, [loadSeasonPass, season, userId]);
+  }, [claimedRewardIds, loadSeasonPass, progress.level_current, progress.premium_unlocked, rewards, userId]);
 
   const waitForPremiumUnlock = useCallback(async (maxAttempts = 10, delayMs = 1500) => {
     if (!userId || !season) return false;
@@ -185,18 +216,6 @@ export function useSeasonPass(userId?: string | null) {
     return false;
   }, [loadSeasonPass, season, userId]);
 
-  const claimedRewardIds = useMemo(() => new Set(claims.map((claim) => claim.track_reward_id)), [claims]);
-  const freeRewards = useMemo(() => rewards.filter((item) => item.track_type === 'free'), [rewards]);
-  const premiumRewards = useMemo(() => rewards.filter((item) => item.track_type === 'premium'), [rewards]);
-  const claimableCount = useMemo(() => {
-    return rewards.filter((item) => {
-      if (claimedRewardIds.has(item.id)) return false;
-      if ((progress.level_current ?? 0) < item.level_number) return false;
-      if (item.track_type === 'premium' && !progress.premium_unlocked) return false;
-      return true;
-    }).length;
-  }, [claimedRewardIds, progress.level_current, progress.premium_unlocked, rewards]);
-
   return {
     season,
     progress,
@@ -207,11 +226,11 @@ export function useSeasonPass(userId?: string | null) {
     claimedRewardIds,
     loading,
     claimingRewardId,
-    awardingXp,
+    claimingAllRewards,
     claimableCount,
     refreshSeasonPass: loadSeasonPass,
     claimReward,
-    awardTestXp,
+    claimAllRewards,
     waitForPremiumUnlock,
   };
 }
