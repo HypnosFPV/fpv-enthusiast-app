@@ -35,16 +35,6 @@ export interface SeasonPassCheckoutState {
   requestId?: string | null;
 }
 
-const INITIAL: SeasonPassCheckoutState = {
-  status: 'idle',
-  purchaseId: null,
-  amountCents: null,
-  seasonId: null,
-  error: null,
-  errorCode: null,
-  requestId: null,
-};
-
 interface ReadyRef {
   ready: boolean;
   purchaseId: string | null;
@@ -56,6 +46,37 @@ interface ParsedCheckoutError {
   code: string | null;
   requestId: string | null;
 }
+
+interface CheckoutFunctionResponse {
+  clientSecret?: string;
+  paymentIntentClientSecret?: string;
+  ephemeralKeySecret?: string;
+  customerId?: string;
+  purchaseId?: string;
+  publishableKey?: string;
+  amountCents?: number;
+  season?: { id?: string; name?: string };
+  error?: string;
+  message?: string;
+  code?: string;
+  requestId?: string;
+}
+
+const INITIAL: SeasonPassCheckoutState = {
+  status: 'idle',
+  purchaseId: null,
+  amountCents: null,
+  seasonId: null,
+  error: null,
+  errorCode: null,
+  requestId: null,
+};
+
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const createSeasonPassPaymentIntentUrl = supabaseUrl
+  ? `${supabaseUrl.replace(/\/$/, '')}/functions/v1/create-season-pass-payment-intent`
+  : null;
 
 async function parseCheckoutError(error: unknown): Promise<ParsedCheckoutError> {
   if (error instanceof FunctionsHttpError) {
@@ -180,6 +201,44 @@ async function getValidSessionForFunctions(): Promise<Session> {
   return session;
 }
 
+async function callCreateSeasonPassPaymentIntent(
+  session: Session,
+  seasonId?: string | null,
+): Promise<CheckoutFunctionResponse> {
+  if (!createSeasonPassPaymentIntentUrl || !supabaseAnonKey) {
+    throw new Error('Supabase function URL or anon key is missing. Check Expo env configuration.');
+  }
+
+  const response = await fetch(createSeasonPassPaymentIntentUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(seasonId ? { seasonId } : {}),
+  });
+
+  const rawText = await response.text();
+  let body: CheckoutFunctionResponse | null = null;
+
+  try {
+    body = rawText ? (JSON.parse(rawText) as CheckoutFunctionResponse) : null;
+  } catch {
+    body = null;
+  }
+
+  if (!response.ok) {
+    const message = body?.error ?? body?.message ?? rawText || `Checkout request failed with status ${response.status}.`;
+    const error = new Error(message) as Error & { code?: string | null; requestId?: string | null };
+    error.code = body?.code ?? null;
+    error.requestId = body?.requestId ?? null;
+    throw error;
+  }
+
+  return body ?? {};
+}
+
 export function useSeasonPassCheckout() {
   const [state, setState] = useState<SeasonPassCheckoutState>(INITIAL);
   const readyRef = useRef<ReadyRef>({
@@ -199,20 +258,7 @@ export function useSeasonPassCheckout() {
 
     try {
       const session = await getValidSessionForFunctions();
-
-      const { data, error } = await supabase.functions.invoke(
-        'create-season-pass-payment-intent',
-        {
-          body: seasonId ? { seasonId } : {},
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      if (error) {
-        throw error;
-      }
+      const data = await callCreateSeasonPassPaymentIntent(session, seasonId);
 
       const clientSecret = data?.paymentIntentClientSecret ?? data?.clientSecret ?? null;
       const customerId = data?.customerId ?? null;
@@ -220,7 +266,13 @@ export function useSeasonPassCheckout() {
       const resolvedSeasonId = data?.season?.id ?? seasonId ?? null;
 
       if (!clientSecret || !data?.purchaseId || !resolvedSeasonId) {
-        throw new Error(data?.error ?? 'Could not start season pass checkout.');
+        const error = new Error(data?.error ?? 'Could not start season pass checkout.') as Error & {
+          code?: string | null;
+          requestId?: string | null;
+        };
+        error.code = data?.code ?? null;
+        error.requestId = data?.requestId ?? null;
+        throw error;
       }
 
       if (data.publishableKey) {
@@ -287,12 +339,19 @@ export function useSeasonPassCheckout() {
       };
     } catch (err: any) {
       const parsed = await parseCheckoutError(err);
-      const message = buildVisibleErrorMessage(parsed);
+      const fallbackCode = typeof err?.code === 'string' ? err.code : null;
+      const fallbackRequestId = typeof err?.requestId === 'string' ? err.requestId : null;
+      const parsedWithFallback = {
+        ...parsed,
+        code: parsed.code ?? fallbackCode,
+        requestId: parsed.requestId ?? fallbackRequestId,
+      };
+      const message = buildVisibleErrorMessage(parsedWithFallback);
 
       console.error('[SeasonPassCheckout:initCheckout]', {
-        message: parsed.message,
-        code: parsed.code,
-        requestId: parsed.requestId,
+        message: parsedWithFallback.message,
+        code: parsedWithFallback.code,
+        requestId: parsedWithFallback.requestId,
         raw: err,
       });
 
@@ -302,14 +361,14 @@ export function useSeasonPassCheckout() {
         amountCents: null,
         seasonId: seasonId ?? null,
         error: message,
-        errorCode: parsed.code,
-        requestId: parsed.requestId,
+        errorCode: parsedWithFallback.code,
+        requestId: parsedWithFallback.requestId,
       });
       return {
         ok: false as const,
         error: message,
-        code: parsed.code,
-        requestId: parsed.requestId,
+        code: parsedWithFallback.code,
+        requestId: parsedWithFallback.requestId,
       };
     }
   }, []);
@@ -354,12 +413,19 @@ export function useSeasonPassCheckout() {
       };
     } catch (err: any) {
       const parsed = await parseCheckoutError(err);
-      const message = buildVisibleErrorMessage(parsed);
+      const fallbackCode = typeof err?.code === 'string' ? err.code : null;
+      const fallbackRequestId = typeof err?.requestId === 'string' ? err.requestId : null;
+      const parsedWithFallback = {
+        ...parsed,
+        code: parsed.code ?? fallbackCode,
+        requestId: parsed.requestId ?? fallbackRequestId,
+      };
+      const message = buildVisibleErrorMessage(parsedWithFallback);
 
       console.error('[SeasonPassCheckout:confirmCheckout]', {
-        message: parsed.message,
-        code: parsed.code,
-        requestId: parsed.requestId,
+        message: parsedWithFallback.message,
+        code: parsedWithFallback.code,
+        requestId: parsedWithFallback.requestId,
         raw: err,
       });
 
@@ -368,16 +434,16 @@ export function useSeasonPassCheckout() {
         ...prev,
         status: 'error',
         error: message,
-        errorCode: parsed.code,
-        requestId: parsed.requestId,
+        errorCode: parsedWithFallback.code,
+        requestId: parsedWithFallback.requestId,
       }));
       return {
         ok: false as const,
         purchaseId: null,
         seasonId: currentSeasonId,
         error: message,
-        code: parsed.code,
-        requestId: parsed.requestId,
+        code: parsedWithFallback.code,
+        requestId: parsedWithFallback.requestId,
       };
     }
   }, []);
