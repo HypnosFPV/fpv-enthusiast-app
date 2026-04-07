@@ -96,10 +96,8 @@ export default function SeasonScreen() {
     claimedRewardIds,
     loading,
     claimingRewardId,
-    unlockingPass,
     claimableCount,
     claimReward,
-    unlockSeasonPassForTesting,
     refreshSeasonPass,
     waitForPremiumUnlock,
   } = useSeasonPass(user?.id ?? null);
@@ -129,16 +127,7 @@ export default function SeasonScreen() {
     }
   };
 
-  const handleUnlockTesting = async () => {
-    const result = await unlockSeasonPassForTesting();
-    if (!result.ok) {
-      Alert.alert('Could not unlock premium', result.error);
-      return;
-    }
-    propsToast.show('Premium rewards unlocked for testing', { celebrate: true });
-  };
-
-  const purchaseBusy = unlockingPass || checkoutState.status === 'loading' || checkoutState.status === 'processing';
+  const purchaseBusy = checkoutState.status === 'loading' || checkoutState.status === 'processing';
 
   const handleBuySeasonPass = async () => {
     if (!season) return;
@@ -244,15 +233,15 @@ export default function SeasonScreen() {
           <View style={styles.summaryGrid}>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Pass price</Text>
-              <Text style={styles.summaryValue}>{formatSeasonPassPrice(season.pass_price_cents)}</Text>
+              <Text style={styles.summaryValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{formatSeasonPassPrice(season.pass_price_cents)}</Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Claimable now</Text>
-              <Text style={styles.summaryValue}>{claimableCount}</Text>
+              <Text style={styles.summaryValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{claimableCount}</Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Premium</Text>
-              <Text style={styles.summaryValue}>{progress.premium_unlocked ? 'Unlocked' : 'Locked'}</Text>
+              <Text style={styles.summaryValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72}>{progress.premium_unlocked ? 'Unlocked' : 'Locked'}</Text>
             </View>
           </View>
 
@@ -281,16 +270,6 @@ export default function SeasonScreen() {
             </TouchableOpacity>
           ) : null}
 
-          {__DEV__ ? (
-            <TouchableOpacity
-              style={[styles.testingButton, unlockingPass ? styles.testingButtonDisabled : null]}
-              onPress={handleUnlockTesting}
-              disabled={unlockingPass}
-            >
-              <Ionicons name="flask-outline" size={16} color="#f4f7ff" />
-              <Text style={styles.testingButtonText}>{unlockingPass ? 'Unlocking…' : 'Unlock premium for testing'}</Text>
-            </TouchableOpacity>
-          ) : null}
         </LinearGradient>
 
         <View style={styles.sectionHeader}>
@@ -449,6 +428,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '900',
+    flexShrink: 1,
   },
   purchaseButton: {
     marginTop: 2,
@@ -492,27 +472,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     flex: 1,
-  },
-  testingButton: {
-    marginTop: 2,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#5267a6',
-    backgroundColor: '#1a2340',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  testingButtonDisabled: {
-    opacity: 0.7,
-  },
-  testingButtonText: {
-    color: '#f4f7ff',
-    fontSize: 14,
-    fontWeight: '800',
   },
   sectionHeader: {
     marginTop: 6,

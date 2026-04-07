@@ -44,7 +44,6 @@ export function useSeasonPass(userId?: string | null) {
   const [claims, setClaims] = useState<UserSeasonRewardClaim[]>([]);
   const [loading, setLoading] = useState(true);
   const [claimingRewardId, setClaimingRewardId] = useState<string | null>(null);
-  const [unlockingPass, setUnlockingPass] = useState(false);
 
   const loadSeasonPass = useCallback(async () => {
     setLoading(true);
@@ -131,23 +130,6 @@ export function useSeasonPass(userId?: string | null) {
     }
   }, [loadSeasonPass, userId]);
 
-  const unlockSeasonPassForTesting = useCallback(async () => {
-    if (!userId || !season) return { ok: false as const, error: 'No user or season available.' };
-    setUnlockingPass(true);
-    try {
-      const { error } = await supabase.rpc('set_user_season_pass', {
-        p_season_id: season.id,
-        p_premium_unlocked: true,
-        p_user_id: userId,
-      });
-      if (error) return { ok: false as const, error: error.message };
-      await loadSeasonPass();
-      return { ok: true as const };
-    } finally {
-      setUnlockingPass(false);
-    }
-  }, [loadSeasonPass, season, userId]);
-
   const waitForPremiumUnlock = useCallback(async (maxAttempts = 10, delayMs = 1500) => {
     if (!userId || !season) return false;
 
@@ -193,11 +175,9 @@ export function useSeasonPass(userId?: string | null) {
     claimedRewardIds,
     loading,
     claimingRewardId,
-    unlockingPass,
     claimableCount,
     refreshSeasonPass: loadSeasonPass,
     claimReward,
-    unlockSeasonPassForTesting,
     waitForPremiumUnlock,
   };
 }
