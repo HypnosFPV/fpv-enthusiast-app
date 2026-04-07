@@ -11,7 +11,7 @@ import {
   FunctionsRelayError,
   type Session,
 } from '@supabase/supabase-js';
-import { EXPECTED_SUPABASE_PROJECT_REF, supabase } from '../services/supabase';
+import { supabase } from '../services/supabase';
 
 export interface SeasonPassCheckoutInput {
   seasonId?: string | null;
@@ -72,26 +72,6 @@ const INITIAL: SeasonPassCheckoutState = {
   requestId: null,
 };
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-const createSeasonPassPaymentIntentUrl = supabaseUrl
-  ? `${supabaseUrl.replace(/\/$/, '')}/functions/v1/create-season-pass-payment-intent`
-  : null;
-
-function decodeJwtPayload(token?: string | null) {
-  try {
-    if (!token) return null;
-    const parts = token.split('.');
-    if (parts.length < 2) return null;
-    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-    const json = globalThis.atob ? globalThis.atob(padded) : Buffer.from(padded, 'base64').toString('utf8');
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
-
 async function parseCheckoutError(error: unknown): Promise<ParsedCheckoutError> {
   if (error instanceof FunctionsHttpError) {
     try {
@@ -145,8 +125,12 @@ async function parseCheckoutError(error: unknown): Promise<ParsedCheckoutError> 
   if (error instanceof Error) {
     return {
       message: error.message,
-      code: null,
-      requestId: null,
+      code: typeof (error as Error & { code?: string | null }).code === 'string'
+        ? ((error as Error & { code?: string | null }).code ?? null)
+        : null,
+      requestId: typeof (error as Error & { requestId?: string | null }).requestId === 'string'
+        ? ((error as Error & { requestId?: string | null }).requestId ?? null)
+        : null,
     };
   }
 
@@ -171,108 +155,31 @@ function buildVisibleErrorMessage(parsed: ParsedCheckoutError) {
   return parts.join('\n');
 }
 
-function assertSessionMatchesExpectedProject(session: Session) {
-  const payload = decodeJwtPayload(session.access_token);
-  const tokenIssuer = typeof payload?.iss === 'string' ? payload.iss : '';
-  if (!tokenIssuer.includes(EXPECTED_SUPABASE_PROJECT_REF)) {
-    throw new Error(
-      `Auth token project mismatch. Expected ${EXPECTED_SUPABASE_PROJECT_REF}, got issuer ${tokenIssuer || 'unknown'}. Please sign out and sign back in after fixing your Expo Supabase env.`
-    );
-  }
-}
+async function getFreshSessionForCheckout(): Promise<Session> {
+  let session: Session | null = null;
 
-async function getValidSessionForFunctions(): Promise<Session> {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-
-  if (sessionError) {
-    throw new Error(`Could not read auth session: ${sessionError.message}`);
+  try {
+    const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+    if (!refreshErr && refreshed.session?.access_token) {
+      session = refreshed.session;
+    }
+  } catch {
+    // Fall back to cached session below.
   }
 
-  let session = sessionData.session;
+  if (!session) {
+    const { data: cached, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr) {
+      throw new Error(`Could not read auth session: ${sessionErr.message}`);
+    }
+    session = cached.session;
+  }
 
   if (!session?.access_token) {
     throw new Error('You are not signed in. Please sign in again.');
   }
 
-  const expiresSoon = !!session.expires_at && session.expires_at * 1000 <= Date.now() + 60_000;
-
-  if (expiresSoon || session.refresh_token) {
-    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-
-    if (refreshError || !refreshData.session?.access_token) {
-      throw new Error('Your session expired. Please sign in again.');
-    }
-
-    session = refreshData.session;
-  }
-
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-
-  if (userError || !userData.user) {
-    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-
-    if (refreshError || !refreshData.session?.access_token) {
-      throw new Error('Your session is invalid. Please sign out and sign back in.');
-    }
-
-    session = refreshData.session;
-  }
-
-  const { data: latestSessionData, error: latestSessionError } = await supabase.auth.getSession();
-
-  if (latestSessionError) {
-    throw new Error(`Could not read refreshed auth session: ${latestSessionError.message}`);
-  }
-
-  if (!latestSessionData.session?.access_token) {
-    throw new Error('No valid auth token is available. Please sign in again.');
-  }
-
-  assertSessionMatchesExpectedProject(latestSessionData.session);
-
-  return latestSessionData.session;
-}
-
-async function callCreateSeasonPassPaymentIntent(
-  session: Session,
-  seasonId?: string | null,
-): Promise<CheckoutFunctionResponse> {
-  if (!createSeasonPassPaymentIntentUrl || !supabaseAnonKey) {
-    throw new Error('Supabase function URL or anon key is missing. Check Expo env configuration.');
-  }
-
-  const response = await fetch(createSeasonPassPaymentIntentUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: supabaseAnonKey,
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(seasonId ? { seasonId } : {}),
-  });
-
-  const rawText = await response.text();
-  let body: CheckoutFunctionResponse | null = null;
-
-  try {
-    body = rawText ? (JSON.parse(rawText) as CheckoutFunctionResponse) : null;
-  } catch {
-    body = null;
-  }
-
-  if (!response.ok) {
-    const message =
-      body?.error ??
-      body?.message ??
-      rawText ??
-      `Checkout request failed with status ${response.status}.`;
-    const error = new Error(message) as Error & { code?: string | null; requestId?: string | null };
-    error.code = body?.code ?? null;
-    error.requestId = body?.requestId ?? null;
-    throw error;
-  }
-
-  return body ?? {};
+  return session;
 }
 
 export function useSeasonPassCheckout() {
@@ -293,27 +200,41 @@ export function useSeasonPassCheckout() {
     setState({ ...INITIAL, status: 'loading', seasonId: seasonId ?? null });
 
     try {
-      const session = await getValidSessionForFunctions();
-      const data = await callCreateSeasonPassPaymentIntent(session, seasonId);
+      // Mirror the marketplace checkout flow:
+      // 1) force a token refresh first
+      // 2) call the function through supabase.functions.invoke()
+      // The final piece is verify_jwt=false in supabase/config.toml for this function,
+      // so Supabase's gateway does not reject a stale mobile token before our function runs.
+      await getFreshSessionForCheckout();
 
-      const clientSecret = data?.paymentIntentClientSecret ?? data?.clientSecret ?? null;
-      const customerId = data?.customerId ?? null;
-      const ephemeralKeySecret = data?.ephemeralKeySecret ?? null;
-      const resolvedSeasonId = data?.season?.id ?? seasonId ?? null;
+      const { data, error: fnErr } = await supabase.functions.invoke(
+        'create-season-pass-payment-intent',
+        { body: seasonId ? { seasonId } : {} },
+      );
 
-      if (!clientSecret || !data?.purchaseId || !resolvedSeasonId) {
-        const error = new Error(data?.error ?? 'Could not start season pass checkout.') as Error & {
+      const response = (data ?? {}) as CheckoutFunctionResponse;
+      const clientSecret = response.paymentIntentClientSecret ?? response.clientSecret ?? null;
+      const customerId = response.customerId ?? null;
+      const ephemeralKeySecret = response.ephemeralKeySecret ?? null;
+      const resolvedSeasonId = response.season?.id ?? seasonId ?? null;
+
+      if (fnErr || !clientSecret || !response.purchaseId || !resolvedSeasonId) {
+        if (fnErr) {
+          throw fnErr;
+        }
+
+        const error = new Error(response.error ?? response.message ?? 'Could not start season pass checkout.') as Error & {
           code?: string | null;
           requestId?: string | null;
         };
-        error.code = data?.code ?? null;
-        error.requestId = data?.requestId ?? null;
+        error.code = response.code ?? null;
+        error.requestId = response.requestId ?? null;
         throw error;
       }
 
-      if (data.publishableKey) {
+      if (response.publishableKey) {
         await initStripe({
-          publishableKey: data.publishableKey,
+          publishableKey: response.publishableKey,
           merchantIdentifier: 'merchant.com.fpventhusiast',
         });
       }
@@ -344,7 +265,7 @@ export function useSeasonPassCheckout() {
             error: '#ff6b6b',
           },
         },
-        primaryButtonLabel: `Unlock ${data?.season?.name ?? 'Season Pass'}`,
+        primaryButtonLabel: `Unlock ${response.season?.name ?? 'Season Pass'}`,
       });
 
       if (initErr) {
@@ -353,41 +274,34 @@ export function useSeasonPassCheckout() {
 
       readyRef.current = {
         ready: true,
-        purchaseId: data.purchaseId as string,
+        purchaseId: response.purchaseId,
         seasonId: resolvedSeasonId,
       };
       setState({
         status: 'ready',
-        purchaseId: data.purchaseId as string,
-        amountCents: data.amountCents ?? null,
+        purchaseId: response.purchaseId,
+        amountCents: response.amountCents ?? null,
         seasonId: resolvedSeasonId,
         error: null,
         errorCode: null,
-        requestId: data?.requestId ?? null,
+        requestId: response.requestId ?? null,
       });
 
       return {
         ok: true as const,
-        purchaseId: data.purchaseId as string,
-        amountCents: data.amountCents as number | undefined,
+        purchaseId: response.purchaseId,
+        amountCents: response.amountCents as number | undefined,
         seasonId: resolvedSeasonId,
-        requestId: data?.requestId ?? null,
+        requestId: response.requestId ?? null,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       const parsed = await parseCheckoutError(err);
-      const fallbackCode = typeof err?.code === 'string' ? err.code : null;
-      const fallbackRequestId = typeof err?.requestId === 'string' ? err.requestId : null;
-      const parsedWithFallback = {
-        ...parsed,
-        code: parsed.code ?? fallbackCode,
-        requestId: parsed.requestId ?? fallbackRequestId,
-      };
-      const message = buildVisibleErrorMessage(parsedWithFallback);
+      const message = buildVisibleErrorMessage(parsed);
 
       console.error('[SeasonPassCheckout:initCheckout]', {
-        message: parsedWithFallback.message,
-        code: parsedWithFallback.code,
-        requestId: parsedWithFallback.requestId,
+        message: parsed.message,
+        code: parsed.code,
+        requestId: parsed.requestId,
         raw: err,
       });
 
@@ -397,14 +311,14 @@ export function useSeasonPassCheckout() {
         amountCents: null,
         seasonId: seasonId ?? null,
         error: message,
-        errorCode: parsedWithFallback.code,
-        requestId: parsedWithFallback.requestId,
+        errorCode: parsed.code,
+        requestId: parsed.requestId,
       });
       return {
         ok: false as const,
         error: message,
-        code: parsedWithFallback.code,
-        requestId: parsedWithFallback.requestId,
+        code: parsed.code,
+        requestId: parsed.requestId,
       };
     }
   }, []);
@@ -447,21 +361,14 @@ export function useSeasonPassCheckout() {
         purchaseId: currentPurchaseId,
         seasonId: currentSeasonId,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       const parsed = await parseCheckoutError(err);
-      const fallbackCode = typeof err?.code === 'string' ? err.code : null;
-      const fallbackRequestId = typeof err?.requestId === 'string' ? err.requestId : null;
-      const parsedWithFallback = {
-        ...parsed,
-        code: parsed.code ?? fallbackCode,
-        requestId: parsed.requestId ?? fallbackRequestId,
-      };
-      const message = buildVisibleErrorMessage(parsedWithFallback);
+      const message = buildVisibleErrorMessage(parsed);
 
       console.error('[SeasonPassCheckout:confirmCheckout]', {
-        message: parsedWithFallback.message,
-        code: parsedWithFallback.code,
-        requestId: parsedWithFallback.requestId,
+        message: parsed.message,
+        code: parsed.code,
+        requestId: parsed.requestId,
         raw: err,
       });
 
@@ -470,16 +377,16 @@ export function useSeasonPassCheckout() {
         ...prev,
         status: 'error',
         error: message,
-        errorCode: parsedWithFallback.code,
-        requestId: parsedWithFallback.requestId,
+        errorCode: parsed.code,
+        requestId: parsed.requestId,
       }));
       return {
         ok: false as const,
         purchaseId: null,
         seasonId: currentSeasonId,
         error: message,
-        code: parsedWithFallback.code,
-        requestId: parsedWithFallback.requestId,
+        code: parsed.code,
+        requestId: parsed.requestId,
       };
     }
   }, []);

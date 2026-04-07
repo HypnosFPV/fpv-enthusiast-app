@@ -58,6 +58,9 @@ verify_jwt = false
 [functions.create-group-animation-payment-intent]
 verify_jwt = false
 
+[functions.create-season-pass-payment-intent]
+verify_jwt = false
+
 [functions.stripe-webhook]
 verify_jwt = false
 
