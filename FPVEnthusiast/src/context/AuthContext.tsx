@@ -42,9 +42,12 @@ async function clearSupabaseAuthStorage() {
   const keys = await AsyncStorage.getAllKeys();
   const authKeys = keys.filter((key) => {
     const normalized = key.toLowerCase();
-    const matchesAuthKey = normalized.includes('auth-token') || normalized.includes('supabase.auth.token');
-    const matchesProject = projectRef ? normalized.includes(projectRef.toLowerCase()) : true;
-    return matchesAuthKey && matchesProject;
+    const isSupabaseSessionKey =
+      normalized.startsWith('sb-') ||
+      normalized.includes('auth-token') ||
+      normalized.includes('supabase.auth.token');
+    const matchesProject = projectRef ? normalized.includes(projectRef.toLowerCase()) : false;
+    return isSupabaseSessionKey || matchesProject;
   });
 
   if (authKeys.length > 0) {
@@ -143,6 +146,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (error) {
       return { data, error };
+    }
+
+    if (data?.session?.access_token && data?.session?.refresh_token) {
+      const { error: setSessionError } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      });
+
+      if (setSessionError) {
+        await hardResetInvalidSession();
+        return {
+          data: null,
+          error: new Error(`Could not persist auth session: ${setSessionError.message}`),
+        };
+      }
     }
 
     const { data: userData, error: userError } = await supabase.auth.getUser();
