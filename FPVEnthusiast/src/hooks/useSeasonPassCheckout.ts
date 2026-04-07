@@ -11,7 +11,7 @@ import {
   FunctionsRelayError,
   type Session,
 } from '@supabase/supabase-js';
-import { supabase } from '../services/supabase';
+import { EXPECTED_SUPABASE_PROJECT_REF, supabase } from '../services/supabase';
 
 export interface SeasonPassCheckoutInput {
   seasonId?: string | null;
@@ -77,6 +77,20 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 const createSeasonPassPaymentIntentUrl = supabaseUrl
   ? `${supabaseUrl.replace(/\/$/, '')}/functions/v1/create-season-pass-payment-intent`
   : null;
+
+function decodeJwtPayload(token?: string | null) {
+  try {
+    if (!token) return null;
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const json = globalThis.atob ? globalThis.atob(padded) : Buffer.from(padded, 'base64').toString('utf8');
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
 
 async function parseCheckoutError(error: unknown): Promise<ParsedCheckoutError> {
   if (error instanceof FunctionsHttpError) {
@@ -157,6 +171,16 @@ function buildVisibleErrorMessage(parsed: ParsedCheckoutError) {
   return parts.join('\n');
 }
 
+function assertSessionMatchesExpectedProject(session: Session) {
+  const payload = decodeJwtPayload(session.access_token);
+  const tokenIssuer = typeof payload?.iss === 'string' ? payload.iss : '';
+  if (!tokenIssuer.includes(EXPECTED_SUPABASE_PROJECT_REF)) {
+    throw new Error(
+      `Auth token project mismatch. Expected ${EXPECTED_SUPABASE_PROJECT_REF}, got issuer ${tokenIssuer || 'unknown'}. Please sign out and sign back in after fixing your Expo Supabase env.`
+    );
+  }
+}
+
 async function getValidSessionForFunctions(): Promise<Session> {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
 
@@ -203,6 +227,8 @@ async function getValidSessionForFunctions(): Promise<Session> {
   if (!latestSessionData.session?.access_token) {
     throw new Error('No valid auth token is available. Please sign in again.');
   }
+
+  assertSessionMatchesExpectedProject(latestSessionData.session);
 
   return latestSessionData.session;
 }

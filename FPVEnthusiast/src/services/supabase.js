@@ -1,12 +1,29 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const EXPECTED_SUPABASE_PROJECT_REF = 'iyjtdzcobdbzjonskpgi';
+export const EXPECTED_SUPABASE_PROJECT_REF = 'iyjtdzcobdbzjonskpgi';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 const projectRefMatch = supabaseUrl?.match(/^https:\/\/([^.]+)\.supabase\.co/i);
-const supabaseProjectRef = projectRefMatch?.[1] ?? null;
+export const supabaseProjectRef = projectRefMatch?.[1] ?? null;
 const supabaseStorageKey = supabaseProjectRef ? `sb-${supabaseProjectRef}-auth-token` : 'supabase.auth.token';
+
+function decodeJwtPayload(token) {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const normalized = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const json = globalThis.atob ? globalThis.atob(padded) : Buffer.from(padded, 'base64').toString('utf8');
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+const anonKeyPayload = supabaseAnonKey ? decodeJwtPayload(supabaseAnonKey) : null;
+const anonKeyProjectRef = anonKeyPayload?.ref ?? null;
+const anonKeyIssuer = anonKeyPayload?.iss ?? null;
 
 // ── Debug: prints in VS Code terminal when app loads ──────────────────────────
 console.log('=== SUPABASE CONFIG CHECK ===');
@@ -14,6 +31,8 @@ console.log('URL:', supabaseUrl ?? '❌ UNDEFINED');
 console.log('KEY prefix:', supabaseAnonKey ? supabaseAnonKey.substring(0, 12) + '...' : '❌ UNDEFINED');
 console.log('KEY length:', supabaseAnonKey?.length ?? 0, 'chars');
 console.log('Project ref:', supabaseProjectRef ?? '❌ UNDEFINED');
+console.log('Anon key ref:', anonKeyProjectRef ?? '❌ UNDEFINED');
+console.log('Anon key issuer:', anonKeyIssuer ?? '❌ UNDEFINED');
 console.log('Storage key:', supabaseStorageKey);
 console.log('==============================');
 
@@ -34,6 +53,15 @@ if (supabaseProjectRef !== EXPECTED_SUPABASE_PROJECT_REF) {
     `Expected project ref: ${EXPECTED_SUPABASE_PROJECT_REF}\n` +
     `Actual project ref: ${supabaseProjectRef ?? 'undefined'}\n` +
     'Update EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY to the correct project, then restart with: npx expo start --clear'
+  );
+}
+
+if (anonKeyProjectRef && anonKeyProjectRef !== EXPECTED_SUPABASE_PROJECT_REF) {
+  throw new Error(
+    '❌ Supabase anon key mismatch!\n' +
+    `Expected project ref: ${EXPECTED_SUPABASE_PROJECT_REF}\n` +
+    `Anon key project ref: ${anonKeyProjectRef}\n` +
+    'Your EXPO_PUBLIC_SUPABASE_ANON_KEY is for a different Supabase project. Replace it with the anon key from project iyjtdzcobdbzjonskpgi, then restart with: npx expo start --clear'
   );
 }
 
