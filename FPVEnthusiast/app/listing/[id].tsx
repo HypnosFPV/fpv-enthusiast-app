@@ -32,6 +32,7 @@ import {
 import { supabase }      from '../../src/services/supabase';
 import { useCheckout }   from '../../src/hooks/useCheckout';
 import * as FileSystem   from 'expo-file-system/legacy';
+import { insertAppNotification } from '../../src/utils/notificationHelpers';
 
 const { width: W } = Dimensions.get('window');
 const IMG_H        = W * 0.78;   // ~78 % wide = square-ish hero
@@ -892,12 +893,17 @@ export default function ListingDetailScreen() {
     setDisputeSaving(false);
     if (error) { Alert.alert('Error', error.message); return; }
     // Notify seller
-    await supabase.from('notifications').insert({
-      user_id: listing?.seller_id,
+    await insertAppNotification({
+      recipientId: listing?.seller_id ?? '',
+      actorId: user?.id ?? null,
       type: 'marketplace_dispute',
       title: '⚠️ Dispute opened',
       body: `Buyer opened a dispute on "${listing?.title ?? 'your listing'}". Reason: ${disputeReason.trim()}`,
-      data: { listing_id: listing?.id, order_id: activeOrder.id },
+      message: `A dispute was opened on "${listing?.title ?? 'your listing'}".`,
+      listingId: listing?.id ?? null,
+      entityId: listing?.id ?? null,
+      entityType: 'listing',
+      data: { order_id: activeOrder.id, orderId: activeOrder.id, navigate: 'marketplace' },
     });
     setShowDispute(false);
     setDisputeReason('');

@@ -1,6 +1,7 @@
 // src/hooks/useFollow.ts
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../services/supabase';
+import { insertAppNotification } from '../utils/notificationHelpers';
 
 export interface FollowUser {
   id: string;
@@ -98,13 +99,16 @@ export function useFollow(profileUserId: string, currentUserId?: string) {
 
       if (!existing) {
         // No prior follow notification — insert a fresh one
-        await supabase.from('notifications').insert({
-          user_id:    profileUserId,  // recipient
-          actor_id:   currentUserId,  // who followed
-          type:       'follow',
-          post_id:    null,
-          comment_id: null,
-          message:    null,
+        await insertAppNotification({
+          recipientId: profileUserId,
+          actorId: currentUserId,
+          type: 'follow',
+          entityId: currentUserId,
+          entityType: 'profile',
+          title: '👤 New follower',
+          body: 'Someone started following you.',
+          message: 'started following you',
+          data: { navigate: 'profile' },
         });
       } else {
         // Notification already exists — just mark it unread so it

@@ -20,6 +20,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logNotificationLifecycle, shouldSendPushForNotificationType } from '../../../src/constants/notificationPolicy.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -84,6 +85,7 @@ serve(async (req) => {
       await req.json().catch(() => ({}));
 
     const notifType: NotifType = body.type ?? 'voting_open';
+    const runStartedAt = new Date().toISOString();
 
     // ── Find the target challenge ────────────────────────────────────────────
     let challengeId: string | null = body.challenge_id ?? null;
@@ -119,26 +121,45 @@ serve(async (req) => {
 
     // ── Fetch push tokens for recipients ────────────────────────────────────
     // Which users received in-app notifications for this challenge + type?
+    const notifRowType =
+      notifType === 'voting_open'    ? 'challenge_voting_open'    :
+      notifType === 'voting_closing' ? 'challenge_voting_closing' :
+                                       'challenge_result';
+
     const { data: newNotifs } = await supabase
       .from('notifications')
-      .select('user_id, message')
-      .eq('type',
-        notifType === 'voting_open'    ? 'challenge_voting_open'    :
-        notifType === 'voting_closing' ? 'challenge_voting_closing' :
-                                         'challenge_result'
-      )
+      .select('id, user_id, message, created_at')
+      .eq('type', notifRowType)
       .eq('challenge_id', challengeId)
-      .eq('read', false)
+      .gte('created_at', runStartedAt)
       .order('created_at', { ascending: false })
       .limit(5000);
 
-    // Collect unique user IDs and a message sample
+    // Collect only recipients from this execution window so reruns do not
+    // re-push older unread challenge notifications.
     const userIds = [...new Set((newNotifs ?? []).map(n => n.user_id))];
     const msgSample = newNotifs?.[0]?.message ?? '';
 
+    for (const notif of newNotifs ?? []) {
+      logNotificationLifecycle('inserted', {
+        source: 'challenge-notifications',
+        type: notifRowType,
+        userId: notif.user_id,
+        notificationId: notif.id,
+        extra: { challenge_id: challengeId, request_type: notifType },
+      });
+    }
+
     let pushSent = 0;
 
-    if (userIds.length > 0) {
+    if (!shouldSendPushForNotificationType(notifRowType)) {
+      logNotificationLifecycle('push_skipped', {
+        source: 'challenge-notifications',
+        type: notifRowType,
+        reason: 'push_matrix_disabled',
+        extra: { challenge_id: challengeId, request_type: notifType },
+      });
+    } else if (userIds.length > 0) {
       // Fetch Expo push tokens for these users
       const { data: tokens } = await supabase
         .from('user_push_tokens')
@@ -153,13 +174,22 @@ serve(async (req) => {
           title,
           body:  notifBody,
           sound: 'default',
-          data:  { type: notifType, challenge_id: challengeId, navigate: 'challenges' },
+          data:  { type: notifRowType, challenge_event: notifType, challenge_id: challengeId, challengeId, navigate: 'challenges' },
         }));
 
         // Send in batches of 100
         for (const batch of chunks(messages, EXPO_BATCH)) {
           await sendExpoBatch(batch);
           pushSent += batch.length;
+        }
+
+        for (const userId of userIds) {
+          logNotificationLifecycle('push_sent', {
+            source: 'challenge-notifications',
+            type: notifRowType,
+            userId,
+            extra: { challenge_id: challengeId, request_type: notifType },
+          });
         }
       }
     }

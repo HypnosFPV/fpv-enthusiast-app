@@ -23,6 +23,7 @@ import { detectPlatform } from '../../src/utils/socialMedia';
 import { supabase } from '../../src/services/supabase';
 import PostCard from '../../src/components/PostCard';
 import MentionTextInputComponent from '../../src/components/MentionTextInput';
+import { insertAppNotificationsBatch } from '../../src/utils/notificationHelpers';
 const MentionTextInput = MentionTextInputComponent as any;
 
 const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
@@ -85,12 +86,18 @@ async function sendMentionNotifications(
     .in('username', usernames)
     .neq('id', actorId);
   if (!mentioned?.length) return;
-  await supabase.from('notifications').insert(
+  await insertAppNotificationsBatch(
     mentioned.map((u: any) => ({
-      user_id:  u.id,
-      actor_id: actorId,
-      type:     'mention',
-      post_id:  postId ?? null,
+      recipientId: u.id,
+      actorId,
+      type: 'mention',
+      postId: postId ?? null,
+      entityId: postId ?? null,
+      entityType: postId ? 'post' : null,
+      title: '📣 You were mentioned',
+      body: 'Someone mentioned you in a post.',
+      message: 'mentioned you in a post',
+      data: postId ? { navigate: 'post' } : { navigate: 'notifications' },
     }))
   );
 }

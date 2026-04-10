@@ -58,6 +58,7 @@ const PROPS_HISTORY_LABEL_MAP: Record<string, string> = {
   featured_sold_bonus: '🏷️ Featured sale bonus',
   profile_appearance_purchase_bonus: '🎨 Profile appearance purchase bonus',
   profile_badge_purchase_bonus: '🏅 Profile badge purchase bonus',
+  daily_check_in: '📅 Daily check-in',
 };
 
 function formatPropsHistoryLabel(item: { reason: string; label?: string | null }) {

@@ -1,6 +1,6 @@
 // app/(tabs)/map.tsx
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useRouter }           from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
   FlatList, ActivityIndicator, Platform, Alert, ScrollView,
@@ -253,6 +253,8 @@ function geoJsonToCoords(geometry: any): { latitude: number; longitude: number }
 export default function MapScreen() {
   const { user } = useAuth();
   const router   = useRouter();
+  const { eventId: routeEventIdParam } = useLocalSearchParams<{ eventId?: string | string[] }>();
+  const routeEventId = Array.isArray(routeEventIdParam) ? routeEventIdParam[0] : routeEventIdParam;
   const [isAdmin, setIsAdmin] = useState(false);
 
   const {
@@ -263,7 +265,7 @@ export default function MapScreen() {
     addSpot, voteSpot, addComment, reportSpot, reportEvent, checkNearbySpots,
     addEvent, toggleRsvp,
     deleteSpot, deleteEvent,
-    fetchNewNearbyEvents,
+    fetchNewNearbyEvents, fetchEventById,
   } = useMap(user?.id);
 
   // MultiGP chapter connection (for Sync button shown to chapter owners)
@@ -285,6 +287,16 @@ export default function MapScreen() {
   }, [triggerMgpSync, fetchEvents, userLocation, radiusMiles]);
 
   const mapRef = useRef<MapView>(null);
+
+  const focusEvent = useCallback((evt: RaceEvent) => {
+    setSelectedEvent(evt);
+    mapRef.current?.animateToRegion({
+      latitude: evt.latitude,
+      longitude: evt.longitude,
+      latitudeDelta: 0.18,
+      longitudeDelta: 0.18,
+    }, 700);
+  }, []);
 
   // ── Load FAA airspace zones for visible map region ────────────────────────
   const loadAirspaceZones = useCallback(async (
@@ -507,6 +519,27 @@ export default function MapScreen() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!routeEventId) return;
+
+    const existing = events.find((evt) => evt.id === routeEventId);
+    if (existing) {
+      focusEvent(existing);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const evt = await fetchEventById(routeEventId);
+      if (!evt || cancelled) return;
+      focusEvent(evt);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [events, fetchEventById, focusEvent, routeEventId]);
+
   // ── AppState: check for new nearby events when app comes to foreground ────
   const appStateRef = useRef<AppStateStatus>('active');
   useEffect(() => {
@@ -526,7 +559,7 @@ export default function MapScreen() {
                 body: newEvts.length === 1
                   ? `${newEvts[0].name} – ${cfg.label} within ${radiusMiles}mi`
                   : `${newEvts.length} new events within ${radiusMiles}mi of you`,
-                data: { eventId: newEvts[0].id },
+                data: { navigate: 'map_event', eventId: newEvts[0].id, event_id: newEvts[0].id },
               },
               trigger: null,
             });
@@ -1029,7 +1062,7 @@ export default function MapScreen() {
         {visibleEvents.map(evt => {
           const EvtPin = EVENT_PIN_MAP[evt.event_type] ?? EVENT_PIN_MAP['race'];
           return (
-            <Marker key={evt.id} coordinate={{ latitude: evt.latitude, longitude: evt.longitude }} onPress={() => setSelectedEvent(evt)} tracksViewChanges={false}>
+            <Marker key={evt.id} coordinate={{ latitude: evt.latitude, longitude: evt.longitude }} onPress={() => focusEvent(evt)} tracksViewChanges={false}>
               <EvtPin size={44} isMultiGP={evt.event_source === 'multigp'} />
             </Marker>
           );
@@ -1374,7 +1407,7 @@ export default function MapScreen() {
               return (
                 <TouchableOpacity
                   style={styles.eventRow}
-                  onPress={() => { closePanel(); setTimeout(() => setSelectedEvent(evt), 320); }}
+                  onPress={() => { closePanel(); setTimeout(() => focusEvent(evt), 320); }}
                   activeOpacity={0.75}
                 >
                   <View style={[styles.eventTypeBar, { backgroundColor: cfg.color }]} />

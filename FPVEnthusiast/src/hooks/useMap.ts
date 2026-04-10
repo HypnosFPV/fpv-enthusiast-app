@@ -271,6 +271,38 @@ export function useMap(userId?: string) {
     }
   }, []);
 
+  const fetchEventById = useCallback(async (eventId: string): Promise<RaceEvent | null> => {
+    if (!eventId) return null;
+    try {
+      const { data, error } = await supabase
+        .from('race_events')
+        .select('*, organizer:organizer_id(username)')
+        .eq('id', eventId)
+        .eq('is_cancelled', false)
+        .single();
+      if (error || !data) return null;
+
+      let userRsvpd = false;
+      if (userId) {
+        const { data: rsvp } = await supabase
+          .from('event_rsvps')
+          .select('event_id')
+          .eq('event_id', eventId)
+          .eq('user_id', userId)
+          .maybeSingle();
+        userRsvpd = !!rsvp;
+      }
+
+      return {
+        ...(data as any),
+        organizer_username: (data as any)?.organizer?.username ?? null,
+        user_rsvpd: userRsvpd,
+      } as RaceEvent;
+    } catch {
+      return null;
+    }
+  }, [userId]);
+
   // ── Fetch comments ─────────────────────────────────────────────────────────
   const fetchComments = useCallback(async (spotId: string) => {
     const { data, error } = await supabase
@@ -494,5 +526,6 @@ export function useMap(userId?: string) {
     addEvent, toggleRsvp,
     deleteSpot, deleteEvent,
     fetchNewNearbyEvents,
+    fetchEventById,
   };
 }

@@ -1,6 +1,6 @@
 // app/settings.tsx
 // Full-featured Settings screen – replaces the embedded modal in profile.tsx
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Switch, Platform, Alert, ActivityIndicator, Linking,
@@ -15,6 +15,7 @@ import { useMute }             from '../src/hooks/useMute';
 import MuteListModal           from '../src/components/MuteListModal';
 import { useNotificationsContext } from '../src/context/NotificationsContext';
 import { useStripeConnect }       from '../src/hooks/useStripeConnect';
+import * as Notifications from 'expo-notifications';
 
 // ─── Section / Row components ─────────────────────────────────────────────────
 
@@ -92,16 +93,18 @@ export default function SettingsScreen() {
   const { mutedUsers, loading: muteLoading, unmuteUser } = useMute(user?.id);
   const { linked: ytLinked, loading: ytAuthLoading, promptAsync: promptYouTubeAuth, unlinkYouTube } = useYouTubeAuth(user?.id);
   const { connection: mgpConnection, loading: mgpLoading } = useMultiGP(user?.id);
-  const { challengePrefs, updatePreferences } = useNotificationsContext();
+  const { notificationPrefs, updatePreferences } = useNotificationsContext();
   const {
     sellerProfile: stripeProfile, loading: stripeLoading,
     onboarding: stripeOnboarding, checking: stripeChecking,
     startOnboarding: stripeStartOnboarding, checkStatus: stripeCheckStatus,
   } = useStripeConnect(user?.id);
 
-  const [signingOut,   setSigningOut]   = useState(false);
-  const [showMuteList,  setShowMuteList]  = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [showMuteList, setShowMuteList] = useState(false);
   const [showMultiGPModal, setShowMultiGPModal] = useState(false);
+  const [pushStatus, setPushStatus] = useState<'loading' | 'granted' | 'denied' | 'undetermined'>('loading');
+  const [pushBusy, setPushBusy] = useState(false);
 
   // ── helpers ──────────────────────────────────────────────────────────────────
   const handleSignOut = useCallback(() => {
@@ -119,6 +122,37 @@ export default function SettingsScreen() {
   }, [signOut]);
 
   const isAdmin = (profile as any)?.is_admin ?? false;
+
+  useEffect(() => {
+    Notifications.getPermissionsAsync()
+      .then(({ status }) => setPushStatus((status as any) ?? 'denied'))
+      .catch(() => setPushStatus('denied'));
+  }, []);
+
+  const handlePushSettings = useCallback(async () => {
+    try {
+      setPushBusy(true);
+      if (pushStatus === 'undetermined') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        setPushStatus((status as any) ?? 'denied');
+      } else {
+        await Linking.openSettings();
+      }
+    } catch (err: any) {
+      Alert.alert('Notifications', err?.message ?? 'Could not open notification settings.');
+    } finally {
+      setPushBusy(false);
+    }
+  }, [pushStatus]);
+
+  const pushStatusLabel =
+    pushStatus === 'granted'
+      ? 'Enabled on this device'
+      : pushStatus === 'undetermined'
+        ? 'Not enabled yet — tap to allow'
+        : pushStatus === 'loading'
+          ? 'Checking device permission…'
+          : 'Disabled on this device — tap to open settings';
 
   // ── render ────────────────────────────────────────────────────────────────────
   return (
@@ -143,6 +177,65 @@ export default function SettingsScreen() {
 
         {/* ── NOTIFICATIONS ── */}
         <Section title="NOTIFICATIONS" icon="notifications-outline" iconColor="#ff6b35">
+          <Row
+            label="Push Permissions"
+            sublabel={pushStatusLabel}
+            left={
+              <Ionicons
+                name={pushStatus === 'granted' ? 'notifications' : 'notifications-off-outline'}
+                size={18}
+                color={pushStatus === 'granted' ? '#22c55e' : '#ff6b35'}
+              />
+            }
+            right={
+              pushBusy ? (
+                <ActivityIndicator size="small" color="#888" />
+              ) : (
+                <TouchableOpacity style={[s.chipBtn, pushStatus === 'granted' ? s.chipBtnGreen : s.chipBtnOrange]} onPress={handlePushSettings}>
+                  <Text style={s.chipBtnText}>{pushStatus === 'undetermined' ? 'Allow' : 'Open'}</Text>
+                </TouchableOpacity>
+              )
+            }
+          />
+          <View style={s.notificationHelpBox}>
+            <Ionicons name="information-circle-outline" size={16} color="#8892b0" />
+            <Text style={s.notificationHelpText}>
+              Device push permissions control pop-up alerts. The toggles below control what lands in your notification center and what remains eligible for push across the app.
+            </Text>
+          </View>
+
+          <View style={s.notifGroup}>
+            <Text style={s.notifGroupLabel}>🔔 Notification Center</Text>
+          </View>
+          <ToggleRow
+            label="Social Activity"
+            sublabel="Likes, comments, replies, follows, and mentions"
+            icon="people-outline"
+            value={notificationPrefs?.social_activity ?? true}
+            onValueChange={(val) => updatePreferences({ social_activity: val })}
+          />
+          <ToggleRow
+            label="Marketplace Updates"
+            sublabel="Messages, offers, sales, disputes, and delivery updates"
+            icon="storefront-outline"
+            value={notificationPrefs?.marketplace_activity ?? true}
+            onValueChange={(val) => updatePreferences({ marketplace_activity: val })}
+          />
+          <ToggleRow
+            label="Groups & Invites"
+            sublabel="Community invites and future group activity"
+            icon="people-circle-outline"
+            value={notificationPrefs?.group_activity ?? true}
+            onValueChange={(val) => updatePreferences({ group_activity: val })}
+          />
+          <ToggleRow
+            label="Rewards & Bonuses"
+            sublabel="Daily check-in and future rewards"
+            icon="gift-outline"
+            value={notificationPrefs?.reward_activity ?? true}
+            onValueChange={(val) => updatePreferences({ reward_activity: val })}
+          />
+
           <View style={s.notifGroup}>
             <Text style={s.notifGroupLabel}>🏆  Challenge Events</Text>
           </View>
@@ -150,21 +243,21 @@ export default function SettingsScreen() {
             label="Voting Opens"
             sublabel="Saturday — voting period begins"
             icon="megaphone-outline"
-            value={challengePrefs?.challenge_voting ?? true}
+            value={notificationPrefs?.challenge_voting ?? true}
             onValueChange={(val) => updatePreferences({ challenge_voting: val })}
           />
           <ToggleRow
             label="2-Hour Warning"
             sublabel="Sunday — reminder before voting closes"
             icon="timer-outline"
-            value={challengePrefs?.challenge_closing ?? true}
+            value={notificationPrefs?.challenge_closing ?? true}
             onValueChange={(val) => updatePreferences({ challenge_closing: val })}
           />
           <ToggleRow
             label="Results Announced"
             sublabel="Monday — winners revealed"
             icon="trophy-outline"
-            value={challengePrefs?.challenge_results ?? true}
+            value={notificationPrefs?.challenge_results ?? true}
             onValueChange={(val) => updatePreferences({ challenge_results: val })}
             last
           />
@@ -401,6 +494,19 @@ const s = StyleSheet.create({
   // Notification group label
   notifGroup:      { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
   notifGroupLabel: { color: '#ff6b35', fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
+  notificationHelpBox: {
+    flexDirection: 'row',
+    gap: 10,
+    marginHorizontal: 14,
+    marginTop: 2,
+    marginBottom: 6,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#0d1328',
+    borderWidth: 1,
+    borderColor: '#1f2a44',
+  },
+  notificationHelpText: { color: '#8892b0', fontSize: 12, lineHeight: 18, flex: 1 },
 
   // Chip buttons (for connect/unlink)
   chipBtn:      { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, minWidth: 70, alignItems: 'center' },

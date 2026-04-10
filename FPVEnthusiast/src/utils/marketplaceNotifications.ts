@@ -1,7 +1,9 @@
 // src/utils/marketplaceNotifications.ts
 // Send in-app DB notification + Expo push to a user for marketplace events.
 
+import { logNotificationLifecycle, shouldSendPushForNotificationType } from '../constants/notificationPolicy';
 import { supabase } from '../services/supabase';
+import { insertAppNotification } from './notificationHelpers';
 
 type NotifType = 'new_message' | 'new_offer' | 'offer_accepted' | 'offer_declined' | 'offer_countered';
 
@@ -32,52 +34,154 @@ export async function sendMarketplaceNotification(p: MarketplaceNotifParams) {
     offer_countered: `The seller countered your offer on "${p.listingTitle}" at ${p.extraMessage ?? "a new price"}.`,
   };
 
-  // 1. Insert in-app notification (fire-and-forget — don't block UI)
-  // Write BOTH listing_id (FK column, added by 20260314 migration) and
-  // entity_id / entity_type (generic columns, added by 20260315 migration)
-  // so tap-to-navigate works regardless of which column the client reads.
-  supabase.from('notifications').insert({
-    user_id:     p.recipientId,
-    actor_id:    p.actorId,
-    type:        p.type,
-    message:     messages[p.type],
-    post_id:     null,
-    comment_id:  null,
-    listing_id:  p.listingId,      // FK to marketplace_listings
-    entity_id:   p.listingId,      // generic — enables tap-to-navigate
-    entity_type: 'listing',
-    read:        false,
-  }).then(({ error }) => {
-    if (error) console.warn('[marketplaceNotif] in-app insert error:', error.message);
+  const titles: Record<NotifType, string> = {
+    new_message:    '💬 New Message',
+    new_offer:      '🏷️ New Offer Received',
+    offer_accepted: '✅ Offer Accepted!',
+    offer_declined: '❌ Offer Declined',
+    offer_countered:'↩️ Counter Offer',
+  };
+
+  // 1. Insert in-app notification. The DB trigger now applies user notification
+  // preferences globally. If no row comes back, the user opted out, so skip push.
+  const { data: inserted, error: insertError } = await insertAppNotification({
+    recipientId: p.recipientId,
+    actorId: p.actorId,
+    type: p.type,
+    title: titles[p.type],
+    body: bodies[p.type],
+    message: messages[p.type],
+    listingId: p.listingId,
+    entityId: p.listingId,
+    entityType: 'listing',
+    data: {
+      listing_id: p.listingId,
+      listingId: p.listingId,
+      navigate: 'marketplace',
+      type: p.type,
+    },
   });
 
-  // 2. Look up recipient's push token and send Expo push (fire-and-forget)
-  supabase
+  if (insertError) {
+    logNotificationLifecycle('insert_error', {
+      source: 'marketplaceNotifications',
+      type: p.type,
+      userId: p.recipientId,
+      reason: insertError.message,
+      extra: { listing_id: p.listingId },
+    });
+    console.warn('[marketplaceNotif] in-app insert error:', insertError.message);
+    return;
+  }
+
+  if (!inserted?.id) {
+    logNotificationLifecycle('push_skipped', {
+      source: 'marketplaceNotifications',
+      type: p.type,
+      userId: p.recipientId,
+      reason: 'notification_filtered_or_not_inserted',
+      extra: { listing_id: p.listingId },
+    });
+    return;
+  }
+
+  logNotificationLifecycle('inserted', {
+    source: 'marketplaceNotifications',
+    type: p.type,
+    userId: p.recipientId,
+    notificationId: inserted.id,
+    extra: { listing_id: p.listingId },
+  });
+
+  if (!shouldSendPushForNotificationType(p.type)) {
+    logNotificationLifecycle('push_skipped', {
+      source: 'marketplaceNotifications',
+      type: p.type,
+      userId: p.recipientId,
+      notificationId: inserted.id,
+      reason: 'push_matrix_disabled',
+      extra: { listing_id: p.listingId },
+    });
+    return;
+  }
+
+  // 2. Look up recipient's push token and send Expo push.
+  const { data, error: tokenError } = await supabase
     .from('user_push_tokens')
     .select('token')
     .eq('user_id', p.recipientId)
     .limit(1)
-    .maybeSingle()
-    .then(({ data }) => {
-      if (!data?.token) return;
-      const titles: Record<NotifType, string> = {
-        new_message:    '💬 New Message',
-        new_offer:      '🏷️ New Offer Received',
-        offer_accepted: '✅ Offer Accepted!',
-        offer_declined: '❌ Offer Declined',
-        offer_countered: '↩️ Counter Offer',
-      };
-      fetch('https://exp.host/--/api/v2/push/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          to:    data.token,
-          title: titles[p.type],
-          body:  bodies[p.type],
-          data:  { navigate: 'marketplace', listingId: p.listingId, type: p.type },
-          sound: 'default',
-          badge: 1,
-        }),
-      }).catch(e => console.warn('[marketplaceNotif] push send error:', e));
+    .maybeSingle();
+
+  if (tokenError) {
+    logNotificationLifecycle('push_error', {
+      source: 'marketplaceNotifications',
+      type: p.type,
+      userId: p.recipientId,
+      notificationId: inserted.id,
+      reason: tokenError.message,
+      extra: { listing_id: p.listingId },
     });
+    console.warn('[marketplaceNotif] push token lookup error:', tokenError.message);
+    return;
+  }
+
+  if (!data?.token) {
+    logNotificationLifecycle('push_skipped', {
+      source: 'marketplaceNotifications',
+      type: p.type,
+      userId: p.recipientId,
+      notificationId: inserted.id,
+      reason: 'missing_push_token',
+      extra: { listing_id: p.listingId },
+    });
+    return;
+  }
+
+  try {
+    const resp = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        to:    data.token,
+        title: titles[p.type],
+        body:  bodies[p.type],
+        data:  { navigate: 'marketplace', listing_id: p.listingId, listingId: p.listingId, type: p.type },
+        sound: 'default',
+        badge: 1,
+      }),
+    });
+
+    if (!resp.ok) {
+      const errorBody = await resp.text();
+      logNotificationLifecycle('push_error', {
+        source: 'marketplaceNotifications',
+        type: p.type,
+        userId: p.recipientId,
+        notificationId: inserted.id,
+        reason: `expo_status_${resp.status}`,
+        extra: { listing_id: p.listingId, error_body: errorBody },
+      });
+      console.warn('[marketplaceNotif] push send failed:', resp.status, errorBody);
+      return;
+    }
+
+    logNotificationLifecycle('push_sent', {
+      source: 'marketplaceNotifications',
+      type: p.type,
+      userId: p.recipientId,
+      notificationId: inserted.id,
+      extra: { listing_id: p.listingId },
+    });
+  } catch (e) {
+    logNotificationLifecycle('push_error', {
+      source: 'marketplaceNotifications',
+      type: p.type,
+      userId: p.recipientId,
+      notificationId: inserted.id,
+      reason: e instanceof Error ? e.message : String(e),
+      extra: { listing_id: p.listingId },
+    });
+    console.warn('[marketplaceNotif] push send error:', e);
+  }
 }

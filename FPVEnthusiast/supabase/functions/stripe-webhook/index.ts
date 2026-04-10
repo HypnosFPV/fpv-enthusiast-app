@@ -18,6 +18,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import Stripe from 'https://esm.sh/stripe@14?target=deno';
 import { getPropsBonusForPrice } from '../../../src/constants/profilePurchaseBonuses.ts';
+import { logNotificationLifecycle, shouldSendPushForNotificationType } from '../../../src/constants/notificationPolicy.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -29,6 +30,102 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...CORS, 'Content-Type': 'application/json' },
   });
+}
+
+async function sendExpoPushForNotification(
+  supabase: any,
+  userId: string | null | undefined,
+  title: string,
+  body: string,
+  data: Record<string, unknown>,
+) {
+  if (!userId) return;
+
+  const notifType = String(data.type ?? '');
+  if (!shouldSendPushForNotificationType(notifType)) {
+    logNotificationLifecycle('push_skipped', {
+      source: 'stripe-webhook',
+      type: notifType,
+      userId,
+      reason: 'push_matrix_disabled',
+      extra: data,
+    });
+    return;
+  }
+
+  const { data: tokenRow, error: tokenError } = await supabase
+    .from('user_push_tokens')
+    .select('token')
+    .eq('user_id', userId)
+    .limit(1)
+    .maybeSingle();
+
+  if (tokenError) {
+    logNotificationLifecycle('push_error', {
+      source: 'stripe-webhook',
+      type: notifType,
+      userId,
+      reason: tokenError.message,
+      extra: data,
+    });
+    console.warn('Push token lookup failed', { userId, error: tokenError.message });
+    return;
+  }
+
+  if (!tokenRow?.token) {
+    logNotificationLifecycle('push_skipped', {
+      source: 'stripe-webhook',
+      type: notifType,
+      userId,
+      reason: 'missing_push_token',
+      extra: data,
+    });
+    return;
+  }
+
+  try {
+    const resp = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        to: tokenRow.token,
+        title,
+        body,
+        data,
+        sound: 'default',
+        badge: 1,
+      }),
+    });
+
+    if (!resp.ok) {
+      const errorBody = await resp.text();
+      logNotificationLifecycle('push_error', {
+        source: 'stripe-webhook',
+        type: notifType,
+        userId,
+        reason: `expo_status_${resp.status}`,
+        extra: { ...data, error_body: errorBody },
+      });
+      console.warn('Expo push send failed', { userId, status: resp.status, body: errorBody });
+      return;
+    }
+
+    logNotificationLifecycle('push_sent', {
+      source: 'stripe-webhook',
+      type: notifType,
+      userId,
+      extra: data,
+    });
+  } catch (error) {
+    logNotificationLifecycle('push_error', {
+      source: 'stripe-webhook',
+      type: notifType,
+      userId,
+      reason: error instanceof Error ? error.message : String(error),
+      extra: data,
+    });
+    console.warn('Expo push send exception', { userId, error });
+  }
 }
 
 async function awardPurchasePropsBonus(
@@ -521,19 +618,61 @@ serve(async (req) => {
       .update({ status: 'sold', updated_at: now })
       .eq('id', order.listing_id);
 
-    await supabase
+    const itemSoldTitle = '🛒 Item sold';
+    const itemSoldBody = `Your listing sold for $${(order.amount_cents / 100).toFixed(2)}. Ship it within 3 days.`;
+    const itemSoldData = {
+      listing_id: order.listing_id,
+      listingId: order.listing_id,
+      order_id: order.id,
+      orderId: order.id,
+      navigate: 'marketplace',
+      type: 'item_sold',
+    };
+
+    const { data: insertedSaleNotif, error: saleNotifError } = await supabase
       .from('notifications')
       .insert({
         user_id: order.seller_id,
         actor_id: order.buyer_id,
-        type: 'new_message',
+        type: 'item_sold',
+        listing_id: order.listing_id,
         entity_id: order.listing_id,
         entity_type: 'listing',
-        body: `Someone bought your listing for $${(order.amount_cents / 100).toFixed(2)}! Ship it within 3 days.`,
+        title: itemSoldTitle,
+        body: itemSoldBody,
+        message: 'Your listing sold — ship it within 3 days.',
+        data: itemSoldData,
       })
-      .then(({ error }) => {
-        if (error) console.warn('Notify seller error', error);
+      .select('id')
+      .maybeSingle();
+
+    if (saleNotifError) {
+      logNotificationLifecycle('insert_error', {
+        source: 'stripe-webhook',
+        type: 'item_sold',
+        userId: order.seller_id,
+        reason: saleNotifError.message,
+        extra: itemSoldData,
       });
+      console.warn('Notify seller error', saleNotifError);
+    } else if (insertedSaleNotif?.id) {
+      logNotificationLifecycle('inserted', {
+        source: 'stripe-webhook',
+        type: 'item_sold',
+        userId: order.seller_id,
+        notificationId: insertedSaleNotif.id,
+        extra: itemSoldData,
+      });
+      await sendExpoPushForNotification(supabase, order.seller_id, itemSoldTitle, itemSoldBody, itemSoldData);
+    } else {
+      logNotificationLifecycle('push_skipped', {
+        source: 'stripe-webhook',
+        type: 'item_sold',
+        userId: order.seller_id,
+        reason: 'notification_filtered_or_not_inserted',
+        extra: itemSoldData,
+      });
+    }
 
     return json({ received: true });
   }

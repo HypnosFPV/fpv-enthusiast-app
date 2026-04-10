@@ -15,7 +15,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Image, ActivityIndicator, RefreshControl, Animated,
-  Modal, Pressable, SectionList, Easing,
+  Modal, Pressable, SectionList, Easing, Alert,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,102 +32,115 @@ interface GroupedNotif {
   type:        AppNotification['type'];
   post_id:     string | null;
   comment_id:  string | null;
-  entity_id:   string | null;   // listing_id for marketplace notifs (entity_id ?? listing_id)
+  entity_id:   string | null;
   entity_type: string | null;
-  /** All raw notification IDs belonging to this group */
-  ids:        string[];
-  /** Unique actors, most-recent first, deduped by actor_id */
-  actors:     Array<{ id: string | null; username: string; avatar_url: string | null }>;
-  /** False if ANY notification in the group is unread */
-  read:       boolean;
-  /** Timestamp of the newest notification */
-  created_at: string;
-  post:       { thumbnail_url: string | null } | null;
-  message:    string | null;
+  ids:         string[];
+  actors:      Array<{ id: string | null; username: string; avatar_url: string | null }>;
+  read:        boolean;
+  created_at:  string;
+  post:        { thumbnail_url: string | null } | null;
+  message:     string | null;
+  title:       string | null;
+  body:        string | null;
+  data:        Record<string, any> | null;
 }
 
+type NotificationFilter = 'all' | 'unread' | 'social' | 'marketplace' | 'challenge' | 'group' | 'reward';
+
 // ─── Grouping engine ──────────────────────────────────────────────────────────
-/**
- * Groups a sorted (newest-first) notification list.
- * Key strategy:
- *   like / comment / mention  →  type__post_id
- *   follow                    →  follow__all
- *   reply                     →  reply__comment_id  (fall back to post_id)
- */
+function notificationGroupKey(n: AppNotification): string {
+  const entityRef = n.entity_id ?? n.listing_id ?? n.challenge_id ?? (n.data as any)?.listing_id ?? null;
+
+  if (n.type === 'follow') return 'follow__all';
+  if (n.type === 'reply' || n.type === 'comment_reply') {
+    return `reply__${n.comment_id ?? n.post_id ?? n.id}`;
+  }
+  if (n.type === 'like' || n.type === 'comment' || n.type === 'mention') {
+    return `${n.type}__${n.post_id ?? n.id}`;
+  }
+  if (n.type === 'daily_check_in') {
+    return `daily_check_in__${(n.data as any)?.utc_date ?? n.created_at.slice(0, 10)}`;
+  }
+  if (entityRef) return `${n.type}__${entityRef}`;
+  return `${n.type}__${n.id}`;
+}
+
 function groupNotifications(notifs: AppNotification[]): GroupedNotif[] {
   const map = new Map<string, GroupedNotif>();
-  const order: string[] = [];          // preserve insertion order
+  const order: string[] = [];
 
   for (const n of notifs) {
-    let key: string;
-    if (n.type === 'follow') {
-      key = 'follow__all';
-    } else if (n.type === 'reply') {
-      key = `reply__${n.comment_id ?? n.post_id ?? 'x'}`;
-    } else if ((n.entity_id ?? n.listing_id) && (n.type === 'new_offer' || n.type === 'offer_accepted' || n.type === 'offer_declined' || n.type === 'new_message' || n.type === 'group_invite')) {
-      const eid = n.entity_id ?? n.listing_id;
-      key = `${n.type}__${eid}`;
-    } else {
-      key = `${n.type}__${n.post_id ?? 'x'}`;
-    }
-
+    const key = notificationGroupKey(n);
     const actor: GroupedNotif['actors'][number] = {
       id:         n.actor_id,
-      username:   (n.actor as any)?.username   ?? 'Someone',
+      username:   (n.actor as any)?.username ?? 'Someone',
       avatar_url: (n.actor as any)?.avatar_url ?? null,
     };
 
     if (map.has(key)) {
       const g = map.get(key)!;
-      // Dedup actors by id
-      if (!g.actors.some(a => a.id === actor.id)) {
+      if (actor.id && !g.actors.some((a) => a.id === actor.id)) {
         g.actors.push(actor);
       }
       g.ids.push(n.id);
       if (!n.read) g.read = false;
-      // Keep newest created_at
       if (n.created_at > g.created_at) g.created_at = n.created_at;
+      if (!g.message) g.message = n.message ?? null;
+      if (!g.title) g.title = n.title ?? null;
+      if (!g.body) g.body = n.body ?? null;
+      if (!g.data) g.data = n.data ?? null;
     } else {
       const g: GroupedNotif = {
         groupKey:    key,
         type:        n.type,
         post_id:     n.post_id,
         comment_id:  n.comment_id,
-        entity_id:   n.entity_id ?? n.listing_id ?? null,  // prefer entity_id, fall back to listing_id
+        entity_id:   n.entity_id ?? n.listing_id ?? ((n.data as any)?.listing_id ?? null),
         entity_type: n.entity_type ?? null,
         ids:         [n.id],
-        actors:      [actor],
+        actors:      actor.id ? [actor] : [],
         read:        n.read,
         created_at:  n.created_at,
         post:        (n.post as any) ?? null,
-        message:     n.message,
+        message:     n.message ?? null,
+        title:       n.title ?? null,
+        body:        n.body ?? null,
+        data:        n.data ?? null,
       };
       map.set(key, g);
       order.push(key);
     }
   }
 
-  // Re-sort by newest created_at
   return order
-    .map(k => map.get(k)!)
+    .map((k) => map.get(k)!)
     .sort((a, b) => (b.created_at > a.created_at ? 1 : -1));
 }
 
 // ─── Label builder ────────────────────────────────────────────────────────────
 const ACTION_VERB: Record<AppNotification['type'], string> = {
-  like:                    'liked your post',
-  comment:                 'commented on your post',
-  follow:                  'started following you',
-  mention:                 'mentioned you',
-  reply:                   'replied to your comment',
-  group_invite:            'invited you to join a community',
-  challenge_voting_open:   '',
-  challenge_voting_closing:'',
-  challenge_result:        '',
-  new_message:             '',
-  new_offer:               '',
-  offer_accepted:          '',
-  offer_declined:          '',
+  like:                     'liked your post',
+  comment:                  'commented on your post',
+  follow:                   'started following you',
+  mention:                  'mentioned you',
+  reply:                    'replied to your comment',
+  comment_reply:            'replied to your comment',
+  group_invite:             'invited you to join a community',
+  challenge_voting_open:    '',
+  challenge_voting_closing: '',
+  challenge_result:         '',
+  new_message:              '',
+  new_offer:                '',
+  offer_accepted:           '',
+  offer_declined:           '',
+  offer_countered:          '',
+  marketplace_dispute:      '',
+  dispute_resolved:         '',
+  item_sold:                '',
+  item_delivered:           '',
+  item_shipped:             '',
+  payment_received:         '',
+  daily_check_in:           '',
 };
 
 function buildLabel(actors: GroupedNotif['actors'], type: AppNotification['type']): {
@@ -159,12 +172,69 @@ function isSystemNotif(type: AppNotification['type']): boolean {
          type === 'new_message' ||
          type === 'new_offer' ||
          type === 'offer_accepted' ||
-         type === 'offer_declined';
+         type === 'offer_declined' ||
+         type === 'offer_countered' ||
+         type === 'marketplace_dispute' ||
+         type === 'dispute_resolved' ||
+         type === 'item_sold' ||
+         type === 'item_delivered' ||
+         type === 'item_shipped' ||
+         type === 'payment_received' ||
+         type === 'daily_check_in';
 }
 
-/** One-liner label for system notifications that uses the raw message. */
 function systemLabel(g: GroupedNotif): string {
-  return g.message ?? g.type;
+  return g.title ?? g.message ?? g.body ?? g.type;
+}
+
+function systemSecondaryLabel(g: GroupedNotif): string | null {
+  const primary = systemLabel(g);
+  const secondary = g.message ?? g.body ?? null;
+  if (!secondary || secondary === primary) return null;
+  return secondary;
+}
+
+const FILTER_OPTIONS: Array<{ key: NotificationFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'unread', label: 'Unread' },
+  { key: 'social', label: 'Social' },
+  { key: 'marketplace', label: 'Marketplace' },
+  { key: 'challenge', label: 'Challenges' },
+  { key: 'reward', label: 'Rewards' },
+  { key: 'group', label: 'Groups' },
+];
+
+function notificationBucket(type: AppNotification['type']): Exclude<NotificationFilter, 'all' | 'unread'> {
+  if (type === 'like' || type === 'comment' || type === 'follow' || type === 'mention' || type === 'reply' || type === 'comment_reply') return 'social';
+  if (type === 'challenge_voting_open' || type === 'challenge_voting_closing' || type === 'challenge_result') return 'challenge';
+  if (type === 'new_message' || type === 'new_offer' || type === 'offer_accepted' || type === 'offer_declined' || type === 'offer_countered' || type === 'marketplace_dispute' || type === 'dispute_resolved' || type === 'item_sold' || type === 'item_delivered' || type === 'item_shipped' || type === 'payment_received') return 'marketplace';
+  if (type === 'group_invite') return 'group';
+  return 'reward';
+}
+
+function matchesFilter(g: GroupedNotif, filter: NotificationFilter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'unread') return !g.read;
+  return notificationBucket(g.type) === filter;
+}
+
+function emptyStateBlurb(filter: NotificationFilter): string {
+  switch (filter) {
+    case 'unread':
+      return 'No unread notifications right now. New activity will show up here first.';
+    case 'social':
+      return 'Likes, comments, replies, follows, and mentions will show up here.';
+    case 'marketplace':
+      return 'Messages, offers, sales, delivery updates, and disputes will show up here.';
+    case 'challenge':
+      return 'Voting alerts and weekly challenge results will show up here.';
+    case 'group':
+      return 'Invites and future group activity will show up here.';
+    case 'reward':
+      return 'Daily check-ins and future rewards will show up here.';
+    default:
+      return 'Likes, comments, challenge updates, market alerts, invites, and rewards show up here.';
+  }
 }
 
 function timeAgo(iso: string): string {
@@ -199,19 +269,28 @@ function groupByDate(groups: GroupedNotif[]): Array<{ title: string; data: Group
 
 // ─── Type metadata ─────────────────────────────────────────────────────────
 const TYPE_META: Record<string, { icon: string; color: string }> = {
-  like:                    { icon: 'heart',            color: '#e74c3c' },
-  comment:                 { icon: 'chatbubble',       color: '#3498db' },
-  follow:                  { icon: 'person-add',       color: '#2ecc71' },
-  mention:                 { icon: 'at-circle',        color: '#f39c12' },
-  reply:                   { icon: 'return-down-back', color: '#9b59b6' },
-  challenge_voting_open:   { icon: 'trophy',           color: '#ff6b35' },
-  challenge_voting_closing:{ icon: 'timer',            color: '#e74c3c' },
-  challenge_result:        { icon: 'medal',            color: '#f1c40f' },
-  new_message:             { icon: 'chatbubble',       color: '#38bdf8' },
-  new_offer:               { icon: 'pricetag',         color: '#f59e0b' },
-  offer_accepted:          { icon: 'checkmark-circle', color: '#22c55e' },
-  offer_declined:          { icon: 'close-circle',     color: '#ef4444' },
-  group_invite:            { icon: 'people-circle',    color: '#a78bfa' },
+  like:                     { icon: 'heart',            color: '#e74c3c' },
+  comment:                  { icon: 'chatbubble',       color: '#3498db' },
+  follow:                   { icon: 'person-add',       color: '#2ecc71' },
+  mention:                  { icon: 'at-circle',        color: '#f39c12' },
+  reply:                    { icon: 'return-down-back', color: '#9b59b6' },
+  comment_reply:            { icon: 'return-down-back', color: '#9b59b6' },
+  challenge_voting_open:    { icon: 'trophy',           color: '#ff6b35' },
+  challenge_voting_closing: { icon: 'timer',            color: '#e74c3c' },
+  challenge_result:         { icon: 'medal',            color: '#f1c40f' },
+  new_message:              { icon: 'chatbubble',       color: '#38bdf8' },
+  new_offer:                { icon: 'pricetag',         color: '#f59e0b' },
+  offer_accepted:           { icon: 'checkmark-circle', color: '#22c55e' },
+  offer_declined:           { icon: 'close-circle',     color: '#ef4444' },
+  offer_countered:          { icon: 'swap-horizontal',  color: '#f97316' },
+  marketplace_dispute:      { icon: 'alert-circle',     color: '#ef4444' },
+  dispute_resolved:         { icon: 'shield-checkmark', color: '#22c55e' },
+  item_sold:                { icon: 'bag-check',        color: '#14b8a6' },
+  item_delivered:           { icon: 'cube',             color: '#60a5fa' },
+  item_shipped:             { icon: 'car',              color: '#38bdf8' },
+  payment_received:         { icon: 'cash',             color: '#22c55e' },
+  group_invite:             { icon: 'people-circle',    color: '#a78bfa' },
+  daily_check_in:           { icon: 'calendar',         color: '#fbbf24' },
 };
 
 // ─── Avatar Stack ─────────────────────────────────────────────────────────────
@@ -433,21 +512,28 @@ function GroupedNotifRow({
           {/* ── Text ──────────────────────────────────────── */}
           <View style={styles.rowBody}>
             {isSystemNotif(item.type) ? (
-              <Text style={styles.rowText} numberOfLines={3}>
-                {systemLabel(item)}
-              </Text>
+              <>
+                <Text style={styles.rowText} numberOfLines={2}>
+                  {systemLabel(item)}
+                </Text>
+                {systemSecondaryLabel(item) ? (
+                  <Text style={styles.messagePreview} numberOfLines={2}>{systemSecondaryLabel(item)}</Text>
+                ) : null}
+              </>
             ) : (
-              <Text style={styles.rowText} numberOfLines={2}>
-                <Text style={styles.bold}>{prefix}</Text>
-                {' '}<Text style={styles.rowTextMuted}>{suffix}</Text>
-              </Text>
+              <>
+                <Text style={styles.rowText} numberOfLines={2}>
+                  <Text style={styles.bold}>{prefix}</Text>
+                  {' '}<Text style={styles.rowTextMuted}>{suffix}</Text>
+                </Text>
+                {item.message ? (
+                  <Text style={styles.messagePreview} numberOfLines={1}>"{item.message}"</Text>
+                ) : null}
+              </>
             )}
-            {!isSystemNotif(item.type) && item.message ? (
-              <Text style={styles.messagePreview} numberOfLines={1}>"{item.message}"</Text>
-            ) : null}
             <View style={styles.rowMeta}>
               <Text style={styles.timeText}>{timeAgo(item.created_at)}</Text>
-              {isGrouped && (
+              {isGrouped && item.actors.length > 1 && (
                 <View style={styles.countBadge}>
                   <Text style={styles.countBadgeText}>{item.actors.length}</Text>
                 </View>
@@ -508,6 +594,10 @@ export default function NotificationsScreen() {
     actorAvatar: string | null;
     otherCount:  number;
   } | null>(null);
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all');
+  const seenReadIdsRef = useRef<Set<string>>(new Set());
+  const queuedReadIdsRef = useRef<Set<string>>(new Set());
+  const readFlushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Focus refresh ─────────────────────────────────────────────────────────
   useFocusEffect(
@@ -515,17 +605,90 @@ export default function NotificationsScreen() {
   );
 
   // ── Group then section ────────────────────────────────────────────────────
-  const grouped  = useMemo(() => groupNotifications(notifications), [notifications]);
-  const sections = useMemo(() => groupByDate(grouped), [grouped]);
+  const grouped = useMemo(() => groupNotifications(notifications), [notifications]);
+  const filteredGrouped = useMemo(
+    () => grouped.filter((g) => matchesFilter(g, activeFilter)),
+    [grouped, activeFilter]
+  );
+  const sections = useMemo(() => groupByDate(filteredGrouped), [filteredGrouped]);
 
-  // Unread group count (for "N unread" label — count groups not raw rows)
-  const unreadGroupCount = useMemo(() => grouped.filter(g => !g.read).length, [grouped]);
+  const filterCounts = useMemo(() => {
+    const base = {
+      all: grouped.length,
+      unread: grouped.filter((g) => !g.read).length,
+      social: grouped.filter((g) => notificationBucket(g.type) === 'social').length,
+      marketplace: grouped.filter((g) => notificationBucket(g.type) === 'marketplace').length,
+      challenge: grouped.filter((g) => notificationBucket(g.type) === 'challenge').length,
+      group: grouped.filter((g) => notificationBucket(g.type) === 'group').length,
+      reward: grouped.filter((g) => notificationBucket(g.type) === 'reward').length,
+    } satisfies Record<NotificationFilter, number>;
+    return base;
+  }, [grouped]);
+
+  const visibleIds = useMemo(() => filteredGrouped.flatMap((g) => g.ids), [filteredGrouped]);
+  const visibleUnreadIds = useMemo(() => filteredGrouped.filter((g) => !g.read).flatMap((g) => g.ids), [filteredGrouped]);
+  const readIds = useMemo(() => notifications.filter((n) => n.read).map((n) => n.id), [notifications]);
+  const activeFilterLabel = useMemo(
+    () => FILTER_OPTIONS.find((option) => option.key === activeFilter)?.label ?? 'All',
+    [activeFilter]
+  );
+
+  // Unread group count (for grouped sections / summaries)
+  const unreadGroupCount = useMemo(() => filteredGrouped.filter(g => !g.read).length, [filteredGrouped]);
+
+  const flushQueuedReads = useCallback(() => {
+    if (!queuedReadIdsRef.current.size) return;
+    const ids = Array.from(queuedReadIdsRef.current);
+    queuedReadIdsRef.current.clear();
+    ids.forEach((id) => seenReadIdsRef.current.add(id));
+    void markReadBulk(ids);
+  }, [markReadBulk]);
+
+  useEffect(() => {
+    return () => {
+      if (readFlushTimeoutRef.current) {
+        clearTimeout(readFlushTimeoutRef.current);
+        readFlushTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ item?: GroupedNotif; isViewable?: boolean }> }) => {
+    let queuedAny = false;
+
+    for (const entry of viewableItems) {
+      const group = entry.item;
+      if (!entry.isViewable || !group || group.read) continue;
+
+      for (const id of group.ids) {
+        if (seenReadIdsRef.current.has(id)) continue;
+        queuedReadIdsRef.current.add(id);
+        queuedAny = true;
+      }
+    }
+
+    if (!queuedAny) return;
+
+    if (readFlushTimeoutRef.current) clearTimeout(readFlushTimeoutRef.current);
+    readFlushTimeoutRef.current = setTimeout(() => {
+      readFlushTimeoutRef.current = null;
+      flushQueuedReads();
+    }, 180);
+  }).current;
 
   // ── Handle tap ────────────────────────────────────────────────────────────
   const handlePress = useCallback(async (g: GroupedNotif) => {
     // Mark all IDs in group as read
     const unreadIds = g.ids;
     if (!g.read) await markReadBulk(unreadIds);
+
+    const targetCommentId = (g.data as any)?.targetCommentId ?? (g.data as any)?.target_comment_id ?? g.comment_id ?? null;
+    const targetGroupId = g.entity_type === 'social_group'
+      ? g.entity_id
+      : ((g.data as any)?.groupId ?? (g.data as any)?.group_id ?? null);
+    const targetProfileId = g.actors[0]?.id
+      ?? ((g.data as any)?.userId ?? (g.data as any)?.user_id ?? null)
+      ?? (g.entity_type === 'profile' ? g.entity_id : null);
 
     // ── Challenge notifications ───────────────────────────────────────────
     if (g.type === 'challenge_voting_open' ||
@@ -537,39 +700,56 @@ export default function NotificationsScreen() {
 
     // ── Marketplace notifications → navigate to listing ───────────────────
     const isMarketplaceType = g.type === 'offer_accepted' || g.type === 'offer_declined' ||
-                              g.type === 'new_offer'      || g.type === 'new_message';
+                              g.type === 'offer_countered' || g.type === 'new_offer' ||
+                              g.type === 'new_message' || g.type === 'marketplace_dispute' ||
+                              g.type === 'dispute_resolved' || g.type === 'item_sold' || g.type === 'item_delivered' ||
+                              g.type === 'item_shipped' || g.type === 'payment_received';
     if (isMarketplaceType) {
-      if (g.entity_id) {
-        // New notifications (after fix) carry entity_id → go straight to listing
-        router.push({ pathname: '/listing/[id]', params: { id: g.entity_id } });
+      const listingId = g.entity_id ?? (g.data as any)?.listing_id ?? (g.data as any)?.listingId ?? null;
+      if (listingId) {
+        router.push({ pathname: '/listing/[id]', params: { id: listingId } });
       } else {
-        // Legacy notifications without entity_id → open marketplace tab
-        // (best-effort; no listing ID stored in old rows)
         router.push('/(tabs)/marketplace');
       }
       return;
     }
 
     if (g.type === 'group_invite') {
-      router.push('/(tabs)/chat');
+      if (targetGroupId) {
+        router.push({ pathname: '/group/[groupId]', params: { groupId: targetGroupId } });
+      } else {
+        router.push('/(tabs)/chat');
+      }
       return;
     }
 
-    // ── Follow → show action sheet ────────────────────────────────────────
+    if (g.type === 'daily_check_in') {
+      router.push('/(tabs)/profile');
+      return;
+    }
+
     if (g.type === 'follow') {
+      if (targetProfileId) {
+        router.push({ pathname: '/user/[id]', params: { id: targetProfileId } });
+        return;
+      }
+
       setFollowSheet({
         actorId:     g.actors[0]?.id ?? '',
         actorName:   g.actors[0]?.username ?? 'User',
         actorAvatar: g.actors[0]?.avatar_url ?? null,
         otherCount:  Math.max(0, g.actors.length - 1),
       });
-    } else if (g.post_id) {
+      return;
+    }
+
+    if (g.post_id) {
       // ── Post-based notifications → post screen ──────────────────────────
       router.push({
         pathname: '/post/[id]',
         params: {
           id: g.post_id,
-          ...(g.comment_id ? { comment_id: g.comment_id } : {}),
+          ...(targetCommentId ? { comment_id: targetCommentId } : {}),
         },
       });
     }
@@ -585,6 +765,59 @@ export default function NotificationsScreen() {
   const handleDelete = useCallback((ids: string[]) => {
     deleteNotificationBulk(ids);
   }, [deleteNotificationBulk]);
+
+  const handleMarkVisibleRead = useCallback(async () => {
+    if (!visibleUnreadIds.length) return;
+    await markReadBulk(visibleUnreadIds);
+  }, [markReadBulk, visibleUnreadIds]);
+
+  const handleDeleteAllRead = useCallback(() => {
+    if (!readIds.length) return;
+    Alert.alert(
+      'Delete all read notifications?',
+      'Unread notifications will stay in your inbox.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete read',
+          style: 'destructive',
+          onPress: () => {
+            void deleteNotificationBulk(readIds);
+          },
+        },
+      ]
+    );
+  }, [deleteNotificationBulk, readIds]);
+
+  const handleOpenMenu = useCallback(() => {
+    const actions: Array<{ text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }> = [];
+
+    if (unreadCount > 0) {
+      actions.push({
+        text: 'Mark all as read',
+        onPress: () => { void markAllRead(); },
+      });
+    }
+
+    if (readIds.length > 0) {
+      actions.push({
+        text: 'Delete all read',
+        style: 'destructive',
+        onPress: handleDeleteAllRead,
+      });
+    }
+
+    if (visibleUnreadIds.length > 0 && activeFilter !== 'all') {
+      actions.push({
+        text: `Mark ${activeFilterLabel.toLowerCase()} as read`,
+        onPress: () => { void handleMarkVisibleRead(); },
+      });
+    }
+
+    actions.push({ text: 'Cancel', style: 'cancel' });
+
+    Alert.alert('Notification actions', 'Choose what to do with your inbox.', actions);
+  }, [activeFilter, activeFilterLabel, handleDeleteAllRead, handleMarkVisibleRead, markAllRead, readIds.length, unreadCount, visibleUnreadIds.length]);
 
   if (loading && !notifications.length) {
     return (
@@ -603,35 +836,58 @@ export default function NotificationsScreen() {
           <Animated.Text style={[styles.title, { color: animatedColor }]}>
             Notifications
           </Animated.Text>
-          {unreadGroupCount > 0 && (
-            <Text style={styles.unreadLabel}>
-              {unreadGroupCount} unread
-            </Text>
-          )}
+          <Text style={styles.unreadLabel}>
+            {unreadCount > 0
+              ? `${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}`
+              : 'All caught up'}
+          </Text>
         </View>
         <View style={styles.headerActions}>
-          {unreadCount > 0 && (
-            <TouchableOpacity style={styles.markAllBtn} onPress={markAllRead}>
-              <Ionicons name="checkmark-done-outline" size={13} color="#888" style={{ marginRight: 4 }} />
-              <Text style={styles.markAllText}>Mark read</Text>
-            </TouchableOpacity>
-          )}
-          {notifications.length > 0 && (
-            <TouchableOpacity style={[styles.markAllBtn, styles.clearAllBtn]} onPress={clearAll}>
-              <Ionicons name="trash-outline" size={13} color="#c0392b" style={{ marginRight: 4 }} />
-              <Text style={[styles.markAllText, { color: '#c0392b' }]}>Clear all</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.menuBtn} onPress={handleOpenMenu} activeOpacity={0.8}>
+            <Ionicons name="ellipsis-horizontal" size={18} color="#ddd" />
+          </TouchableOpacity>
         </View>
       </View>
 
       {/* ── Swipe hint ── */}
-      {grouped.length > 0 && (
+      {filteredGrouped.length > 0 && (
         <View style={styles.swipeHint}>
           <Ionicons name="arrow-back-outline" size={12} color="#555" />
           <Text style={styles.swipeHintText}>Swipe left to delete</Text>
         </View>
       )}
+
+      <View style={styles.filterBar}>
+        {FILTER_OPTIONS.map((option) => {
+          const active = activeFilter === option.key;
+          const count = filterCounts[option.key];
+          return (
+            <TouchableOpacity
+              key={option.key}
+              style={[styles.filterChip, active && styles.filterChipActive]}
+              onPress={() => setActiveFilter(option.key)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.filterChipInner}>
+                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{option.label}</Text>
+                {count > 0 ? (
+                  <View style={[styles.filterCountBadge, active && styles.filterCountBadgeActive]}>
+                    <Text style={[styles.filterCountBadgeText, active && styles.filterCountBadgeTextActive]}>{count}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <View style={styles.filterSummaryBar}>
+        <Text style={styles.filterSummaryText}>
+          {activeFilterLabel} · {filteredGrouped.length} group{filteredGrouped.length === 1 ? '' : 's'}
+          {unreadGroupCount > 0 ? ` · ${unreadGroupCount} unread group${unreadGroupCount === 1 ? '' : 's'}` : ''}
+        </Text>
+        <Text style={styles.filterSummaryHint}>Notifications mark as read as you view them.</Text>
+      </View>
 
       {/* ── Sectioned grouped list ── */}
       {sections.length === 0 ? (
@@ -640,7 +896,7 @@ export default function NotificationsScreen() {
             <Ionicons name="notifications-off-outline" size={64} color="#222" />
             <Text style={styles.emptyTitle}>All caught up!</Text>
             <Text style={styles.emptySubtitle}>
-              When someone likes, comments, or follows you — it shows up here.
+              {emptyStateBlurb(activeFilter)}
             </Text>
           </View>
         </View>
@@ -648,6 +904,8 @@ export default function NotificationsScreen() {
         <SectionList
           sections={sections}
           keyExtractor={g => g.groupKey}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={{ itemVisiblePercentThreshold: 65, minimumViewTime: 180 }}
           renderSectionHeader={({ section: { title } }) => (
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeaderText}>{title}</Text>
@@ -705,14 +963,16 @@ const styles = StyleSheet.create({
   title:         { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
   unreadLabel:   { color: '#ff4500', fontSize: 12, fontWeight: '600', marginTop: 2 },
   headerActions: { flexDirection: 'row', gap: 8, paddingBottom: 2 },
-  markAllBtn: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 7,
-    borderRadius: 14, borderWidth: 1, borderColor: '#2a2a2a',
+  menuBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
     backgroundColor: '#161616',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  markAllText: { color: '#888', fontSize: 12, fontWeight: '500' },
-  clearAllBtn: { borderColor: '#3a1a1a', backgroundColor: '#1a0a0a' },
 
   swipeHint: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -720,6 +980,64 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: '#111',
   },
   swipeHintText: { color: '#444', fontSize: 11, fontStyle: 'italic' },
+
+  filterBar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111',
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#141414',
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  filterChipInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  filterChipActive: {
+    backgroundColor: '#2a1200',
+    borderColor: '#ff4500',
+  },
+  filterChipText: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  filterChipTextActive: {
+    color: '#ff8c42',
+  },
+  filterCountBadge: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 9,
+    backgroundColor: '#1e1e1e',
+    borderWidth: 1,
+    borderColor: '#333',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterCountBadgeActive: {
+    backgroundColor: '#43210d',
+    borderColor: '#ff8c42',
+  },
+  filterCountBadgeText: { color: '#777', fontSize: 11, fontWeight: '700' },
+  filterCountBadgeTextActive: { color: '#ffb37a' },
+  filterSummaryBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111',
+    backgroundColor: '#0f0f0f',
+  },
+  filterSummaryText: { color: '#666', fontSize: 12, fontWeight: '600' },
+  filterSummaryHint: { color: '#4f4f4f', fontSize: 11, marginTop: 3 },
 
   sectionHeader: {
     paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6,

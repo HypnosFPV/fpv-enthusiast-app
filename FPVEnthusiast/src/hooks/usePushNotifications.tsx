@@ -172,19 +172,81 @@ export function usePushNotifications() {
   const handleResponse = useCallback(
     (response: Notifications.NotificationResponse) => {
       const data = response.notification.request.content.data as
-        Record<string, string> | undefined;
+        Record<string, any> | undefined;
       if (!data) return;
-      switch (data.navigate) {
-        case 'challenges':    router.push('/(tabs)/challenges');    break;
-        case 'notifications': router.push('/(tabs)/notifications'); break;
+
+      const targetCommentId = data.targetCommentId ?? data.target_comment_id ?? data.commentId ?? data.comment_id;
+      const targetGroupId = data.groupId ?? data.group_id;
+      const targetEventId = data.eventId ?? data.event_id;
+      const targetProfileId = data.userId ?? data.user_id;
+      const navigate = data.navigate
+        ?? (targetEventId ? 'map_event'
+          : targetGroupId ? 'group'
+          : (data.listingId || data.listing_id) ? 'marketplace'
+          : (data.postId || data.post_id) ? 'post'
+          : targetProfileId ? 'profile'
+          : undefined);
+
+      switch (navigate) {
+        case 'challenges':
+          router.push('/(tabs)/challenges');
+          break;
+        case 'notifications':
+          router.push('/(tabs)/notifications');
+          break;
+        case 'profile':
+          if (targetProfileId) {
+            router.push({ pathname: '/user/[id]', params: { id: targetProfileId } } as any);
+          } else {
+            router.push('/(tabs)/profile');
+          }
+          break;
+        case 'post':
+          if (data.postId || data.post_id) {
+            router.push({
+              pathname: '/post/[id]',
+              params: {
+                id: (data.postId ?? data.post_id)!,
+                ...(targetCommentId ? { comment_id: targetCommentId } : {}),
+              },
+            } as any);
+          }
+          break;
+        case 'group':
+          if (targetGroupId) {
+            router.push({ pathname: '/group/[groupId]', params: { groupId: targetGroupId } } as any);
+          } else {
+            router.push('/(tabs)/chat');
+          }
+          break;
+        case 'chat':
+          if (targetGroupId) {
+            router.push({ pathname: '/group/[groupId]', params: { groupId: targetGroupId } } as any);
+          } else {
+            router.push('/(tabs)/chat');
+          }
+          break;
+        case 'listing':
         case 'marketplace':
-          if (data.listingId) {
-            router.push({ pathname: '/listing/[id]', params: { id: data.listingId } } as any);
+          if (data.listingId || data.listing_id) {
+            router.push({ pathname: '/listing/[id]', params: { id: (data.listingId ?? data.listing_id)! } } as any);
           } else {
             router.push('/(tabs)/marketplace');
           }
           break;
-        default: break;
+        case 'map':
+        case 'map_event':
+          if (targetEventId) {
+            router.push({ pathname: '/(tabs)/map', params: { eventId: targetEventId } } as any);
+          } else {
+            router.push('/(tabs)/map');
+          }
+          break;
+        default:
+          if (targetEventId) {
+            router.push({ pathname: '/(tabs)/map', params: { eventId: targetEventId } } as any);
+          }
+          break;
       }
     },
     [router]
@@ -228,15 +290,15 @@ export function usePushNotifications() {
 
           {/* Body */}
           <Text style={s.body}>
-            FPV Challenges will notify you when:
+            Get the updates that matter without having to keep checking the app:
           </Text>
           <View style={s.bullets}>
-            <Text style={s.bullet}>🏆  Voting opens on Saturday</Text>
-            <Text style={s.bullet}>⏰  2 hours left to cast your vote</Text>
-            <Text style={s.bullet}>🥇  Winners are announced Monday</Text>
+            <Text style={s.bullet}>🏆  Challenge voting, reminders, and results</Text>
+            <Text style={s.bullet}>💬  Marketplace messages, offers, and order updates</Text>
+            <Text style={s.bullet}>🎁  Rewards like daily check-ins and future bonuses</Text>
           </View>
           <Text style={s.sub}>
-            You can change this any time in Profile → Settings.
+            You can fine-tune every category any time in Profile → Settings.
           </Text>
 
           {/* Allow button */}

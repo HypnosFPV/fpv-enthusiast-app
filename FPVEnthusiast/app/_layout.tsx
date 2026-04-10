@@ -6,6 +6,7 @@ import { AuthProvider } from '../src/context/AuthContext';
 import { NotificationsProvider } from '../src/context/NotificationsContext';
 import { ChatProvider } from '../src/context/ChatContext';
 import { usePushNotifications } from '../src/hooks/usePushNotifications';
+import { useDailyCheckIn } from '../src/hooks/useDailyCheckIn';
 
 const STRIPE_PK = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 if (!STRIPE_PK) {
@@ -19,6 +20,7 @@ if (!STRIPE_PK) {
 // Inner component so hooks run inside both providers
 function AppContent() {
   const { PermissionModal } = usePushNotifications();
+  useDailyCheckIn();
   return (
     <>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a0a0a' } }}>

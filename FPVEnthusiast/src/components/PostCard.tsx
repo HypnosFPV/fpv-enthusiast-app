@@ -19,6 +19,7 @@ import ImageZoomModal from './ImageZoomModal';
 import { useResolvedGroupTheme } from '../hooks/useGroupThemes';
 import { GroupCardAnimationVariantId } from '../constants/groupThemes';
 import GroupCardAnimationBorder from './GroupCardAnimationBorder';
+import { insertAppNotification } from '../utils/notificationHelpers';
 
 const MentionTextInput = MentionTextInputComponent as any;
 
@@ -747,21 +748,48 @@ function PostCard(props: Props) {
     setReplyingTo(null);
 
     try {
-      const r = await supabase.from('comments')
+      const { data: insertedComment, error: insertError } = await supabase.from('comments')
         .insert({ post_id: post.id, user_id: currentUserId, content: text,
-                  parent_id: parentId ?? undefined });
-      if (r.error) throw r.error;
+                  parent_id: parentId ?? undefined })
+        .select('id')
+        .single();
+      if (insertError) throw insertError;
+      const insertedCommentId = insertedComment?.id ?? null;
+
       // Notify post owner (if not self and not a reply to someone else)
       if (!parentId && post.user_id && post.user_id !== currentUserId) {
-        void supabase.from('notifications').insert({
-          user_id: post.user_id, actor_id: currentUserId, type: 'comment', post_id: post.id,
+        void insertAppNotification({
+          recipientId: post.user_id,
+          actorId: currentUserId,
+          type: 'comment',
+          postId: post.id,
+          commentId: insertedCommentId,
+          entityId: post.id,
+          entityType: 'post',
+          title: '💬 New comment',
+          body: 'Someone commented on your post.',
+          message: 'commented on your post',
+          data: { navigate: 'post' },
         });
       }
       // Notify the comment author when replying to their comment
       if (parentId && replyTarget?.user_id && replyTarget.user_id !== currentUserId) {
-        void supabase.from('notifications').insert({
-          user_id: replyTarget.user_id, actor_id: currentUserId,
-          type: 'comment_reply', post_id: post.id,
+        void insertAppNotification({
+          recipientId: replyTarget.user_id,
+          actorId: currentUserId,
+          type: 'reply',
+          postId: post.id,
+          commentId: parentId,
+          entityId: parentId,
+          entityType: 'comment',
+          title: '↩️ New reply',
+          body: 'Someone replied to your comment.',
+          message: 'replied to your comment',
+          data: {
+            navigate: 'post',
+            targetCommentId: insertedCommentId ?? parentId,
+            target_comment_id: insertedCommentId ?? parentId,
+          },
         });
       }
       await fetchComments();

@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { decode } from 'base64-arraybuffer';
 import { rankPosts, InterestProfile } from './useFeedAlgorithm';
+import { insertAppNotification } from '../utils/notificationHelpers';
 
 export type FeedMode = 'for_you' | 'following' | 'recent';
 
@@ -334,11 +335,17 @@ export function useFeed(
     } else {
       await supabase.from('likes').insert({ post_id: postId, user_id: currentUserId });
       if (targetPost.user_id && targetPost.user_id !== currentUserId) {
-        void supabase.from('notifications').insert({
-          user_id:  targetPost.user_id,
-          actor_id: currentUserId,
-          type:     'like',
-          post_id:  postId,
+        void insertAppNotification({
+          recipientId: targetPost.user_id,
+          actorId: currentUserId,
+          type: 'like',
+          postId,
+          entityId: postId,
+          entityType: 'post',
+          title: '❤️ New like',
+          body: 'Someone liked your post.',
+          message: 'liked your post',
+          data: { navigate: 'post' },
         });
       }
     }
