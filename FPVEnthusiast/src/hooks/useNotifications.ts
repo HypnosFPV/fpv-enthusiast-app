@@ -78,73 +78,95 @@ export function useNotifications(userId?: string) {
 
   // ── Mark all read ──────────────────────────────────────────────────────────
   const markAllRead = useCallback(async () => {
-    if (!userId) return;
-    await supabase
+    if (!userId) return false;
+    const { error } = await supabase
       .from('notifications')
       .update({ read: true })
       .eq('user_id', userId)
       .eq('read', false);
+    if (error) {
+      console.warn('[useNotifications] markAllRead failed:', error.message);
+      return false;
+    }
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);
+    return true;
   }, [userId]);
 
   // ── Mark single read ───────────────────────────────────────────────────────
   const markRead = useCallback(async (id: string) => {
-    await supabase
+    if (!userId || !id) return false;
+    const { error } = await supabase
       .from('notifications')
       .update({ read: true })
+      .eq('user_id', userId)
       .eq('id', id);
+    if (error) {
+      console.warn('[useNotifications] markRead failed:', error.message, { id });
+      return false;
+    }
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
     setUnreadCount((prev) => Math.max(0, prev - 1));
-  }, []);
+    return true;
+  }, [userId]);
 
   // ── Mark multiple IDs as read (for grouped notifications) ─────────────────
   const markReadBulk = useCallback(async (ids: string[]) => {
-    if (!ids.length) return;
-    await supabase
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (!userId || !uniqueIds.length) return false;
+    const { error } = await supabase
       .from('notifications')
       .update({ read: true })
-      .in('id', ids);
+      .eq('user_id', userId)
+      .in('id', uniqueIds);
+    if (error) {
+      console.warn('[useNotifications] markReadBulk failed:', error.message, { ids: uniqueIds });
+      return false;
+    }
     setNotifications((prev) => {
-      const next = prev.map((n) => ids.includes(n.id) ? { ...n, read: true } : n);
+      const next = prev.map((n) => uniqueIds.includes(n.id) ? { ...n, read: true } : n);
       setUnreadCount(next.filter((n) => !n.read).length);
       return next;
     });
-  }, []);
+    return true;
+  }, [userId]);
 
   // ── Delete single notification ─────────────────────────────────────────────
   const deleteNotification = useCallback(async (id: string) => {
-    const { error } = await supabase.from('notifications').delete().eq('id', id);
+    if (!userId || !id) return;
+    const { error } = await supabase.from('notifications').delete().eq('user_id', userId).eq('id', id);
     if (error) {
       console.warn('[useNotifications] delete blocked, marking read instead:', error.message);
-      await supabase.from('notifications').update({ read: true }).eq('id', id);
+      await supabase.from('notifications').update({ read: true }).eq('user_id', userId).eq('id', id);
     }
     setNotifications((prev) => {
       const next = prev.filter((n) => n.id !== id);
       setUnreadCount(next.filter((n) => !n.read).length);
       return next;
     });
-  }, []);
+  }, [userId]);
 
   // ── Delete multiple notifications (for grouped swipe-delete) ──────────────
   const deleteNotificationBulk = useCallback(async (ids: string[]) => {
-    if (!ids.length) return;
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (!userId || !uniqueIds.length) return;
     const { error } = await supabase
       .from('notifications')
       .delete()
-      .in('id', ids);
+      .eq('user_id', userId)
+      .in('id', uniqueIds);
     if (error) {
       console.warn('[useNotifications] bulk delete blocked, marking read instead:', error.message);
-      await supabase.from('notifications').update({ read: true }).in('id', ids);
+      await supabase.from('notifications').update({ read: true }).eq('user_id', userId).in('id', uniqueIds);
     }
     setNotifications((prev) => {
-      const next = prev.filter((n) => !ids.includes(n.id));
+      const next = prev.filter((n) => !uniqueIds.includes(n.id));
       setUnreadCount(next.filter((n) => !n.read).length);
       return next;
     });
-  }, []);
+  }, [userId]);
 
   // ── Clear all notifications ────────────────────────────────────────────────
   const clearAll = useCallback(async () => {
