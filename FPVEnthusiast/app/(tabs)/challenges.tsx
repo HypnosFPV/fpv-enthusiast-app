@@ -378,6 +378,9 @@ export default function ChallengesScreen() {
   const [entries,        setEntries]        = useState<ChallengeEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [refreshing,     setRefreshing]     = useState(false);
+  const [lastWeekPodium, setLastWeekPodium] = useState<ChallengeEntry[]>([]);
+  const [podiumLoading,  setPodiumLoading]  = useState(false);
+  const [podiumChallenge, setPodiumChallenge] = useState<Challenge | null>(null);
 
   const [entriesModalVisible, setEntriesModalVisible] = useState(false);
   // Per-entry vote state: tracks which entry is currently being voted on
@@ -458,7 +461,42 @@ export default function ChallengesScreen() {
     loadEntries(ch.id, phase)
       .then(setEntries)
       .finally(() => setEntriesLoading(false));
-  }, [detailChallenge, chalSubTab, weeklyChallenge?.id]);
+  }, [detailChallenge, chalSubTab, weeklyChallenge?.id, loadEntries]);
+
+  // ── Load previous week's podium for the hero banner ───────────────────────
+  useEffect(() => {
+    const previousChallenge = archivedChallenges[0] ?? null;
+    if (!previousChallenge) {
+      setPodiumChallenge(null);
+      setLastWeekPodium([]);
+      return;
+    }
+
+    let cancelled = false;
+    setPodiumChallenge(previousChallenge);
+    setPodiumLoading(true);
+
+    loadEntries(previousChallenge.id, 'completed')
+      .then(list => {
+        if (cancelled) return;
+        setLastWeekPodium(
+          list
+            .filter(entry => (entry.final_rank ?? Number.POSITIVE_INFINITY) <= 3)
+            .sort((a, b) => (a.final_rank ?? 99) - (b.final_rank ?? 99))
+            .slice(0, 3)
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setLastWeekPodium([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPodiumLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [archivedChallenges, loadEntries]);
 
   // ── Load suggestions for this week's challenge (suggest sub-tab) ──────────
   useEffect(() => {
@@ -898,6 +936,48 @@ export default function ChallengesScreen() {
     );
   };
 
+  const renderLastWeekPodium = () => {
+    if (!podiumChallenge) return null;
+    if (!podiumLoading && lastWeekPodium.length === 0) return null;
+
+    return (
+      <View style={styles.podiumBanner}>
+        <View style={styles.podiumHeaderRow}>
+          <View style={styles.podiumHeaderCopy}>
+            <Text style={styles.podiumLabel}>LAST WEEK’S PODIUM</Text>
+            <Text style={styles.podiumTitle} numberOfLines={1}>{podiumChallenge.title}</Text>
+          </View>
+          <Ionicons name="podium-outline" size={18} color={C.gold} />
+        </View>
+
+        {podiumLoading ? (
+          <ActivityIndicator color={C.gold} size="small" style={{ marginTop: 4 }} />
+        ) : (
+          <View style={styles.podiumRows}>
+            {lastWeekPodium.map(winner => {
+              const place = winner.final_rank ?? 0;
+              const colour = PLACE_COLOURS[place] ?? C.gold;
+              const label = PLACE_LABELS[place] ?? `#${place}`;
+              const username = winner.user?.username
+                ? `@${winner.user.username}`
+                : `Pilot #${winner.entry_number}`;
+
+              return (
+                <View key={winner.id} style={styles.podiumRow}>
+                  <Text style={[styles.podiumPlace, { color: colour }]}>{label}</Text>
+                  <Text style={styles.podiumWinner} numberOfLines={1}>{username}</Text>
+                  <Text style={[styles.podiumProps, { color: colour }]}>+{winner.props_awarded ?? 0}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        <Text style={styles.podiumFootnote}>Archive has the full results and winning entries.</Text>
+      </View>
+    );
+  };
+
   // ── This Week's Challenge ─────────────────────────────────────────────────
   const renderThisWeek = () => {
     if (!weeklyChallenge) return (
@@ -938,6 +1018,7 @@ export default function ChallengesScreen() {
           {weeklyChallenge.description ? (
             <Text style={styles.heroDesc}>{weeklyChallenge.description}</Text>
           ) : null}
+          {renderLastWeekPodium()}
           {weeklyChallenge.rules ? (
             <View style={styles.rulesBox}>
               <Text style={styles.rulesLabel}>RULES</Text>
@@ -2347,6 +2428,37 @@ const styles = StyleSheet.create({
     backgroundColor: C.card, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4,
     borderWidth: 1, borderColor: C.border },
   weekTagText: { color: C.muted, fontSize: 11, fontWeight: '600' },
+  podiumBanner: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.18)',
+  },
+  podiumHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  podiumHeaderCopy: { flex: 1, gap: 3 },
+  podiumLabel: { color: C.gold, fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  podiumTitle: { color: C.text, fontSize: 13, fontWeight: '700' },
+  podiumRows: { gap: 8 },
+  podiumRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(7,7,16,0.45)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  podiumPlace: { width: 56, fontSize: 12, fontWeight: '800' },
+  podiumWinner: { flex: 1, color: C.text, fontSize: 12, fontWeight: '600' },
+  podiumProps: { fontSize: 12, fontWeight: '900' },
+  podiumFootnote: { color: C.muted, fontSize: 11, lineHeight: 16 },
 
   // Timeline
   timelineRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 4 },

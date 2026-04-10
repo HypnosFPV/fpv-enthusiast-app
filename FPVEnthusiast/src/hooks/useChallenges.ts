@@ -129,6 +129,33 @@ export function propsForPlace(place: number): number {
   return [0, 100, 60, 30][place] ?? 0;
 }
 
+function timeValueOrFallback(value?: string | null, fallback = Number.POSITIVE_INFINITY): number {
+  if (!value) return fallback;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function sortChallengeEntries(
+  entries: ChallengeEntry[],
+  phase: 'submission' | 'voting' | 'completed',
+): ChallengeEntry[] {
+  return [...entries].sort((a, b) => {
+    if (phase === 'completed') {
+      const aRank = a.final_rank ?? Number.POSITIVE_INFINITY;
+      const bRank = b.final_rank ?? Number.POSITIVE_INFINITY;
+      if (aRank !== bRank) return aRank - bRank;
+    }
+
+    if (a.vote_count !== b.vote_count) return b.vote_count - a.vote_count;
+
+    const submittedDiff =
+      timeValueOrFallback(a.submitted_at) - timeValueOrFallback(b.submitted_at);
+    if (submittedDiff !== 0) return submittedDiff;
+
+    return timeValueOrFallback(a.created_at) - timeValueOrFallback(b.created_at);
+  });
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useChallenges(currentUserId?: string) {
@@ -247,6 +274,7 @@ export function useChallenges(currentUserId?: string) {
         duration_seconds:  params.durationSeconds ? Math.round(params.durationSeconds) : null,
         original_filename: params.originalFilename ?? null,
         file_size_bytes:   params.fileSizeBytes ?? null,
+        submitted_at:      new Date().toISOString(),
       })
       .select('*')
       .single();
@@ -298,11 +326,19 @@ export function useChallenges(currentUserId?: string) {
       ? '*, user:pilot_id (username, avatar_url)'
       : '*'; // anonymous during submission + voting
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('challenge_entries')
       .select(select)
-      .eq('challenge_id', challengeId)
-      .order('vote_count', { ascending: false });
+      .eq('challenge_id', challengeId);
+
+    if (phase === 'completed') {
+      query = query.order('final_rank', { ascending: true, nullsFirst: false });
+    }
+
+    const { data, error } = await query
+      .order('vote_count', { ascending: false })
+      .order('submitted_at', { ascending: true, nullsFirst: false })
+      .order('created_at', { ascending: true });
 
     if (error) { console.error('[useChallenges] loadEntries:', error.message); return []; }
 
@@ -316,7 +352,7 @@ export function useChallenges(currentUserId?: string) {
       votedIds = (myVotes ?? []).map((v: any) => v.entry_id);
     }
 
-    return (data ?? []).map((e: any) => {
+    const enriched = (data ?? []).map((e: any) => {
       const videoUrl = e.s3_upload_key
         ? supabase.storage.from('posts').getPublicUrl(e.s3_upload_key).data.publicUrl
         : null;
@@ -331,6 +367,8 @@ export function useChallenges(currentUserId?: string) {
         has_voted: votedIds.includes(e.id),
       };
     }) as ChallengeEntry[];
+
+    return sortChallengeEntries(enriched, phase);
   }, [currentUserId]);
 
   // ── Vote on an entry ──────────────────────────────────────────────────────
