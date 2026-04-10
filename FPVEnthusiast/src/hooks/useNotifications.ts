@@ -79,32 +79,51 @@ export function useNotifications(userId?: string) {
   // ── Mark all read ──────────────────────────────────────────────────────────
   const markAllRead = useCallback(async () => {
     if (!userId) return false;
-    const { error } = await supabase
+    const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
+    if (!unreadIds.length) return true;
+
+    const { data, error } = await supabase
       .from('notifications')
       .update({ read: true })
       .eq('user_id', userId)
-      .eq('read', false);
+      .eq('read', false)
+      .select('id');
     if (error) {
       console.warn('[useNotifications] markAllRead failed:', error.message);
       return false;
     }
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    setUnreadCount(0);
+
+    const updatedIds = new Set(((data as Array<{ id: string }> | null) ?? []).map((row) => row.id));
+    if (!updatedIds.size) {
+      console.warn('[useNotifications] markAllRead updated 0 rows; check notifications UPDATE policy', { userId, unreadIds });
+      return false;
+    }
+
+    setNotifications((prev) => prev.map((n) => (updatedIds.has(n.id) ? { ...n, read: true } : n)));
+    setUnreadCount((prev) => Math.max(0, prev - updatedIds.size));
     return true;
-  }, [userId]);
+  }, [notifications, userId]);
 
   // ── Mark single read ───────────────────────────────────────────────────────
   const markRead = useCallback(async (id: string) => {
     if (!userId || !id) return false;
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('notifications')
       .update({ read: true })
       .eq('user_id', userId)
-      .eq('id', id);
+      .eq('id', id)
+      .select('id');
     if (error) {
       console.warn('[useNotifications] markRead failed:', error.message, { id });
       return false;
     }
+
+    const updatedIds = new Set(((data as Array<{ id: string }> | null) ?? []).map((row) => row.id));
+    if (!updatedIds.has(id)) {
+      console.warn('[useNotifications] markRead updated 0 rows; check notifications UPDATE policy', { id, userId });
+      return false;
+    }
+
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
@@ -116,17 +135,25 @@ export function useNotifications(userId?: string) {
   const markReadBulk = useCallback(async (ids: string[]) => {
     const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
     if (!userId || !uniqueIds.length) return false;
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('notifications')
       .update({ read: true })
       .eq('user_id', userId)
-      .in('id', uniqueIds);
+      .in('id', uniqueIds)
+      .select('id');
     if (error) {
       console.warn('[useNotifications] markReadBulk failed:', error.message, { ids: uniqueIds });
       return false;
     }
+
+    const updatedIds = new Set(((data as Array<{ id: string }> | null) ?? []).map((row) => row.id));
+    if (!updatedIds.size) {
+      console.warn('[useNotifications] markReadBulk updated 0 rows; check notifications UPDATE policy', { ids: uniqueIds, userId });
+      return false;
+    }
+
     setNotifications((prev) => {
-      const next = prev.map((n) => uniqueIds.includes(n.id) ? { ...n, read: true } : n);
+      const next = prev.map((n) => updatedIds.has(n.id) ? { ...n, read: true } : n);
       setUnreadCount(next.filter((n) => !n.read).length);
       return next;
     });
@@ -136,10 +163,15 @@ export function useNotifications(userId?: string) {
   // ── Delete single notification ─────────────────────────────────────────────
   const deleteNotification = useCallback(async (id: string) => {
     if (!userId || !id) return;
-    const { error } = await supabase.from('notifications').delete().eq('user_id', userId).eq('id', id);
+    const { data, error } = await supabase.from('notifications').delete().eq('user_id', userId).eq('id', id).select('id');
     if (error) {
       console.warn('[useNotifications] delete blocked, marking read instead:', error.message);
       await supabase.from('notifications').update({ read: true }).eq('user_id', userId).eq('id', id);
+    }
+    const deletedIds = new Set(((data as Array<{ id: string }> | null) ?? []).map((row) => row.id));
+    if (!deletedIds.size && !error) {
+      console.warn('[useNotifications] delete updated 0 rows; check notifications DELETE policy', { id, userId });
+      return;
     }
     setNotifications((prev) => {
       const next = prev.filter((n) => n.id !== id);
@@ -152,17 +184,23 @@ export function useNotifications(userId?: string) {
   const deleteNotificationBulk = useCallback(async (ids: string[]) => {
     const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
     if (!userId || !uniqueIds.length) return;
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('notifications')
       .delete()
       .eq('user_id', userId)
-      .in('id', uniqueIds);
+      .in('id', uniqueIds)
+      .select('id');
     if (error) {
       console.warn('[useNotifications] bulk delete blocked, marking read instead:', error.message);
       await supabase.from('notifications').update({ read: true }).eq('user_id', userId).in('id', uniqueIds);
     }
+    const deletedIds = new Set(((data as Array<{ id: string }> | null) ?? []).map((row) => row.id));
+    if (!deletedIds.size && !error) {
+      console.warn('[useNotifications] deleteNotificationBulk deleted 0 rows; check notifications DELETE policy', { ids: uniqueIds, userId });
+      return;
+    }
     setNotifications((prev) => {
-      const next = prev.filter((n) => !uniqueIds.includes(n.id));
+      const next = prev.filter((n) => !deletedIds.has(n.id));
       setUnreadCount(next.filter((n) => !n.read).length);
       return next;
     });
