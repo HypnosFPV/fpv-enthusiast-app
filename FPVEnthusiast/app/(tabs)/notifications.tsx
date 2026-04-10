@@ -527,7 +527,7 @@ function GroupedNotifRow({
                   {' '}<Text style={styles.rowTextMuted}>{suffix}</Text>
                 </Text>
                 {item.message ? (
-                  <Text style={styles.messagePreview} numberOfLines={1}>"{item.message}"</Text>
+                  <Text style={styles.messagePreview} numberOfLines={1}>“{item.message}”</Text>
                 ) : null}
               </>
             )}
@@ -653,7 +653,8 @@ export default function NotificationsScreen() {
     };
   }, []);
 
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: Array<{ item?: GroupedNotif; isViewable?: boolean }> }) => {
+  const onViewableItemsChanged = useRef((info?: { viewableItems?: { item?: GroupedNotif; isViewable?: boolean }[] }) => {
+    const viewableItems = info?.viewableItems ?? [];
     let queuedAny = false;
 
     for (const entry of viewableItems) {
