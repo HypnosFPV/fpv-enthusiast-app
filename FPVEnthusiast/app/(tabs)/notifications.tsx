@@ -653,16 +653,18 @@ export default function NotificationsScreen() {
     };
   }, []);
 
-  const onViewableItemsChanged = useRef((info?: { viewableItems?: { item?: GroupedNotif; isViewable?: boolean }[] }) => {
-    const viewableItems = info?.viewableItems ?? [];
+  const onViewableItemsChanged = useCallback((info?: { viewableItems?: { item?: GroupedNotif; isViewable?: boolean }[] | null } | null) => {
+    const viewableItems = Array.isArray(info?.viewableItems) ? info!.viewableItems : [];
     let queuedAny = false;
 
     for (const entry of viewableItems) {
+      if (!entry || !entry.isViewable) continue;
       const group = entry.item;
-      if (!entry.isViewable || !group || group.read) continue;
+      const groupIds = Array.isArray(group?.ids) ? group.ids : [];
+      if (!group || group.read || !groupIds.length) continue;
 
-      for (const id of group.ids) {
-        if (seenReadIdsRef.current.has(id)) continue;
+      for (const id of groupIds) {
+        if (!id || seenReadIdsRef.current.has(id)) continue;
         queuedReadIdsRef.current.add(id);
         queuedAny = true;
       }
@@ -675,7 +677,7 @@ export default function NotificationsScreen() {
       readFlushTimeoutRef.current = null;
       flushQueuedReads();
     }, 180);
-  }).current;
+  }, [flushQueuedReads]);
 
   // ── Handle tap ────────────────────────────────────────────────────────────
   const handlePress = useCallback(async (g: GroupedNotif) => {
