@@ -227,6 +227,7 @@ export default function FeedScreen() {
   }, [autoplayEnabled, user?.id, trackPostInteraction]);
 
   // ── Modal state ──────────────────────────────────────────────────────────
+  const [chooserVisible, setChooserVisible] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMode, setModalMode] = useState<'media' | 'social'>('media');
   const [caption, setCaption] = useState('');
@@ -303,6 +304,14 @@ export default function FeedScreen() {
     setRequestFeatured(false);
     setFeaturedBannerLabel('');
   };
+
+  const openComposer = useCallback((kind: 'standard' | 'featured') => {
+    resetModal();
+    setRequestFeatured(kind === 'featured');
+    setPostDestination('public');
+    setChooserVisible(false);
+    setModalVisible(true);
+  }, []);
 
   const pickMedia = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -711,9 +720,46 @@ export default function FeedScreen() {
       />
 
       {/* ── FAB ── */}
-      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
+      <TouchableOpacity style={styles.fab} onPress={() => setChooserVisible(true)}>
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
+
+      <Modal
+        visible={chooserVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setChooserVisible(false)}
+      >
+        <Pressable style={styles.chooserOverlay} onPress={() => setChooserVisible(false)}>
+          <Pressable style={styles.chooserSheet} onPress={() => {}}>
+            <View style={styles.chooserHandle} />
+            <Text style={styles.chooserTitle}>Create</Text>
+            <Text style={styles.chooserSubtitle}>Choose what you want to publish.</Text>
+
+            <TouchableOpacity style={styles.chooserOption} activeOpacity={0.86} onPress={() => openComposer('standard')}>
+              <View style={[styles.chooserIconWrap, styles.chooserIconStandard]}>
+                <Ionicons name="document-text-outline" size={18} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.chooserOptionTitle}>New Post</Text>
+                <Text style={styles.chooserOptionText}>Create a regular post for the public feed or a community.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#666" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.chooserOption} activeOpacity={0.86} onPress={() => openComposer('featured')}>
+              <View style={[styles.chooserIconWrap, styles.chooserIconFeatured]}>
+                <Ionicons name="sparkles-outline" size={18} color="#0a0a0a" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.chooserOptionTitle}>Featured Post</Text>
+                <Text style={styles.chooserOptionText}>Publish now and immediately submit it for featured placement review.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#666" />
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* ── New Post Modal ── */}
       <Modal
@@ -1311,6 +1357,53 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 8,
   },
+  chooserOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  chooserSheet: {
+    backgroundColor: '#111',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#262626',
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 18,
+    gap: 12,
+  },
+  chooserHandle: {
+    width: 42,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#2f2f2f',
+    alignSelf: 'center',
+    marginBottom: 4,
+  },
+  chooserTitle: { color: '#fff', fontSize: 20, fontWeight: '800' },
+  chooserSubtitle: { color: '#8d8d8d', fontSize: 13, marginBottom: 4 },
+  chooserOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#171717',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#262626',
+    padding: 14,
+  },
+  chooserIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chooserIconStandard: { backgroundColor: '#2d2d2d' },
+  chooserIconFeatured: { backgroundColor: '#ffcc66' },
+  chooserOptionTitle: { color: '#fff', fontSize: 15, fontWeight: '800', marginBottom: 3 },
+  chooserOptionText: { color: '#9b9b9b', fontSize: 12, lineHeight: 17 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
   modalContainer: { backgroundColor: '#111', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%' },
   modalContent: { padding: 20, paddingBottom: 40 },
