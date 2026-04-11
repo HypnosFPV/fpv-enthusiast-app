@@ -63,14 +63,12 @@ export default function MentionTextInput({
   const searchUsers = useCallback(async (query: string) => {
     const cleanedQuery = query.trim().replace(/^@+/, '');
     if (!cleanedQuery) { setSuggestions([]); return; }
-    let req = supabase
+    const { data } = await supabase
       .from('users')
       .select('id, username, avatar_url')
       .ilike('username', `${cleanedQuery}%`)
       .order('username', { ascending: true })
       .limit(6);
-    if (currentUserId) req = req.neq('id', currentUserId);
-    const { data } = await req;
     setSuggestions(data ?? []);
   }, [currentUserId]);
 
