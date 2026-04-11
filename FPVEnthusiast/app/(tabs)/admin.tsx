@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useMapModeration, SpotReport, EventReport } from '../../src/hooks/useMapModeration';
+import { useFeaturedContentModeration, FeaturedModerationQueueItem } from '../../src/hooks/useFeaturedContentModeration';
 import { supabase } from '../../src/services/supabase';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -38,6 +39,15 @@ function formatDate(iso: string) {
 function openMaps(lat: number, lng: number, name: string) {
   const encoded = encodeURIComponent(name);
   Linking.openURL(`https://maps.google.com/?q=${lat},${lng}(${encoded})`);
+}
+
+function formatFeatureKind(kind: string) {
+  return kind.replace(/_/g, ' ');
+}
+
+function formatBannerLabel(label: string | null) {
+  const trimmed = label?.trim();
+  return trimmed ? trimmed : 'No banner label';
 }
 
 // ─── Reason badge ─────────────────────────────────────────────────────────────
@@ -189,6 +199,96 @@ function EventReportCard({ item, actionId, onDismiss, onDelete }: EventCardProps
   );
 }
 
+interface FeaturedRequestCardProps {
+  item: FeaturedModerationQueueItem;
+  actionId: string | null;
+  onApprove: (item: FeaturedModerationQueueItem) => void;
+  onNeedsReview: (item: FeaturedModerationQueueItem) => void;
+  onReject: (item: FeaturedModerationQueueItem) => void;
+}
+
+function FeaturedRequestCard({ item, actionId, onApprove, onNeedsReview, onReject }: FeaturedRequestCardProps) {
+  const busy = actionId === item.request_id;
+  const accentColor = item.status === 'rejected'
+    ? '#ff6b6b'
+    : item.status === 'needs_review'
+      ? '#ffb84d'
+      : item.status === 'pending_payment'
+        ? '#64b5f6'
+        : item.status === 'active'
+          ? '#00C853'
+          : '#8ab4ff';
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <View style={styles.cardTitleRow}>
+          <Ionicons
+            name={item.content_kind === 'event' ? 'calendar-outline' : 'image-outline'}
+            size={15}
+            color={accentColor}
+            style={{ marginRight: 6 }}
+          />
+          <Text style={styles.cardTitle} numberOfLines={1}>{item.target_title || 'Untitled content'}</Text>
+        </View>
+        <View style={[styles.statusPill, { borderColor: accentColor }]}>
+          <Text style={[styles.statusPillTxt, { color: accentColor }]}>{item.status.replace(/_/g, ' ')}</Text>
+        </View>
+      </View>
+
+      <Text style={styles.cardMeta}>Owner @{item.owner_username || 'unknown'}  ·  {formatFeatureKind(item.feature_kind)}</Text>
+      <Text style={styles.cardMeta}>Payment {item.payment_method.toUpperCase()}  ·  {item.duration_hours}h  ·  {formatBannerLabel(item.banner_label)}</Text>
+      {!!item.livestream_platform && <Text style={styles.cardMeta}>Livestream {item.livestream_platform}</Text>}
+      {!!item.livestream_url && <Text style={styles.cardMeta} numberOfLines={1}>↗ {item.livestream_url}</Text>}
+      {!!item.banner_image_url && <Text style={styles.cardMeta}>Banner image attached</Text>}
+
+      {item.moderation_flags?.length ? (
+        <View style={styles.flagWrap}>
+          {item.moderation_flags.slice(0, 5).map(flag => (
+            <View key={flag} style={styles.flagChip}>
+              <Text style={styles.flagChipTxt}>{flag}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {!!item.moderation_reason && <Text style={styles.cardDetail}>{item.moderation_reason}</Text>}
+
+      <View style={styles.actionRow}>
+        <TouchableOpacity
+          style={styles.actionBtnGreen}
+          onPress={() => onApprove(item)}
+          disabled={!!busy}
+        >
+          {busy ? <ActivityIndicator size="small" color="#fff" /> : (
+            <><Ionicons name="checkmark-circle-outline" size={14} color="#fff" /><Text style={styles.actionBtnTxt}>Approve</Text></>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionBtnMap}
+          onPress={() => onNeedsReview(item)}
+          disabled={!!busy}
+        >
+          {busy ? <ActivityIndicator size="small" color="#2979FF" /> : (
+            <><Ionicons name="eye-outline" size={14} color="#2979FF" /><Text style={styles.actionBtnMapTxt}>Review</Text></>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.actionBtnRed}
+          onPress={() => onReject(item)}
+          disabled={!!busy}
+        >
+          {busy ? <ActivityIndicator size="small" color="#fff" /> : (
+            <><Ionicons name="ban-outline" size={14} color="#fff" /><Text style={styles.actionBtnTxt}>Reject</Text></>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
@@ -199,8 +299,15 @@ export default function AdminDashboard() {
     dismissSpotReport, deleteSpot, verifySpot,
     dismissEventReport, deleteEvent,
   } = useMapModeration();
+  const {
+    queue: featuredQueue,
+    loading: featuredLoading,
+    actionId: featuredActionId,
+    loadQueue,
+    reviewRequest,
+  } = useFeaturedContentModeration();
 
-  const [tab, setTab] = useState<'spots' | 'events' | 'disputes'>('spots');
+  const [tab, setTab] = useState<'spots' | 'events' | 'featured' | 'disputes'>('spots');
   const [disputes,       setDisputes]       = useState<any[]>([]);
   const [listingReports, setListingReports] = useState<any[]>([]);
   const [disputeLoading, setDisputeLoading] = useState(false);
@@ -211,7 +318,7 @@ export default function AdminDashboard() {
     (async () => {
       const ok = await checkAdmin();
       if (!ok) return; // gate rendered below
-      await Promise.all([loadSpotReports(), loadEventReports(), loadDisputes()]);
+      await Promise.all([loadSpotReports(), loadEventReports(), loadDisputes(), loadQueue()]);
     })();
   }, []);
 
@@ -263,8 +370,8 @@ export default function AdminDashboard() {
   };
 
   const refresh = useCallback(async () => {
-    await Promise.all([loadSpotReports(), loadEventReports(), loadDisputes()]);
-  }, [loadSpotReports, loadEventReports, loadDisputes]);
+    await Promise.all([loadSpotReports(), loadEventReports(), loadDisputes(), loadQueue()]);
+  }, [loadSpotReports, loadEventReports, loadDisputes, loadQueue]);
 
   // ─── Spot actions with confirm dialogs ────────────────────────────────────
   const handleVerifySpot = (r: SpotReport) => {
@@ -338,6 +445,70 @@ export default function AdminDashboard() {
     );
   };
 
+  const handleApproveFeatured = (item: FeaturedModerationQueueItem) => {
+    Alert.alert(
+      'Approve featured request',
+      `Approve "${item.target_title || 'this content'}" and move it to pending payment?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Approve',
+          onPress: async () => {
+            const ok = await reviewRequest({
+              requestId: item.request_id,
+              decision: 'approve',
+              reason: 'Approved by admin moderator',
+            });
+            if (!ok) Alert.alert('Error', 'Could not approve featured request.');
+          },
+        },
+      ],
+    );
+  };
+
+  const handleNeedsReviewFeatured = (item: FeaturedModerationQueueItem) => {
+    Alert.alert(
+      'Send to review',
+      `Mark "${item.target_title || 'this content'}" as needs review?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Needs review',
+          onPress: async () => {
+            const ok = await reviewRequest({
+              requestId: item.request_id,
+              decision: 'needs_review',
+              reason: 'Manual review required before premium placement.',
+            });
+            if (!ok) Alert.alert('Error', 'Could not update featured request.');
+          },
+        },
+      ],
+    );
+  };
+
+  const handleRejectFeatured = (item: FeaturedModerationQueueItem) => {
+    Alert.alert(
+      'Reject featured request',
+      `Reject "${item.target_title || 'this content'}" from premium placement?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await reviewRequest({
+              requestId: item.request_id,
+              decision: 'reject',
+              reason: 'Rejected for premium placement by moderator review.',
+            });
+            if (!ok) Alert.alert('Error', 'Could not reject featured request.');
+          },
+        },
+      ],
+    );
+  };
+
   // ─── Gate: not yet checked ────────────────────────────────────────────────
   if (isAdmin === null) {
     return (
@@ -365,7 +536,9 @@ export default function AdminDashboard() {
   // ─── Dashboard ────────────────────────────────────────────────────────────
   const spotCount     = spotReports.length;
   const eventCount    = eventReports.length;
+  const featuredCount = featuredQueue.filter(item => ['pending_moderation', 'needs_review', 'pending_payment', 'approved'].includes(item.status)).length;
   const disputeCount  = disputes.filter(d => d.status === 'disputed').length + listingReports.length;
+  const activeLoading = tab === 'featured' ? featuredLoading : loading;
 
   return (
     <View style={styles.root}>
@@ -376,7 +549,7 @@ export default function AdminDashboard() {
         <TouchableOpacity onPress={() => router.back()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>🛡 Map Moderation</Text>
+        <Text style={styles.headerTitle}>🛡 Admin Moderation</Text>
         <TouchableOpacity onPress={refresh} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="refresh-outline" size={22} color="#888" />
         </TouchableOpacity>
@@ -395,8 +568,15 @@ export default function AdminDashboard() {
         </View>
         <View style={styles.summaryDivider} />
         <View style={styles.summaryCard}>
-          <Text style={[styles.summaryNum, { color: spotCount + eventCount > 0 ? '#FF9800' : '#00C853' }]}>
-            {spotCount + eventCount}
+          <Text style={[styles.summaryNum, { color: featuredCount > 0 ? '#8ab4ff' : '#00C853' }]}>
+            {featuredCount}
+          </Text>
+          <Text style={styles.summaryLabel}>Featured Queue</Text>
+        </View>
+        <View style={styles.summaryDivider} />
+        <View style={styles.summaryCard}>
+          <Text style={[styles.summaryNum, { color: spotCount + eventCount + featuredCount > 0 ? '#FF9800' : '#00C853' }]}>
+            {spotCount + eventCount + featuredCount}
           </Text>
           <Text style={styles.summaryLabel}>Total Open</Text>
         </View>
@@ -422,10 +602,19 @@ export default function AdminDashboard() {
             {eventCount > 0 && <Text style={styles.tabBadge}>  {eventCount}</Text>}
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabBtn, tab === 'featured' && styles.tabBtnActive]}
+          onPress={() => setTab('featured')}
+        >
+          <Text style={[styles.tabBtnTxt, tab === 'featured' && styles.tabBtnTxtActive]}>
+            ⭐ Featured
+            {featuredCount > 0 && <Text style={styles.tabBadge}>  {featuredCount}</Text>}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* ── Content ── */}
-      {loading ? (
+      {activeLoading ? (
         <View style={styles.centerWrap}>
           <ActivityIndicator size="large" color="#ff4500" />
           <Text style={styles.loadingTxt}>Loading reports…</Text>
@@ -453,7 +642,7 @@ export default function AdminDashboard() {
             />
           )}
         />
-      ) : (
+      ) : tab === 'events' ? (
         <FlatList
           data={eventReports}
           keyExtractor={r => r.report_id}
@@ -472,6 +661,29 @@ export default function AdminDashboard() {
               actionId={actionId}
               onDismiss={handleDismissEvent}
               onDelete={handleDeleteEvent}
+            />
+          )}
+        />
+      ) : (
+        <FlatList
+          data={featuredQueue}
+          keyExtractor={item => item.request_id}
+          contentContainerStyle={styles.listContent}
+          refreshControl={<RefreshControl refreshing={featuredLoading} onRefresh={refresh} tintColor="#ff4500" />}
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <Ionicons name="sparkles-outline" size={48} color="#8ab4ff" />
+              <Text style={styles.emptyTitle}>No featured requests</Text>
+              <Text style={styles.emptyTxt}>The premium placement queue is clear.</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <FeaturedRequestCard
+              item={item}
+              actionId={featuredActionId}
+              onApprove={handleApproveFeatured}
+              onNeedsReview={handleNeedsReviewFeatured}
+              onReject={handleRejectFeatured}
             />
           )}
         />
@@ -538,6 +750,11 @@ const styles = StyleSheet.create({
   // Reason badge
   reasonBadge:      { alignSelf: 'flex-start', backgroundColor: '#1a1a1a', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, marginTop: 8, borderWidth: 1, borderColor: '#2a2a2a' },
   reasonBadgeTxt:   { color: '#ccc', fontSize: 12 },
+  statusPill:       { borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: '#101522' },
+  statusPillTxt:    { fontSize: 11, fontWeight: '700' },
+  flagWrap:         { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  flagChip:         { backgroundColor: '#141b26', borderWidth: 1, borderColor: '#22314d', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  flagChipTxt:      { color: '#9ec1ff', fontSize: 11, fontWeight: '600' },
 
   // Action buttons
   actionRow:        { flexDirection: 'row', marginTop: 12, gap: 8, flexWrap: 'wrap' },
