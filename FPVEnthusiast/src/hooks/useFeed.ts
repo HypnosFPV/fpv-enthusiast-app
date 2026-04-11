@@ -82,6 +82,7 @@ export function useFeed(
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const followingIdsRef = useRef<string[]>([]);
   const groupIdsRef = useRef<string[]>([]);
+  const pendingLikeIdsRef = useRef<Set<string>>(new Set());
 
   function mergeIsLiked(rawPosts: any[], likedIds: string[]): FeedPost[] {
     return rawPosts.map(p => ({
@@ -308,48 +309,71 @@ export function useFeed(
   }, [loading, refreshing, loadingMore, hasMore, page, fetchPosts]);
 
   const toggleLike = useCallback(async (postId: string) => {
-    if (!currentUserId) return;
+    if (!currentUserId || pendingLikeIdsRef.current.has(postId)) return;
 
-    const targetPost = posts.find(p => p.id === postId);
-    if (!targetPost) return;
+    let nextLiked: boolean | null = null;
+    let postOwnerId: string | null = null;
 
-    const isCurrentlyLiked = targetPost.isLiked;
-    const delta = isCurrentlyLiked ? -1 : 1;
+    setPosts(prev => prev.map(p => {
+      if (p.id !== postId) return p;
+      const wasLiked = !!p.isLiked;
+      const currentCount = p.like_count ?? p.likes_count ?? 0;
+      const nextCount = Math.max(0, currentCount + (wasLiked ? -1 : 1));
+      nextLiked = !wasLiked;
+      postOwnerId = p.user_id ?? null;
+      return {
+        ...p,
+        isLiked: !wasLiked,
+        like_count: nextCount,
+        likes_count: nextCount,
+      };
+    }));
 
-    setPosts(prev =>
-      prev.map(p =>
-        p.id === postId
-          ? {
-              ...p,
-              isLiked:     !isCurrentlyLiked,
-              like_count:  p.like_count + delta,
-              likes_count: (p.likes_count ?? p.like_count) + delta,
-            }
-          : p
-      )
-    );
+    if (nextLiked === null) return;
 
-    if (isCurrentlyLiked) {
-      await supabase.from('likes').delete()
-        .eq('post_id', postId).eq('user_id', currentUserId);
-    } else {
-      await supabase.from('likes').insert({ post_id: postId, user_id: currentUserId });
-      if (targetPost.user_id && targetPost.user_id !== currentUserId) {
-        void insertAppNotification({
-          recipientId: targetPost.user_id,
-          actorId: currentUserId,
-          type: 'like',
-          postId,
-          entityId: postId,
-          entityType: 'post',
-          title: '❤️ New like',
-          body: 'Someone liked your post.',
-          message: 'liked your post',
-          data: { navigate: 'post' },
-        });
+    pendingLikeIdsRef.current.add(postId);
+
+    try {
+      if (nextLiked) {
+        const { error } = await supabase.from('likes').insert({ post_id: postId, user_id: currentUserId });
+        if (error) throw error;
+
+        if (postOwnerId && postOwnerId !== currentUserId) {
+          void insertAppNotification({
+            recipientId: postOwnerId,
+            actorId: currentUserId,
+            type: 'like',
+            postId,
+            entityId: postId,
+            entityType: 'post',
+            title: '❤️ New like',
+            body: 'Someone liked your post.',
+            message: 'liked your post',
+            data: { navigate: 'post' },
+          });
+        }
+      } else {
+        const { error } = await supabase.from('likes').delete()
+          .eq('post_id', postId).eq('user_id', currentUserId);
+        if (error) throw error;
       }
+    } catch (error: any) {
+      console.warn('[useFeed] toggleLike rollback:', error?.message ?? error);
+      setPosts(prev => prev.map(p => {
+        if (p.id !== postId) return p;
+        const currentCount = p.like_count ?? p.likes_count ?? 0;
+        const rollbackCount = Math.max(0, currentCount + (nextLiked ? -1 : 1));
+        return {
+          ...p,
+          isLiked: !nextLiked,
+          like_count: rollbackCount,
+          likes_count: rollbackCount,
+        };
+      }));
+    } finally {
+      pendingLikeIdsRef.current.delete(postId);
     }
-  }, [currentUserId, posts]);
+  }, [currentUserId]);
 
   const createPost = useCallback(async ({
     mediaUrl,

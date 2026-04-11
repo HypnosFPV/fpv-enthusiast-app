@@ -133,6 +133,7 @@ export default function FeedScreen() {
   const hasInitialRefreshRef = useRef(false);
   const visiblePostIdRef = useRef<string | null>(null);
   const canLoadMoreOnMomentumRef = useRef(false);
+  const postsRef = useRef<FeedPost[]>([]);
 
   // ── Animated title ───────────────────────────────────────────────────────
   const animValue = useRef(new Animated.Value(0)).current;
@@ -158,6 +159,10 @@ export default function FeedScreen() {
     lastRefreshAtRef.current = now;
     await onRefresh();
   }, [user?.id, onRefresh]);
+
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -399,13 +404,13 @@ export default function FeedScreen() {
   };
 
   const handleLike = useCallback((postId: string) => {
-    toggleLike(postId);
+    void toggleLike(postId);
     // Track like signal for personalisation
-    const post = posts.find(p => p.id === postId);
+    const post = postsRef.current.find(p => p.id === postId);
     if (post && user?.id) {
       trackPostInteraction('like', post);
     }
-  }, [toggleLike, posts, user?.id, trackPostInteraction]);
+  }, [toggleLike, user?.id, trackPostInteraction]);
 
   // ── FIXED: async, awaits deletePost, alerts on failure ───────────────────
   const handleDelete = useCallback(async (postId: string): Promise<boolean> => {

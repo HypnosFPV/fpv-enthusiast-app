@@ -104,6 +104,11 @@ function injectCmd(ref: React.RefObject<WebView | null>, cmd: string): void {
 
 const PC_TAG_COLORS = ['#ff4500','#00d4ff','#9c27b0','#ff9100','#00e676','#e91e63','#2979FF','#ffcc00'];
 
+function formatTagLabel(tag?: string | null): string {
+  const normalized = (tag ?? '').trim().replace(/^#+/, '');
+  return normalized ? `#${normalized}` : '#';
+}
+
 function withAlpha(color: string, alpha: number): string {
   const safeAlpha = Math.max(0, Math.min(1, alpha));
   const normalized = color.trim();
@@ -449,8 +454,6 @@ function PostCard(props: Props) {
   // ── core double-tap like action ──────────────────────────────────────────
   const fireLikeFromDoubleTap = useCallback(() => {
     if (!localLiked && onLike) {
-      setLocalLiked(true);
-      setLocalLikeCount(prev => prev + 1);
       onLike(post.id, false);
     }
     runOverlayHeart();
@@ -492,9 +495,6 @@ function PostCard(props: Props) {
   // ── like button press ────────────────────────────────────────────────────
   const handleLikePress = useCallback(() => {
     if (!onLike) return;
-    const nowLiked = !localLiked;
-    setLocalLiked(nowLiked);
-    setLocalLikeCount(prev => nowLiked ? prev + 1 : Math.max(0, prev - 1));
     runHeartBounce();
     onLike(post.id, localLiked);
   }, [onLike, localLiked, post.id, runHeartBounce]);
@@ -1341,7 +1341,7 @@ function PostCard(props: Props) {
                 const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce(function (a, c) { return a + c.charCodeAt(0); }, 0)) % PC_TAG_COLORS.length];
                 return (
                   <Text key={tag} style={[styles.tagsInlineTag, { color: TC }]}>
-                    #{tag}
+                    {formatTagLabel(tag)}
                   </Text>
                 );
               })}
@@ -1366,7 +1366,7 @@ function PostCard(props: Props) {
                 const TC = PC_TAG_COLORS[Math.abs(tag.split('').reduce(function (a, c) { return a + c.charCodeAt(0); }, 0)) % PC_TAG_COLORS.length];
                 return (
                   <View key={tag} style={[styles.postTag, { backgroundColor: TC + '18', borderColor: TC + '44' }]}>
-                    <Text style={[styles.postTagText, { color: TC }]}>#{tag}</Text>
+                    <Text style={[styles.postTagText, { color: TC }]}>{formatTagLabel(tag)}</Text>
                   </View>
                 );
               })}

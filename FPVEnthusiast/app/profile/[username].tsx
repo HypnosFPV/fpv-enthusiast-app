@@ -53,7 +53,7 @@ interface Profile {
   bio: string | null;
   followers_count: number;
   following_count: number;
-  posts_count: number;
+  posts_count?: number;
 }
 
 // PostData shape expected by PostCard
@@ -174,7 +174,7 @@ export default function UserProfileScreen() {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('users')
-          .select('id, username, avatar_url, header_image_url, header_video_url, bio, followers_count, following_count, posts_count')
+          .select('id, username, avatar_url, header_image_url, header_video_url, bio, followers_count, following_count')
           .eq('username', username)
           .single();
 
@@ -185,15 +185,28 @@ export default function UserProfileScreen() {
           return;
         }
 
-        setProfile(profileData as Profile);
-        setLoadingProfile(false);
+        const [{ data: postsData, error: postsError }, { count: postsCount, error: postsCountError }] = await Promise.all([
+          supabase
+            .from('posts')
+            .select('id, user_id, caption, media_url, media_type, platform, created_at, likes_count, comments_count')
+            .eq('user_id', profileData.id)
+            .order('created_at', { ascending: false })
+            .limit(60),
+          supabase
+            .from('posts')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', profileData.id),
+        ]);
 
-        const { data: postsData, error: postsError } = await supabase
-          .from('posts')
-          .select('id, user_id, caption, media_url, media_type, platform, created_at, likes_count, comments_count')
-          .eq('user_id', profileData.id)
-          .order('created_at', { ascending: false })
-          .limit(60);
+        if (postsCountError) {
+          console.warn('[Profile] posts count fetch error:', postsCountError);
+        }
+
+        setProfile({
+          ...(profileData as Profile),
+          posts_count: postsCount ?? postsData?.length ?? 0,
+        });
+        setLoadingProfile(false);
 
         if (postsError) {
           console.error('[Profile] posts fetch error:', postsError);
