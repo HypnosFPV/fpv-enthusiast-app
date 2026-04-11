@@ -69,3 +69,6 @@ verify_jwt = false
 
 [functions.sync-multigp]
 verify_jwt = false
+
+[functions.moderate-featured-content]
+verify_jwt = false

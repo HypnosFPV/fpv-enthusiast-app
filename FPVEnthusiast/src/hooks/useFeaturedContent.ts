@@ -69,6 +69,7 @@ export function useFeaturedContent(userId?: string | null) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [moderatingId, setModeratingId] = useState<string | null>(null);
 
   const loadMyRequests = useCallback(async () => {
     if (!userId) {
@@ -97,6 +98,33 @@ export function useFeaturedContent(userId?: string | null) {
     }
   }, [userId]);
 
+  const runAutoModeration = useCallback(async (requestId: string) => {
+    setModeratingId(requestId);
+    try {
+      const { data, error } = await supabase.functions.invoke('moderate-featured-content', {
+        body: { requestId },
+      });
+
+      if (error) {
+        console.error('[useFeaturedContent] runAutoModeration:', error.message);
+        await loadMyRequests();
+        return { ok: false, error: error.message };
+      }
+
+      await loadMyRequests();
+      return (data ?? { ok: false, error: 'No moderation response returned.' }) as {
+        ok: boolean;
+        decision?: 'approve' | 'needs_review' | 'reject';
+        status?: FeaturedRequestStatus;
+        moderationStatus?: FeaturedModerationStatus;
+        flags?: string[];
+        error?: string;
+      };
+    } finally {
+      setModeratingId(null);
+    }
+  }, [loadMyRequests]);
+
   const submitPostRequest = useCallback(async (params: SubmitPostParams) => {
     setSubmitting(true);
     try {
@@ -116,12 +144,19 @@ export function useFeaturedContent(userId?: string | null) {
         return { ok: false, error: error.message };
       }
 
+      const result = data as { ok: boolean; request_id?: string; error?: string };
       await loadMyRequests();
-      return data as { ok: boolean; request_id?: string; error?: string };
+
+      if (result.ok && result.request_id) {
+        const moderationResult = await runAutoModeration(result.request_id);
+        return { ...result, auto_moderation: moderationResult };
+      }
+
+      return result;
     } finally {
       setSubmitting(false);
     }
-  }, [loadMyRequests]);
+  }, [loadMyRequests, runAutoModeration]);
 
   const submitEventRequest = useCallback(async (params: SubmitEventParams) => {
     setSubmitting(true);
@@ -142,12 +177,19 @@ export function useFeaturedContent(userId?: string | null) {
         return { ok: false, error: error.message };
       }
 
+      const result = data as { ok: boolean; request_id?: string; error?: string };
       await loadMyRequests();
-      return data as { ok: boolean; request_id?: string; error?: string };
+
+      if (result.ok && result.request_id) {
+        const moderationResult = await runAutoModeration(result.request_id);
+        return { ...result, auto_moderation: moderationResult };
+      }
+
+      return result;
     } finally {
       setSubmitting(false);
     }
-  }, [loadMyRequests]);
+  }, [loadMyRequests, runAutoModeration]);
 
   const cancelRequest = useCallback(async (requestId: string) => {
     setActionId(requestId);
@@ -180,7 +222,9 @@ export function useFeaturedContent(userId?: string | null) {
     loading,
     submitting,
     actionId,
+    moderatingId,
     loadMyRequests,
+    runAutoModeration,
     submitPostRequest,
     submitEventRequest,
     cancelRequest,
