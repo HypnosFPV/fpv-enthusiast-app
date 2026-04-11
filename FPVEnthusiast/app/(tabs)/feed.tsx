@@ -121,7 +121,7 @@ export default function FeedScreen() {
     loadingMore, hasMore,
     onRefresh, loadMore,
     toggleLike,
-    createPost, createSocialPost, deletePost,
+    createPost, createSocialPost, deletePost, updatePostCaption,
     followingIds,
   } = useFeed(user?.id, feedMode, interestProfile);
 
@@ -413,12 +413,8 @@ export default function FeedScreen() {
   }, [toggleLike, user?.id, trackPostInteraction]);
 
   const handleCaptionUpdate = useCallback((postId: string, nextCaption: string) => {
-    setPosts(prev => prev.map(post => (
-      post.id === postId
-        ? { ...post, caption: nextCaption }
-        : post
-    )));
-  }, []);
+    updatePostCaption(postId, nextCaption);
+  }, [updatePostCaption]);
 
   // ── FIXED: async, awaits deletePost, alerts on failure ───────────────────
   const handleDelete = useCallback(async (postId: string): Promise<boolean> => {

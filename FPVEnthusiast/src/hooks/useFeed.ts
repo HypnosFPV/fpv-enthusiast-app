@@ -568,6 +568,14 @@ export function useFeed(
     return newPost;
   }, [currentUserId]);
 
+  const updatePostCaption = useCallback((postId: string, caption: string) => {
+    setPosts(prev => prev.map(post => (
+      post.id === postId
+        ? { ...post, caption }
+        : post
+    )));
+  }, []);
+
   const deletePost = useCallback(async (postId: string): Promise<boolean> => {
     console.log('[useFeed] deleting post:', postId);
     const { error } = await supabase
@@ -631,6 +639,7 @@ export function useFeed(
     createPost,
     createSocialPost,
     deletePost,
+    updatePostCaption,
     followingIds,
   };
 }
