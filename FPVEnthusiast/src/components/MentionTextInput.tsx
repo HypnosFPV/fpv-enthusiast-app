@@ -18,6 +18,12 @@ interface UserSuggestion {
   avatar_url?: string | null;
 }
 
+interface MentionRange {
+  start: number;
+  end: number;
+  query: string;
+}
+
 interface Props {
   value: string;
   onChangeText: (text: string) => void;
@@ -48,8 +54,10 @@ export default function MentionTextInput({
   inputStyle,
 }: Props) {
   const [suggestions, setSuggestions] = useState<UserSuggestion[]>([]);
+  const [selection, setSelection] = useState({ start: value.length, end: value.length });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<TextInput>(null);
+  const activeMentionRef = useRef<MentionRange | null>(null);
 
   useEffect(() => {
     return () => {
@@ -60,48 +68,87 @@ export default function MentionTextInput({
     };
   }, []);
 
+  const getActiveMention = useCallback((text: string, cursor: number): MentionRange | null => {
+    const safeCursor = Math.max(0, Math.min(cursor, text.length));
+    const beforeCursor = text.slice(0, safeCursor);
+    const match = beforeCursor.match(/(^|\s)@([a-zA-Z0-9_]*)$/);
+    if (!match) return null;
+
+    const query = match[2] ?? '';
+    const start = safeCursor - query.length - 1;
+    const trailingToken = text.slice(safeCursor).match(/^[a-zA-Z0-9_]*/)?.[0] ?? '';
+    const end = safeCursor + trailingToken.length;
+
+    return { start, end, query };
+  }, []);
+
   const searchUsers = useCallback(async (query: string) => {
     const cleanedQuery = query.trim().replace(/^@+/, '');
-    if (!cleanedQuery) { setSuggestions([]); return; }
+    if (!cleanedQuery) {
+      setSuggestions([]);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('users')
       .select('id, username, avatar_url')
       .ilike('username', `%${cleanedQuery}%`)
       .order('username', { ascending: true })
       .limit(8);
+
     if (error) {
       console.warn('[MentionTextInput] search users failed:', error.message);
       setSuggestions([]);
       return;
     }
+
     setSuggestions(data ?? []);
   }, []);
 
+  useEffect(() => {
+    const activeMention = getActiveMention(value, selection.start);
+    activeMentionRef.current = activeMention;
+
+    if (!activeMention || !activeMention.query.trim()) {
+      setSuggestions([]);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      void searchUsers(activeMention.query);
+    }, 180);
+  }, [getActiveMention, searchUsers, selection.start, value]);
+
   const handleChange = useCallback((text: string) => {
     onChangeText(text);
-    // Find the @ token at the current cursor position
-    const atIndex = text.lastIndexOf('@');
-    if (atIndex === -1) {
-      setSuggestions([]);
-      return;
-    }
-    const afterAt = text.slice(atIndex + 1);
-    // Only trigger if the text after @ has no spaces (still typing the username)
-    if (/\s/.test(afterAt)) {
-      setSuggestions([]);
-      return;
-    }
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => searchUsers(afterAt), 180);
-  }, [onChangeText, searchUsers]);
+  }, [onChangeText]);
 
   const handleSelect = useCallback((user: UserSuggestion) => {
-    const atIndex = value.lastIndexOf('@');
-    const newText = value.slice(0, atIndex) + '@' + user.username + ' ';
+    const activeMention = activeMentionRef.current;
+    if (!activeMention) {
+      setSuggestions([]);
+      return;
+    }
+
+    const prefix = value.slice(0, activeMention.start);
+    const suffix = value.slice(activeMention.end);
+    const trimmedSuffix = suffix.startsWith(' ') ? suffix.slice(1) : suffix;
+    const insertedMention = `@${user.username} `;
+    const newText = `${prefix}${insertedMention}${trimmedSuffix}`;
+    const nextCursor = prefix.length + insertedMention.length;
+
     onChangeText(newText);
     setSuggestions([]);
-    inputRef.current?.focus();
-  }, [value, onChangeText]);
+    setSelection({ start: nextCursor, end: nextCursor });
+
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setNativeProps?.({
+        selection: { start: nextCursor, end: nextCursor },
+      });
+    });
+  }, [onChangeText, value]);
 
   const renderSuggestions = () => {
     if (!suggestions.length) return null;
@@ -147,6 +194,11 @@ export default function MentionTextInput({
         style={[styles.input, inputStyle]}
         value={value}
         onChangeText={handleChange}
+        onSelectionChange={(event: any) => {
+          const next = event?.nativeEvent?.selection;
+          if (!next) return;
+          setSelection({ start: next.start ?? 0, end: next.end ?? next.start ?? 0 });
+        }}
         placeholder={placeholder}
         placeholderTextColor={placeholderTextColor ?? '#555'}
         multiline={multiline}
