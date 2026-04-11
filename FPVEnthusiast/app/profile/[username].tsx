@@ -292,6 +292,15 @@ export default function UserProfileScreen() {
   );
 
   // ── Feed item renderer ─────────────────────────────────────────────────────
+  const handleCaptionUpdate = useCallback((postId: string, caption: string) => {
+    setPosts(prev => prev.map(post => (
+      post.id === postId
+        ? { ...post, caption }
+        : post
+    )));
+    setSelectedPost(prev => prev && prev.id === postId ? { ...prev, caption } : prev);
+  }, []);
+
   const renderFeedItem = useCallback(
     ({ item }: { item: Post }) => {
       if (!profile) return null;
@@ -299,10 +308,11 @@ export default function UserProfileScreen() {
         <PostCard
           post={toPostData(item, profile)}
           currentUserId={currentUser?.id ?? undefined}
+          onCaptionUpdate={handleCaptionUpdate}
         />
       );
     },
-    [profile, currentUser]
+    [profile, currentUser, handleCaptionUpdate]
   );
 
   // ── Loading / not found states ─────────────────────────────────────────────
@@ -451,6 +461,7 @@ export default function UserProfileScreen() {
               post={selectedPost}
               isVisible
               currentUserId={currentUser?.id ?? undefined}
+              onCaptionUpdate={handleCaptionUpdate}
             />
           )}
         </SafeAreaView>

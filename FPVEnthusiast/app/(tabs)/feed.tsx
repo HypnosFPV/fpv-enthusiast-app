@@ -412,6 +412,14 @@ export default function FeedScreen() {
     }
   }, [toggleLike, user?.id, trackPostInteraction]);
 
+  const handleCaptionUpdate = useCallback((postId: string, nextCaption: string) => {
+    setPosts(prev => prev.map(post => (
+      post.id === postId
+        ? { ...post, caption: nextCaption }
+        : post
+    )));
+  }, []);
+
   // ── FIXED: async, awaits deletePost, alerts on failure ───────────────────
   const handleDelete = useCallback(async (postId: string): Promise<boolean> => {
     const success = await deletePost(postId);
@@ -530,10 +538,11 @@ export default function FeedScreen() {
           currentUserId={user?.id ?? undefined}
           onLike={handleLike}
           onDelete={handleDelete}
+          onCaptionUpdate={handleCaptionUpdate}
         />
       </View>
     );
-  }, [activeCommunityExpanded, autoplayEnabled, feedMode, groupLookup, handleDelete, handleLike, interestProfile, pendingInvites.length, router, user?.id, visiblePostId]);
+  }, [activeCommunityExpanded, autoplayEnabled, feedMode, groupLookup, handleCaptionUpdate, handleDelete, handleLike, interestProfile, pendingInvites.length, router, user?.id, visiblePostId]);
 
   if (loading && posts.length === 0) {
     return (

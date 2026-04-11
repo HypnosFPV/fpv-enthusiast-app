@@ -144,6 +144,9 @@ export default function PostDetailScreen() {
           return true;
         }}
         onLike={() => {}}
+        onCaptionUpdate={(postId: string, caption: string) => {
+          setPost(prev => prev && prev.id === postId ? { ...prev, caption } : prev);
+        }}
       />
     </View>
   );

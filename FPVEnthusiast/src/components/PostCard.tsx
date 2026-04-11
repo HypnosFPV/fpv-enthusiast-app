@@ -1519,7 +1519,7 @@ function PostCard(props: Props) {
               placeholderTextColor="#555"
               autoFocus
               currentUserId={currentUserId}
-              suggestionsAbove={false}
+              suggestionsAbove={true}
             />
             <View style={styles.editCaptionActions}>
               <TouchableOpacity style={styles.editCaptionCancel} onPress={function () { setShowEditCaption(false); }}>

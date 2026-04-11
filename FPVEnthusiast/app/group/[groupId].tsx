@@ -362,6 +362,14 @@ export default function GroupDetailScreen() {
     }
   };
 
+  const handleCaptionUpdate = useCallback((postId: string, caption: string) => {
+    setPosts(prev => prev.map(post => (
+      post.id === postId
+        ? { ...post, caption }
+        : post
+    )));
+  }, []);
+
   const handleDeletePost = async (postId: string) => {
     const target = posts.find(post => post.id === postId);
     if (!target) return false;
@@ -1032,6 +1040,7 @@ export default function GroupDetailScreen() {
                   currentUserId={user?.id ?? undefined}
                   onLike={handleToggleLike}
                   onDelete={handleDeletePost}
+                  onCaptionUpdate={handleCaptionUpdate}
                   canManagePost={canModerate}
                 />
               </View>
