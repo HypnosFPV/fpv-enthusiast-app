@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -51,6 +51,15 @@ export default function MentionTextInput({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<TextInput>(null);
 
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+    };
+  }, []);
+
   const searchUsers = useCallback(async (query: string) => {
     const cleanedQuery = query.trim().replace(/^@+/, '');
     if (!cleanedQuery) { setSuggestions([]); return; }
@@ -70,14 +79,12 @@ export default function MentionTextInput({
     // Find the @ token at the current cursor position
     const atIndex = text.lastIndexOf('@');
     if (atIndex === -1) {
-      setMentionQuery(null);
       setSuggestions([]);
       return;
     }
     const afterAt = text.slice(atIndex + 1);
     // Only trigger if the text after @ has no spaces (still typing the username)
     if (/\s/.test(afterAt)) {
-      setMentionQuery(null);
       setSuggestions([]);
       return;
     }

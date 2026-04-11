@@ -182,25 +182,8 @@ export function useFeedAlgorithm(userId?: string) {
   const trackSignal = useCallback((params: TrackSignalParams) => {
     if (!userId) return;
 
-    // Optimistically update local profile
-    setProfile(prev => {
-      const { signal_type, tag, author_id, weight = 1 } = params;
-      const baseW = BASE_WEIGHTS[signal_type] ?? 1;
-      const delta = baseW * weight;
-      const next  = { ...prev };
-
-      if (tag) {
-        next.tagWeights = { ...next.tagWeights, [tag]: (next.tagWeights[tag] ?? 0) + delta };
-        next.topTags    = Object.entries(next.tagWeights).sort((a, b) => b[1] - a[1]).map(([t]) => t);
-      }
-      if (author_id) {
-        next.authorAffinity = { ...next.authorAffinity, [author_id]: (next.authorAffinity[author_id] ?? 0) + delta };
-        next.topAuthors     = Object.entries(next.authorAffinity).sort((a, b) => b[1] - a[1]).map(([u]) => u);
-      }
-      return next;
-    });
-
-    // Batch DB write
+    // Batch DB write only. Avoid mutating the local interest profile mid-scroll,
+    // which can cause feed chips/layout to change while the user is interacting.
     pendingSignals.current.push(params);
     if (flushTimer.current) clearTimeout(flushTimer.current);
     flushTimer.current = setTimeout(() => {
