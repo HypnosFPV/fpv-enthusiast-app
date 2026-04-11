@@ -313,6 +313,7 @@ export default function AdminDashboard() {
     queue: featuredQueue,
     loading: featuredLoading,
     actionId: featuredActionId,
+    backendStatus: featuredBackendStatus,
     loadQueue,
     reviewRequest,
   } = useFeaturedContentModeration();
@@ -688,8 +689,16 @@ export default function AdminDashboard() {
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <Ionicons name="sparkles-outline" size={48} color="#8ab4ff" />
-              <Text style={styles.emptyTitle}>No featured requests</Text>
-              <Text style={styles.emptyTxt}>The premium placement queue is clear.</Text>
+              <Text style={styles.emptyTitle}>
+                {featuredBackendStatus === 'unavailable' ? 'Featured moderation unavailable' : 'No featured requests'}
+              </Text>
+              <Text style={styles.emptyTxt}>
+                {featuredBackendStatus === 'unavailable'
+                  ? 'Deploy the featured content migration in Supabase to enable this queue.'
+                  : featuredBackendStatus === 'fallback'
+                    ? 'Queue view is running in compatibility mode until the admin RPC is deployed.'
+                    : 'The premium placement queue is clear.'}
+              </Text>
             </View>
           }
           renderItem={({ item }) => (

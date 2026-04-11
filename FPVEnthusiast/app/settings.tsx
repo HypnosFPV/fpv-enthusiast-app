@@ -103,6 +103,7 @@ export default function SettingsScreen() {
   const {
     queue: featuredQueue,
     loading: featuredQueueLoading,
+    backendStatus: featuredBackendStatus,
     loadQueue: loadFeaturedQueue,
   } = useFeaturedContentModeration();
 
@@ -174,11 +175,19 @@ export default function SettingsScreen() {
 
   const featuredQueueLabel = featuredQueueLoading
     ? 'Loading featured moderation queue…'
-    : featuredNeedsReviewCount > 0
-      ? `${featuredNeedsReviewCount} waiting for review`
-      : featuredQueueCount > 0
-        ? `${featuredQueueCount} featured requests in queue`
-        : 'Automatic screening is active';
+    : featuredBackendStatus === 'unavailable'
+      ? 'Supabase featured moderation is not deployed yet'
+      : featuredBackendStatus === 'fallback'
+        ? (featuredNeedsReviewCount > 0
+            ? `${featuredNeedsReviewCount} waiting for review`
+            : featuredQueueCount > 0
+              ? `${featuredQueueCount} featured requests in queue`
+              : 'Queue view available in compatibility mode')
+        : featuredNeedsReviewCount > 0
+          ? `${featuredNeedsReviewCount} waiting for review`
+          : featuredQueueCount > 0
+            ? `${featuredQueueCount} featured requests in queue`
+            : 'Automatic screening is active';
 
   // ── render ────────────────────────────────────────────────────────────────────
   return (
@@ -445,7 +454,16 @@ export default function SettingsScreen() {
                   <Ionicons name="chevron-forward" size={16} color="#444" />
                 </View>
               }
-              onPress={() => router.push('/(tabs)/admin?tab=featured')}
+              onPress={() => {
+                if (featuredBackendStatus === 'unavailable') {
+                  Alert.alert(
+                    'Featured moderation unavailable',
+                    'This Supabase project does not have the featured content tables/functions deployed yet. Apply the featured content migration, then reload the app.',
+                  );
+                  return;
+                }
+                router.push('/(tabs)/admin?tab=featured');
+              }}
             />
             <Row
               label="Featured Analytics"

@@ -23,6 +23,8 @@ export interface FeaturedModerationQueueItem {
   target_title: string | null;
 }
 
+export type FeaturedModerationBackendStatus = 'ready' | 'fallback' | 'unavailable';
+
 interface ReviewParams {
   requestId: string;
   decision: 'approve' | 'reject' | 'needs_review';
@@ -63,6 +65,14 @@ function isMissingRpcError(error: { code?: string; message?: string } | null, fu
     || message.includes('could not find the function');
 }
 
+function isMissingTableError(error: { code?: string; message?: string } | null, tableName: string) {
+  if (!error) return false;
+  const message = (error.message ?? '').toLowerCase();
+  return error.code === 'PGRST205'
+    || (message.includes(tableName.toLowerCase()) && message.includes('schema cache'))
+    || message.includes('could not find the table');
+}
+
 function compactTitle(value: string | null | undefined, fallback: string) {
   const trimmed = value?.trim();
   if (!trimmed) return fallback;
@@ -73,6 +83,7 @@ export function useFeaturedContentModeration() {
   const [queue, setQueue] = useState<FeaturedModerationQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [backendStatus, setBackendStatus] = useState<FeaturedModerationBackendStatus>('ready');
 
   const loadQueueFallback = useCallback(async () => {
     const { data, error } = await supabase
@@ -100,6 +111,11 @@ export function useFeaturedContentModeration() {
       .order('created_at', { ascending: false });
 
     if (error) {
+      if (isMissingTableError(error, 'featured_content_requests')) {
+        setBackendStatus('unavailable');
+        setQueue([]);
+        return [] as FeaturedModerationQueueItem[];
+      }
       console.error('[useFeaturedContentModeration] loadQueue fallback:', error.message);
       return [] as FeaturedModerationQueueItem[];
     }
@@ -155,6 +171,7 @@ export function useFeaturedContentModeration() {
         : postTitleById.get(row.post_id ?? '') ?? 'Post',
     })) as FeaturedModerationQueueItem[];
 
+    setBackendStatus('fallback');
     setQueue(mappedRows);
     return mappedRows;
   }, []);
@@ -171,6 +188,7 @@ export function useFeaturedContentModeration() {
         return [] as FeaturedModerationQueueItem[];
       }
       const rows = (data ?? []) as FeaturedModerationQueueItem[];
+      setBackendStatus('ready');
       setQueue(rows);
       return rows;
     } finally {
@@ -194,6 +212,7 @@ export function useFeaturedContentModeration() {
 
       if (error) {
         if (isMissingRpcError(error, 'admin_review_featured_content_request')) {
+          setBackendStatus('unavailable');
           console.warn('[useFeaturedContentModeration] reviewRequest: featured moderation RPC is missing in the database. Apply the featured content migration before using admin review actions.');
           return false;
         }
@@ -215,6 +234,7 @@ export function useFeaturedContentModeration() {
     queue,
     loading,
     actionId,
+    backendStatus,
     loadQueue,
     reviewRequest,
   };
