@@ -403,11 +403,10 @@ export default function FeedScreen() {
     }
   };
 
-  const handleLike = useCallback((postId: string) => {
-    void toggleLike(postId);
-    // Track like signal for personalisation
+  const handleLike = useCallback(async (postId: string) => {
     const post = postsRef.current.find(p => p.id === postId);
-    if (post && user?.id) {
+    const didToggle = await toggleLike(postId);
+    if (didToggle && post && user?.id) {
       trackPostInteraction('like', post);
     }
   }, [toggleLike, user?.id, trackPostInteraction]);

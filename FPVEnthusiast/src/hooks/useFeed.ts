@@ -83,6 +83,11 @@ export function useFeed(
   const followingIdsRef = useRef<string[]>([]);
   const groupIdsRef = useRef<string[]>([]);
   const pendingLikeIdsRef = useRef<Set<string>>(new Set());
+  const interestProfileRef = useRef<InterestProfile | undefined>(interestProfile);
+
+  useEffect(() => {
+    interestProfileRef.current = interestProfile;
+  }, [interestProfile]);
 
   function mergeIsLiked(rawPosts: any[], likedIds: string[]): FeedPost[] {
     return rawPosts.map(p => ({
@@ -197,7 +202,7 @@ export function useFeed(
       const merged   = mergeIsLiked(pool, likedIds);
 
       // Rank if we have a profile, else fall back to chronological
-      const profile = interestProfile ?? { tagWeights: {}, authorAffinity: {}, topTags: [], topAuthors: [], lastUpdated: 0 };
+      const profile = interestProfileRef.current ?? { tagWeights: {}, authorAffinity: {}, topTags: [], topAuthors: [], lastUpdated: 0 };
       const ranked  = rankPosts(merged, profile);
 
       if (pageIndex === 0) {
@@ -274,7 +279,7 @@ export function useFeed(
 
     const likedIds = (likes ?? []).map((l: any) => l.post_id);
     return mergeIsLiked(data, likedIds);
-  }, [currentUserId, feedMode, interestProfile]);
+  }, [currentUserId, feedMode]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -308,8 +313,8 @@ export function useFeed(
     setLoadingMore(false);
   }, [loading, refreshing, loadingMore, hasMore, page, fetchPosts]);
 
-  const toggleLike = useCallback(async (postId: string) => {
-    if (!currentUserId || pendingLikeIdsRef.current.has(postId)) return;
+  const toggleLike = useCallback(async (postId: string): Promise<boolean> => {
+    if (!currentUserId || pendingLikeIdsRef.current.has(postId)) return false;
 
     let nextLiked: boolean | null = null;
     let postOwnerId: string | null = null;
@@ -329,7 +334,7 @@ export function useFeed(
       };
     }));
 
-    if (nextLiked === null) return;
+    if (nextLiked === null) return false;
 
     pendingLikeIdsRef.current.add(postId);
 
@@ -357,6 +362,8 @@ export function useFeed(
           .eq('post_id', postId).eq('user_id', currentUserId);
         if (error) throw error;
       }
+
+      return true;
     } catch (error: any) {
       console.warn('[useFeed] toggleLike rollback:', error?.message ?? error);
       setPosts(prev => prev.map(p => {
@@ -370,6 +377,7 @@ export function useFeed(
           likes_count: rollbackCount,
         };
       }));
+      return false;
     } finally {
       pendingLikeIdsRef.current.delete(postId);
     }
