@@ -8,7 +8,7 @@ import {
   RefreshControl, ActivityIndicator, Alert, StatusBar, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMapModeration, SpotReport, EventReport } from '../../src/hooks/useMapModeration';
 import { useFeaturedContentModeration, FeaturedModerationQueueItem } from '../../src/hooks/useFeaturedContentModeration';
 import { supabase } from '../../src/services/supabase';
@@ -48,6 +48,15 @@ function formatFeatureKind(kind: string) {
 function formatBannerLabel(label: string | null) {
   const trimmed = label?.trim();
   return trimmed ? trimmed : 'No banner label';
+}
+
+type AdminTab = 'spots' | 'events' | 'featured' | 'disputes';
+
+function normalizeAdminTab(value: string | string[] | undefined): AdminTab {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return candidate === 'events' || candidate === 'featured' || candidate === 'disputes'
+    ? candidate
+    : 'spots';
 }
 
 // ─── Reason badge ─────────────────────────────────────────────────────────────
@@ -293,6 +302,7 @@ function FeaturedRequestCard({ item, actionId, onApprove, onNeedsReview, onRejec
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string | string[] }>();
   const {
     isAdmin, spotReports, eventReports, loading, actionId,
     checkAdmin, loadSpotReports, loadEventReports,
@@ -307,20 +317,11 @@ export default function AdminDashboard() {
     reviewRequest,
   } = useFeaturedContentModeration();
 
-  const [tab, setTab] = useState<'spots' | 'events' | 'featured' | 'disputes'>('spots');
+  const [tab, setTab] = useState<AdminTab>(() => normalizeAdminTab(params.tab));
   const [disputes,       setDisputes]       = useState<any[]>([]);
   const [listingReports, setListingReports] = useState<any[]>([]);
   const [disputeLoading, setDisputeLoading] = useState(false);
   const [resolvingId,    setResolvingId]    = useState<string | null>(null);
-
-  // ── Boot: verify admin, then load both lists ──────────────────────────────
-  useEffect(() => {
-    (async () => {
-      const ok = await checkAdmin();
-      if (!ok) return; // gate rendered below
-      await Promise.all([loadSpotReports(), loadEventReports(), loadDisputes(), loadQueue()]);
-    })();
-  }, []);
 
   const loadDisputes = useCallback(async () => {
     setDisputeLoading(true);
@@ -339,6 +340,20 @@ export default function AdminDashboard() {
       setDisputeLoading(false);
     }
   }, []);
+
+  // ── Boot: verify admin, then load both lists ──────────────────────────────
+  useEffect(() => {
+    (async () => {
+      const ok = await checkAdmin();
+      if (!ok) return; // gate rendered below
+      await Promise.all([loadSpotReports(), loadEventReports(), loadDisputes(), loadQueue()]);
+    })();
+  }, [checkAdmin, loadSpotReports, loadEventReports, loadDisputes, loadQueue]);
+
+  useEffect(() => {
+    const nextTab = normalizeAdminTab(params.tab);
+    setTab(prev => (prev === nextTab ? prev : nextTab));
+  }, [params.tab]);
 
   const handleResolveDispute = (orderId: string, action: string, label: string) => {
     Alert.alert(

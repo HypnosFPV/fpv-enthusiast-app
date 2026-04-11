@@ -15,6 +15,7 @@ import { useMute }             from '../src/hooks/useMute';
 import MuteListModal           from '../src/components/MuteListModal';
 import { useNotificationsContext } from '../src/context/NotificationsContext';
 import { useStripeConnect }       from '../src/hooks/useStripeConnect';
+import { useFeaturedContentModeration } from '../src/hooks/useFeaturedContentModeration';
 import * as Notifications from 'expo-notifications';
 
 // ─── Section / Row components ─────────────────────────────────────────────────
@@ -99,6 +100,11 @@ export default function SettingsScreen() {
     onboarding: stripeOnboarding, checking: stripeChecking,
     startOnboarding: stripeStartOnboarding, checkStatus: stripeCheckStatus,
   } = useStripeConnect(user?.id);
+  const {
+    queue: featuredQueue,
+    loading: featuredQueueLoading,
+    loadQueue: loadFeaturedQueue,
+  } = useFeaturedContentModeration();
 
   const [signingOut, setSigningOut] = useState(false);
   const [showMuteList, setShowMuteList] = useState(false);
@@ -129,6 +135,11 @@ export default function SettingsScreen() {
       .catch(() => setPushStatus('denied'));
   }, []);
 
+  useEffect(() => {
+    if (!isAdmin) return;
+    loadFeaturedQueue();
+  }, [isAdmin, loadFeaturedQueue]);
+
   const handlePushSettings = useCallback(async () => {
     try {
       setPushBusy(true);
@@ -153,6 +164,21 @@ export default function SettingsScreen() {
         : pushStatus === 'loading'
           ? 'Checking device permission…'
           : 'Disabled on this device — tap to open settings';
+
+  const featuredQueueCount = featuredQueue.filter(item =>
+    ['pending_moderation', 'needs_review', 'pending_payment', 'approved'].includes(item.status),
+  ).length;
+  const featuredNeedsReviewCount = featuredQueue.filter(item =>
+    ['pending_moderation', 'needs_review'].includes(item.status),
+  ).length;
+
+  const featuredQueueLabel = featuredQueueLoading
+    ? 'Loading featured moderation queue…'
+    : featuredNeedsReviewCount > 0
+      ? `${featuredNeedsReviewCount} waiting for review`
+      : featuredQueueCount > 0
+        ? `${featuredQueueCount} featured requests in queue`
+        : 'Automatic screening is active';
 
   // ── render ────────────────────────────────────────────────────────────────────
   return (
@@ -391,17 +417,45 @@ export default function SettingsScreen() {
 
         {/* ── ADMIN ── */}
         {isAdmin && (
-          <Section title="ADMIN" icon="shield-checkmark-outline" iconColor="#FF9800">
+          <Section title="ADMIN TOOLS" icon="shield-checkmark-outline" iconColor="#FF9800">
             <Row
-              label="Map Moderation"
-              left={<Ionicons name="map-outline" size={18} color="#FF9800" />}
-              right={<Ionicons name="chevron-forward" size={16} color="#444" />}
-              onPress={() => router.push('/(tabs)/admin')}
+              label="Admin Moderation"
+              sublabel="Reported spots, events, and marketplace issues"
+              left={<Ionicons name="shield-half-outline" size={18} color="#FF9800" />}
+              right={
+                <View style={s.adminRowRight}>
+                  <Ionicons name="chevron-forward" size={16} color="#444" />
+                </View>
+              }
+              onPress={() => router.push('/(tabs)/admin?tab=spots')}
+            />
+            <Row
+              label="Featured Content Queue"
+              sublabel={featuredQueueLabel}
+              left={<Ionicons name="sparkles-outline" size={18} color="#8ab4ff" />}
+              right={
+                <View style={s.adminRowRight}>
+                  {featuredQueueLoading ? (
+                    <ActivityIndicator size="small" color="#8ab4ff" />
+                  ) : featuredQueueCount > 0 ? (
+                    <View style={s.adminBadge}>
+                      <Text style={s.adminBadgeText}>{featuredQueueCount}</Text>
+                    </View>
+                  ) : null}
+                  <Ionicons name="chevron-forward" size={16} color="#444" />
+                </View>
+              }
+              onPress={() => router.push('/(tabs)/admin?tab=featured')}
             />
             <Row
               label="Featured Analytics"
+              sublabel="Boost activity, active placements, and spend trends"
               left={<Ionicons name="flash" size={18} color="#ffcc00" />}
-              right={<Ionicons name="chevron-forward" size={16} color="#444" />}
+              right={
+                <View style={s.adminRowRight}>
+                  <Ionicons name="chevron-forward" size={16} color="#444" />
+                </View>
+              }
               onPress={() => router.push('/admin')}
               last
             />
@@ -490,6 +544,9 @@ const s = StyleSheet.create({
   rowRight:  { marginLeft: 10 },
   rowLabel:  { color: '#ddd', fontSize: 14, fontWeight: '500' },
   rowSublabel:{ color: '#666', fontSize: 12, marginTop: 2 },
+  adminRowRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  adminBadge: { minWidth: 22, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999, backgroundColor: '#18233a', borderWidth: 1, borderColor: '#35507d', alignItems: 'center' },
+  adminBadgeText: { color: '#8ab4ff', fontSize: 11, fontWeight: '700' },
 
   // Notification group label
   notifGroup:      { paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4 },
