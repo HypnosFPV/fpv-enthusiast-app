@@ -48,16 +48,17 @@ export default function MentionTextInput({
   inputStyle,
 }: Props) {
   const [suggestions, setSuggestions] = useState<UserSuggestion[]>([]);
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<TextInput>(null);
 
   const searchUsers = useCallback(async (query: string) => {
-    if (!query) { setSuggestions([]); return; }
+    const cleanedQuery = query.trim().replace(/^@+/, '');
+    if (!cleanedQuery) { setSuggestions([]); return; }
     let req = supabase
       .from('users')
       .select('id, username, avatar_url')
-      .ilike('username', `${query}%`)
+      .ilike('username', `${cleanedQuery}%`)
+      .order('username', { ascending: true })
       .limit(6);
     if (currentUserId) req = req.neq('id', currentUserId);
     const { data } = await req;
@@ -80,9 +81,8 @@ export default function MentionTextInput({
       setSuggestions([]);
       return;
     }
-    setMentionQuery(afterAt);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => searchUsers(afterAt), 250);
+    debounceRef.current = setTimeout(() => searchUsers(afterAt), 180);
   }, [onChangeText, searchUsers]);
 
   const handleSelect = useCallback((user: UserSuggestion) => {
@@ -90,14 +90,16 @@ export default function MentionTextInput({
     const newText = value.slice(0, atIndex) + '@' + user.username + ' ';
     onChangeText(newText);
     setSuggestions([]);
-    setMentionQuery(null);
     inputRef.current?.focus();
   }, [value, onChangeText]);
 
   const renderSuggestions = () => {
     if (!suggestions.length) return null;
     return (
-      <View style={styles.suggestionsContainer}>
+      <View style={[
+        styles.suggestionsContainer,
+        suggestionsAbove ? styles.suggestionsContainerAbove : styles.suggestionsContainerBelow,
+      ]}>
         <ScrollView
           keyboardShouldPersistTaps="always"
           style={styles.suggestionsScroll}
@@ -151,6 +153,8 @@ export default function MentionTextInput({
 const styles = StyleSheet.create({
   wrapper: {
     width: '100%',
+    position: 'relative',
+    zIndex: 20,
   },
   input: {
     backgroundColor: '#1a1a35',
@@ -168,13 +172,29 @@ const styles = StyleSheet.create({
     maxHeight: 120,
   },
   suggestionsContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     backgroundColor: '#1a1a35',
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#2a2a50',
-    marginBottom: 4,
     maxHeight: 200,
     overflow: 'hidden',
+    zIndex: 50,
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  suggestionsContainerAbove: {
+    bottom: '100%',
+    marginBottom: 6,
+  },
+  suggestionsContainerBelow: {
+    top: '100%',
+    marginTop: 6,
   },
   suggestionsScroll: {
     maxHeight: 200,

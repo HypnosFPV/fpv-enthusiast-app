@@ -404,16 +404,10 @@ function PostCard(props: Props) {
   const [tagsExpanded, setTagsExpanded] = useState(false);
 
   // ── like animation state ─────────────────────────────────────────────────
-  const [localLiked, setLocalLiked] = useState(post.isLiked ?? false);
-  const [localLikeCount, setLocalLikeCount] = useState(
-    post.like_count ?? post.likes_count ?? post.likeCount ?? 0
-  );
-  useEffect(() => { setLocalLiked(post.isLiked ?? false); }, [post.isLiked]);
+  const displayLiked = post.isLiked ?? false;
+  const displayLikeCount = post.like_count ?? post.likes_count ?? post.likeCount ?? 0;
   // Close reaction picker when comments modal closes
   useEffect(() => { if (!showComments) setReactionPickerForId(null); }, [showComments]);
-  useEffect(() => {
-    setLocalLikeCount(post.like_count ?? post.likes_count ?? post.likeCount ?? 0);
-  }, [post.like_count, post.likes_count, post.likeCount]);
 
   // Animated values
   const likeScaleAnim  = useRef(new Animated.Value(1)).current;
@@ -453,12 +447,12 @@ function PostCard(props: Props) {
 
   // ── core double-tap like action ──────────────────────────────────────────
   const fireLikeFromDoubleTap = useCallback(() => {
-    if (!localLiked && onLike) {
+    if (!displayLiked && onLike) {
       onLike(post.id, false);
     }
     runOverlayHeart();
     runHeartBounce();
-  }, [localLiked, onLike, post.id, runOverlayHeart, runHeartBounce]);
+  }, [displayLiked, onLike, post.id, runOverlayHeart, runHeartBounce]);
 
   // ── timer-based tap handler ─────────────────────────────────────────────
   // We MUST delay the single-tap action (zoom/link-open) until we know no
@@ -496,8 +490,8 @@ function PostCard(props: Props) {
   const handleLikePress = useCallback(() => {
     if (!onLike) return;
     runHeartBounce();
-    onLike(post.id, localLiked);
-  }, [onLike, localLiked, post.id, runHeartBounce]);
+    onLike(post.id, displayLiked);
+  }, [onLike, displayLiked, post.id, runHeartBounce]);
 
   const isOwner = !!currentUserId && currentUserId === post.user_id;
   const canOpenOwnerMenu = isOwner || !!canManagePost;
@@ -1385,13 +1379,13 @@ function PostCard(props: Props) {
         >
           <Animated.View style={{ transform: [{ scale: likeScaleAnim }] }}>
             <Ionicons
-              name={localLiked ? 'heart' : 'heart-outline'}
+              name={displayLiked ? 'heart' : 'heart-outline'}
               size={26}
-              color={localLiked ? '#e74c3c' : (activeGroupTheme?.mutedTextColor ?? '#666')}
+              color={displayLiked ? '#e74c3c' : (activeGroupTheme?.mutedTextColor ?? '#666')}
             />
           </Animated.View>
-          <Text style={[styles.actionCount, themedMutedText, localLiked && styles.actionCountLiked]}>
-            {localLikeCount}
+          <Text style={[styles.actionCount, themedMutedText, displayLiked && styles.actionCountLiked]}>
+            {displayLikeCount}
           </Text>
         </TouchableOpacity>
 

@@ -921,7 +921,7 @@ export default function FeedScreen() {
               multiline
               maxLength={500}
               currentUserId={user?.id}
-              suggestionsAbove={false}
+              suggestionsAbove
             />
 
 

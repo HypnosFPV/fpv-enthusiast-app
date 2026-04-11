@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Alert, Text, TextStyle, StyleProp } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../services/supabase';
@@ -12,80 +12,17 @@ const mentionIdCache = new Map<string, string | null>();
 
 export default function MentionText({ text, style }: Props) {
   const router = useRouter();
-  const [knownMentionIds, setKnownMentionIds] = useState<Record<string, string>>({});
-
   const parts = useMemo(() => text.split(/(@[a-zA-Z0-9_]+)/g), [text]);
-  const usernames = useMemo(() => {
-    const matches = text.match(/@[a-zA-Z0-9_]+/g) ?? [];
-    return [...new Set(matches.map(match => match.slice(1).toLowerCase()))];
-  }, [text]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const applyCachedMentions = () => {
-      const nextKnownIds = usernames.reduce<Record<string, string>>((acc, username) => {
-        const cachedId = mentionIdCache.get(username);
-        if (cachedId) acc[username] = cachedId;
-        return acc;
-      }, {});
-      if (!cancelled) setKnownMentionIds(nextKnownIds);
-    };
-
-    if (!usernames.length) {
-      setKnownMentionIds({});
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const unresolved = usernames.filter(username => !mentionIdCache.has(username));
-    if (!unresolved.length) {
-      applyCachedMentions();
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    void (async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, username')
-        .in('username', unresolved);
-
-      if (error) {
-        console.warn('[MentionText] mention lookup failed:', error.message);
-        applyCachedMentions();
-        return;
-      }
-
-      const foundMap = new Map<string, string>();
-      (data ?? []).forEach((user: any) => {
-        const normalized = String(user.username ?? '').toLowerCase();
-        if (normalized && user.id) foundMap.set(normalized, user.id);
-      });
-
-      unresolved.forEach(username => {
-        mentionIdCache.set(username, foundMap.get(username) ?? null);
-      });
-
-      applyCachedMentions();
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [usernames]);
 
   const handleMentionPress = useCallback(async (username: string) => {
-    const normalized = username.toLowerCase();
+    const normalized = username.trim().toLowerCase();
     let userId = mentionIdCache.get(normalized) ?? null;
 
     if (!userId) {
       const { data, error } = await supabase
         .from('users')
-        .select('id')
-        .eq('username', username)
+        .select('id, username')
+        .ilike('username', normalized)
         .maybeSingle();
 
       if (error) {
@@ -94,9 +31,6 @@ export default function MentionText({ text, style }: Props) {
 
       userId = data?.id ?? null;
       mentionIdCache.set(normalized, userId);
-      if (userId) {
-        setKnownMentionIds(prev => ({ ...prev, [normalized]: userId as string }));
-      }
     }
 
     if (!userId) {
@@ -112,12 +46,6 @@ export default function MentionText({ text, style }: Props) {
       {parts.map((part, index) => {
         if (/^@[a-zA-Z0-9_]+$/.test(part)) {
           const username = part.slice(1);
-          const mentionId = knownMentionIds[username.toLowerCase()];
-
-          if (!mentionId) {
-            return <Text key={index}>{part}</Text>;
-          }
-
           return (
             <Text
               key={index}
