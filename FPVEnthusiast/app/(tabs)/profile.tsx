@@ -905,9 +905,9 @@ export default function ProfileScreen() {
   const renderGridCell = useCallback(({ item }: { item: Post }) => (
     <PostGridCell
       item={item}
-      onPress={() => { setSelectedPost(item); setShowPostDetail(true); }}
+      onPress={() => router.push(`/post/${item.id}` as any)}
     />
-  ), []);
+  ), [router]);
 
   const renderPostListItem = useCallback(({ item }: { item: Post }) => (
     <View style={styles.profilePostCardWrap}>

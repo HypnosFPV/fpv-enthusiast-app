@@ -15,6 +15,7 @@ import { useFeed, FeedPost, FeedMode } from '../../src/hooks/useFeed';
 import { useFeedAlgorithm } from '../../src/hooks/useFeedAlgorithm';
 import { useAuth } from '../../src/context/AuthContext';
 import { useProfile } from '../../src/hooks/useProfile';
+import { useFeaturedContent } from '../../src/hooks/useFeaturedContent';
 import { useNotificationsContext } from '../../src/context/NotificationsContext';
 import { useMute } from '../../src/hooks/useMute';
 import { useSocialGroups } from '../../src/hooks/useSocialGroups';
@@ -107,6 +108,7 @@ export default function FeedScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { profile } = useProfile(user?.id);
+  const { submitPostRequest } = useFeaturedContent(user?.id ?? null);
   // ── Feed Mode ────────────────────────────────────────────────────────────
   const [feedMode, setFeedMode] = useState<FeedMode>('for_you');
 
@@ -246,6 +248,8 @@ export default function FeedScreen() {
   const [postDestination, setPostDestination] = useState<'public' | 'group'>('public');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [activeCommunityExpanded, setActiveCommunityExpanded] = useState(false);
+  const [requestFeatured, setRequestFeatured] = useState(false);
+  const [featuredBannerLabel, setFeaturedBannerLabel] = useState('');
 
   const postableGroups = useMemo(() => groups.filter(group => {
     const role = group.my_role ?? 'member';
@@ -274,6 +278,12 @@ export default function FeedScreen() {
     }
   }, [postDestination, postableGroups, selectedGroupId]);
 
+  useEffect(() => {
+    if (postDestination === 'group' && requestFeatured) {
+      setRequestFeatured(false);
+    }
+  }, [postDestination, requestFeatured]);
+
   const resetModal = () => {
     setCaption('');
     setSocialUrl('');
@@ -290,6 +300,8 @@ export default function FeedScreen() {
     setThumbsLoading(false);
     setPostDestination('public');
     setSelectedGroupId(null);
+    setRequestFeatured(false);
+    setFeaturedBannerLabel('');
   };
 
   const pickMedia = async () => {
@@ -389,14 +401,48 @@ export default function FeedScreen() {
         }
       }
 
+      if (!newPost) {
+        Alert.alert('Error', 'Post failed');
+        return;
+      }
+
       if (user?.id) {
         sendMentionNotifications(caption, newPost?.id ?? null, user.id).catch(err =>
           console.warn('[feed] mention notification failed:', err)
         );
       }
 
+      let featuredMessage: string | null = null;
+      if (requestFeatured && postDestination === 'public' && newPost?.id) {
+        const featuredResult = await submitPostRequest({
+          postId: newPost.id,
+          paymentMethod: 'props',
+          durationHours: 24,
+          bannerLabel: featuredBannerLabel.trim() || null,
+        });
+
+        if (!featuredResult?.ok) {
+          featuredMessage = `Your post was published, but the featured request could not be created: ${featuredResult?.error ?? 'Unknown error.'}`;
+        } else {
+          const decision = featuredResult.auto_moderation?.decision;
+          if (decision === 'approve') {
+            featuredMessage = 'Your post was published and the featured request passed automatic screening.';
+          } else if (decision === 'needs_review') {
+            featuredMessage = 'Your post was published and the featured request was sent to the manual review queue.';
+          } else if (decision === 'reject') {
+            featuredMessage = 'Your post was published, but the featured request was rejected by automatic moderation.';
+          } else {
+            featuredMessage = 'Your post was published and the featured request was created.';
+          }
+        }
+      }
+
       setModalVisible(false);
       resetModal();
+
+      if (featuredMessage) {
+        Alert.alert('Featured post update', featuredMessage);
+      }
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Post failed');
     } finally {
@@ -690,7 +736,7 @@ export default function FeedScreen() {
             automaticallyAdjustKeyboardInsets
           >
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Post</Text>
+              <Text style={styles.modalTitle}>{requestFeatured ? 'New Featured Post' : 'New Post'}</Text>
               <TouchableOpacity onPress={() => { setModalVisible(false); resetModal(); }}>
                 <Ionicons name="close" size={24} color="#fff" />
               </TouchableOpacity>
@@ -774,6 +820,70 @@ export default function FeedScreen() {
                 )
               ) : (
                 <Text style={styles.groupAudienceMeta}>This post will be visible in the public feed.</Text>
+              )}
+            </View>
+
+            <View style={styles.featuredCard}>
+              <View style={styles.featuredHeaderRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.featuredTitle}>Post type</Text>
+                  <Text style={styles.featuredHint}>
+                    Publish immediately, then let featured placement run through moderation.
+                  </Text>
+                </View>
+                <View style={styles.featuredPill}>
+                  <Ionicons name="sparkles" size={12} color="#0a0a0a" />
+                  <Text style={styles.featuredPillText}>Featured</Text>
+                </View>
+              </View>
+
+              <View style={styles.featuredToggleRow}>
+                <TouchableOpacity
+                  style={[styles.featuredToggleBtn, !requestFeatured && styles.featuredToggleBtnActive]}
+                  onPress={() => setRequestFeatured(false)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="document-text-outline" size={15} color={!requestFeatured ? '#fff' : '#8b8b8b'} />
+                  <Text style={[styles.featuredToggleBtnText, !requestFeatured && styles.featuredToggleBtnTextActive]}>Standard Post</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.featuredToggleBtn,
+                    requestFeatured && styles.featuredToggleBtnFeaturedActive,
+                    postDestination === 'group' && styles.featuredToggleBtnDisabled,
+                  ]}
+                  onPress={() => postDestination === 'public' && setRequestFeatured(true)}
+                  disabled={postDestination === 'group'}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="sparkles-outline" size={15} color={requestFeatured ? '#0a0a0a' : '#ffcc66'} />
+                  <Text style={[styles.featuredToggleBtnText, requestFeatured && styles.featuredToggleBtnFeaturedActiveText]}>Featured Post</Text>
+                </TouchableOpacity>
+              </View>
+
+              {requestFeatured ? (
+                <>
+                  <View style={styles.featuredInfoBox}>
+                    <Text style={styles.featuredInfoLine}>• Public posts only</Text>
+                    <Text style={styles.featuredInfoLine}>• 24-hour featured request</Text>
+                    <Text style={styles.featuredInfoLine}>• Automatic moderation runs after publishing</Text>
+                    <Text style={styles.featuredInfoLine}>• Spendable props: {(profile?.total_props ?? 0).toLocaleString()}</Text>
+                  </View>
+                  <Text style={styles.featuredFieldLabel}>Optional banner label</Text>
+                  <TextInput
+                    style={styles.featuredTextInput}
+                    placeholder="Weekend Rip Session"
+                    placeholderTextColor="#666"
+                    value={featuredBannerLabel}
+                    onChangeText={(value) => setFeaturedBannerLabel(value.slice(0, 40))}
+                    maxLength={40}
+                  />
+                  <Text style={styles.featuredCounter}>{featuredBannerLabel.length}/40</Text>
+                </>
+              ) : postDestination === 'group' ? (
+                <Text style={styles.featuredDisabledHint}>Featured placement is available for public posts only.</Text>
+              ) : (
+                <Text style={styles.featuredDisabledHint}>Choose Featured Post to publish now and immediately submit it for featured placement.</Text>
               )}
             </View>
 
@@ -1151,7 +1261,7 @@ export default function FeedScreen() {
             >
               {creating
                 ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={styles.postBtnText}>Post</Text>
+                : <Text style={styles.postBtnText}>{requestFeatured ? 'Publish Featured Post' : 'Post'}</Text>
               }
             </TouchableOpacity>
           </ScrollView>
@@ -1395,6 +1505,69 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 10,
   },
+  featuredCard: {
+    backgroundColor: '#17140a',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#493915',
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  featuredHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  featuredTitle: { color: '#fff4cc', fontSize: 14, fontWeight: '800' },
+  featuredHint: { color: '#c8b98c', fontSize: 12, lineHeight: 17, marginTop: 4 },
+  featuredPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ffcc66',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  featuredPillText: { color: '#0a0a0a', fontSize: 11, fontWeight: '800' },
+  featuredToggleRow: { flexDirection: 'row', gap: 8 },
+  featuredToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: '#241f12',
+    borderWidth: 1,
+    borderColor: '#4b3d18',
+  },
+  featuredToggleBtnActive: { backgroundColor: '#2a2a2a', borderColor: '#3a3a3a' },
+  featuredToggleBtnFeaturedActive: { backgroundColor: '#ffcc66', borderColor: '#ffcc66' },
+  featuredToggleBtnDisabled: { opacity: 0.45 },
+  featuredToggleBtnText: { color: '#e1cf9f', fontSize: 13, fontWeight: '700' },
+  featuredToggleBtnTextActive: { color: '#fff' },
+  featuredToggleBtnFeaturedActiveText: { color: '#0a0a0a', fontSize: 13, fontWeight: '800' },
+  featuredInfoBox: {
+    backgroundColor: '#120f08',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3d3114',
+    padding: 12,
+    gap: 6,
+  },
+  featuredInfoLine: { color: '#ecd8a3', fontSize: 12, lineHeight: 17 },
+  featuredFieldLabel: { color: '#fff4cc', fontSize: 13, fontWeight: '700' },
+  featuredTextInput: {
+    backgroundColor: '#120f08',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#3d3114',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    color: '#fff',
+    fontSize: 14,
+  },
+  featuredCounter: { color: '#9d8b5a', fontSize: 11, textAlign: 'right' },
+  featuredDisabledHint: { color: '#c8b98c', fontSize: 12, lineHeight: 17 },
   audienceHeader: { gap: 4 },
   audienceLabel: { color: '#fff', fontSize: 14, fontWeight: '700' },
   audienceHint: { color: '#7d7d7d', fontSize: 12, lineHeight: 17 },
