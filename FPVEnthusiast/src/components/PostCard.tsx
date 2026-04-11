@@ -392,6 +392,7 @@ function PostCard(props: Props) {
   const [showEditCaption, setShowEditCaption] = useState(false);
   const [editCaptionText, setEditCaptionText] = useState(post.caption || '');
   const [replyingTo, setReplyingTo]           = useState<Comment | null>(null);
+  const [expandedReplyThreads, setExpandedReplyThreads] = useState<Record<string, boolean>>({});
   const [commentLikes, setCommentLikes] = useState<Record<string, CommentLikeState>>({});
   // emoji reactions: { [comment_id]: { [emoji]: count } }
   const [commentReactions, setCommentReactions] = useState<Record<string, Record<string, number>>>({});
@@ -724,6 +725,7 @@ function PostCard(props: Props) {
 
   const handleOpenComments = useCallback(function () {
     setCommentsPage(1);   // always start at newest when reopening
+    setExpandedReplyThreads({});
     setShowComments(true);
     fetchComments();
   }, [fetchComments]);
@@ -739,6 +741,7 @@ function PostCard(props: Props) {
     setLocalCommentCount(function (n) { return n + 1; });
     const parentId = replyingTo?.id ?? null;
     const replyTarget = replyingTo;
+    const replyThreadId = replyingTo?.parent_id ?? replyingTo?.id ?? null;
     setReplyingTo(null);
 
     try {
@@ -785,6 +788,9 @@ function PostCard(props: Props) {
             target_comment_id: insertedCommentId ?? parentId,
           },
         });
+      }
+      if (replyThreadId) {
+        setExpandedReplyThreads(function (prev) { return { ...prev, [replyThreadId]: true }; });
       }
       await fetchComments();
     } catch (err: any) {
@@ -1176,10 +1182,32 @@ function PostCard(props: Props) {
     // Only render top-level comments here; replies are rendered inline below
     if (c.parent_id) return null;
     const replies = comments.filter(function (r) { return r.parent_id === c.id; });
+    const replyCount = replies.length;
+    const repliesExpanded = !!expandedReplyThreads[c.id];
     return (
       <View>
         {renderCommentBubble(c, false)}
-        {replies.map(function (reply) { return renderCommentBubble(reply, true); })}
+        {replyCount > 0 && (
+          <TouchableOpacity
+            style={styles.replyToggleBtn}
+            onPress={function () {
+              setExpandedReplyThreads(function (prev) { return { ...prev, [c.id]: !prev[c.id] }; });
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name={repliesExpanded ? 'chevron-up' : 'chevron-down'}
+              size={12}
+              color="#4fc3f7"
+            />
+            <Text style={styles.replyToggleText}>
+              {repliesExpanded
+                ? `Hide ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`
+                : `View ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
+            </Text>
+          </TouchableOpacity>
+        )}
+        {repliesExpanded && replies.map(function (reply) { return renderCommentBubble(reply, true); })}
       </View>
     );
   }
@@ -1714,6 +1742,20 @@ const styles = StyleSheet.create({
   commentLikeBtn: { flexDirection: 'row', alignItems: 'center', marginLeft: 10, gap: 3, paddingVertical: 4, paddingHorizontal: 4 } as any,
   commentLikeCount: { color: '#666', fontSize: 11 },
   // ── Reply styles ────────────────────────────────────────
+  replyToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 54,
+    marginTop: 2,
+    marginBottom: 2,
+    paddingVertical: 4,
+  } as any,
+  replyToggleText: {
+    color: '#4fc3f7',
+    fontSize: 11,
+    fontWeight: '600',
+  },
   replyRow: {
     paddingLeft: 42,
     paddingTop: 4,
