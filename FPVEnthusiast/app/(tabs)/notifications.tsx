@@ -47,6 +47,11 @@ interface GroupedNotif {
 
 type NotificationFilter = 'all' | 'unread' | 'social' | 'marketplace' | 'challenge' | 'group' | 'reward';
 
+const AUTO_READ_BATCH_SIZE = 1;
+const AUTO_READ_FLUSH_DELAY_MS = 280;
+const AUTO_READ_MIN_VIEW_TIME_MS = 420;
+const AUTO_READ_VISIBLE_PERCENT = 72;
+
 // ─── Grouping engine ──────────────────────────────────────────────────────────
 function notificationGroupKey(n: AppNotification): string {
   const entityRef = n.entity_id ?? n.listing_id ?? n.challenge_id ?? (n.data as any)?.listing_id ?? null;
@@ -437,6 +442,7 @@ function GroupedNotifRow({
   const swipeRef  = useRef<Swipeable>(null);
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(18)).current;
+  const unreadAnim = useRef(new Animated.Value(item.read ? 0 : 1)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -451,6 +457,14 @@ function GroupedNotifRow({
     ]).start();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    Animated.timing(unreadAnim, {
+      toValue: item.read ? 0 : 1,
+      duration: item.read ? 220 : 140,
+      useNativeDriver: true,
+    }).start();
+  }, [item.read, unreadAnim]);
 
   const meta   = TYPE_META[item.type] ?? TYPE_META.like;
   const { prefix, suffix } = buildLabel(item.actors, item.type);
@@ -473,12 +487,38 @@ function GroupedNotifRow({
         )}
       >
         <TouchableOpacity
-          style={[styles.row, !item.read && styles.rowUnread]}
+          style={styles.row}
           onPress={() => onPress(item)}
           activeOpacity={0.75}
         >
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.rowUnreadOverlay,
+              {
+                opacity: unreadAnim,
+              },
+            ]}
+          />
+
           {/* Left unread accent bar */}
-          {!item.read && <View style={styles.unreadBar} />}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.unreadBar,
+              {
+                opacity: unreadAnim,
+                transform: [
+                  {
+                    scaleY: unreadAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.6, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
 
           {/* ── Avatar area ─────────────────────────────── */}
           <View style={styles.avatarArea}>
@@ -550,7 +590,23 @@ function GroupedNotifRow({
           <Ionicons name="chevron-forward" size={14} color="#444" style={{ marginLeft: 4 }} />
 
           {/* Unread dot */}
-          {!item.read && <View style={styles.unreadDot} />}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.unreadDot,
+              {
+                opacity: unreadAnim,
+                transform: [
+                  {
+                    scale: unreadAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.7, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
         </TouchableOpacity>
       </Swipeable>
     </Animated.View>
@@ -596,7 +652,7 @@ export default function NotificationsScreen() {
   } | null>(null);
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all');
   const seenReadIdsRef = useRef<Set<string>>(new Set());
-  const queuedReadIdsRef = useRef<Set<string>>(new Set());
+  const queuedReadGroupsRef = useRef<Map<string, string[]>>(new Map());
   const readFlushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Focus refresh ─────────────────────────────────────────────────────────
@@ -636,12 +692,28 @@ export default function NotificationsScreen() {
   // Unread group count (for grouped sections / summaries)
   const unreadGroupCount = useMemo(() => filteredGrouped.filter(g => !g.read).length, [filteredGrouped]);
 
-  const flushQueuedReads = useCallback(() => {
-    if (!queuedReadIdsRef.current.size) return;
-    const ids = Array.from(queuedReadIdsRef.current);
-    queuedReadIdsRef.current.clear();
+  const flushQueuedReads = useCallback(async () => {
+    if (!queuedReadGroupsRef.current.size) return;
+
+    const nextGroups = Array.from(queuedReadGroupsRef.current.entries()).slice(0, AUTO_READ_BATCH_SIZE);
+    nextGroups.forEach(([groupKey]) => queuedReadGroupsRef.current.delete(groupKey));
+
+    const ids = Array.from(new Set(nextGroups.flatMap(([, groupIds]) => groupIds)));
+    if (!ids.length) return;
+
     ids.forEach((id) => seenReadIdsRef.current.add(id));
-    void markReadBulk(ids);
+    const success = await markReadBulk(ids);
+    if (!success) {
+      ids.forEach((id) => seenReadIdsRef.current.delete(id));
+    }
+
+    if (queuedReadGroupsRef.current.size) {
+      if (readFlushTimeoutRef.current) clearTimeout(readFlushTimeoutRef.current);
+      readFlushTimeoutRef.current = setTimeout(() => {
+        readFlushTimeoutRef.current = null;
+        void flushQueuedReads();
+      }, AUTO_READ_FLUSH_DELAY_MS);
+    }
   }, [markReadBulk]);
 
   useEffect(() => {
@@ -661,29 +733,39 @@ export default function NotificationsScreen() {
       if (!entry || !entry.isViewable) continue;
       const group = entry.item;
       const groupIds = Array.isArray(group?.ids) ? group.ids : [];
-      if (!group || group.read || !groupIds.length) continue;
+      if (!group || group.read || !group.groupKey || !groupIds.length) continue;
+      if (queuedReadGroupsRef.current.has(group.groupKey)) continue;
 
-      for (const id of groupIds) {
-        if (!id || seenReadIdsRef.current.has(id)) continue;
-        queuedReadIdsRef.current.add(id);
-        queuedAny = true;
-      }
+      const unreadIds = groupIds.filter((id) => id && !seenReadIdsRef.current.has(id));
+      if (!unreadIds.length) continue;
+
+      queuedReadGroupsRef.current.set(group.groupKey, unreadIds);
+      queuedAny = true;
     }
 
-    if (!queuedAny) return;
+    if (!queuedAny || readFlushTimeoutRef.current) return;
 
-    if (readFlushTimeoutRef.current) clearTimeout(readFlushTimeoutRef.current);
     readFlushTimeoutRef.current = setTimeout(() => {
       readFlushTimeoutRef.current = null;
-      flushQueuedReads();
-    }, 180);
+      void flushQueuedReads();
+    }, AUTO_READ_FLUSH_DELAY_MS);
   }, [flushQueuedReads]);
 
   // ── Handle tap ────────────────────────────────────────────────────────────
   const handlePress = useCallback(async (g: GroupedNotif) => {
+    queuedReadGroupsRef.current.delete(g.groupKey);
+    g.ids.forEach((id) => {
+      if (id) seenReadIdsRef.current.add(id);
+    });
+
     // Mark all IDs in group as read
     const unreadIds = g.ids;
-    if (!g.read) await markReadBulk(unreadIds);
+    if (!g.read) {
+      const success = await markReadBulk(unreadIds);
+      if (!success) {
+        unreadIds.forEach((id) => seenReadIdsRef.current.delete(id));
+      }
+    }
 
     const targetCommentId = (g.data as any)?.targetCommentId ?? (g.data as any)?.target_comment_id ?? g.comment_id ?? null;
     const targetGroupId = g.entity_type === 'social_group'
@@ -889,7 +971,7 @@ export default function NotificationsScreen() {
           {activeFilterLabel} · {filteredGrouped.length} group{filteredGrouped.length === 1 ? '' : 's'}
           {unreadGroupCount > 0 ? ` · ${unreadGroupCount} unread group${unreadGroupCount === 1 ? '' : 's'}` : ''}
         </Text>
-        <Text style={styles.filterSummaryHint}>Notifications mark as read as you view them.</Text>
+        <Text style={styles.filterSummaryHint}>Notifications mark as read after a short pause on screen.</Text>
       </View>
 
       {/* ── Sectioned grouped list ── */}
@@ -908,7 +990,7 @@ export default function NotificationsScreen() {
           sections={sections}
           keyExtractor={g => g.groupKey}
           onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={{ itemVisiblePercentThreshold: 65, minimumViewTime: 180 }}
+          viewabilityConfig={{ itemVisiblePercentThreshold: AUTO_READ_VISIBLE_PERCENT, minimumViewTime: AUTO_READ_MIN_VIEW_TIME_MS }}
           renderSectionHeader={({ section: { title } }) => (
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionHeaderText}>{title}</Text>
@@ -1059,8 +1141,12 @@ const styles = StyleSheet.create({
     paddingVertical: 13, paddingLeft: 16, paddingRight: 12,
     borderBottomWidth: 1, borderBottomColor: '#111',
     backgroundColor: '#0d0d0d',
+    overflow: 'hidden',
   },
-  rowUnread:  { backgroundColor: '#110800' },
+  rowUnreadOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#110800',
+  },
   unreadBar: {
     position: 'absolute', left: 0, top: 0, bottom: 0,
     width: 3, backgroundColor: '#ff4500', borderRadius: 2,
