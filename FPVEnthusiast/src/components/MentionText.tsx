@@ -42,10 +42,11 @@ export default function MentionText({ text, style }: Props) {
       });
 
       if (unresolved.length) {
+        const mentionFilter = unresolved.map((username) => `username.ilike.${username}`).join(',');
         const { data, error } = await supabase
           .from('users')
           .select('id, username')
-          .in('username', unresolved);
+          .or(mentionFilter);
 
         if (error) {
           console.warn('[MentionText] hydrate mentions failed:', error.message);

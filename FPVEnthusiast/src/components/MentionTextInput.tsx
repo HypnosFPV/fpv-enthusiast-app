@@ -63,14 +63,19 @@ export default function MentionTextInput({
   const searchUsers = useCallback(async (query: string) => {
     const cleanedQuery = query.trim().replace(/^@+/, '');
     if (!cleanedQuery) { setSuggestions([]); return; }
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('users')
       .select('id, username, avatar_url')
-      .ilike('username', `${cleanedQuery}%`)
+      .ilike('username', `%${cleanedQuery}%`)
       .order('username', { ascending: true })
-      .limit(6);
+      .limit(8);
+    if (error) {
+      console.warn('[MentionTextInput] search users failed:', error.message);
+      setSuggestions([]);
+      return;
+    }
     setSuggestions(data ?? []);
-  }, [currentUserId]);
+  }, []);
 
   const handleChange = useCallback((text: string) => {
     onChangeText(text);

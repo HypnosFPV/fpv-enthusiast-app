@@ -80,10 +80,11 @@ async function sendMentionNotifications(
 ) {
   const usernames = parseMentions(caption);
   if (!usernames.length) return;
+  const mentionFilter = usernames.map((username) => `username.ilike.${username}`).join(',');
   const { data: mentioned } = await supabase
     .from('users')
     .select('id, username')
-    .in('username', usernames)
+    .or(mentionFilter)
     .neq('id', actorId);
   if (!mentioned?.length) return;
   await insertAppNotificationsBatch(
@@ -920,7 +921,7 @@ export default function FeedScreen() {
               multiline
               maxLength={500}
               currentUserId={user?.id}
-              suggestionsAbove
+              suggestionsAbove={false}
             />
 
 
